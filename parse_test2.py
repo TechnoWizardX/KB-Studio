@@ -10,7 +10,9 @@ try:
     print("✅ Грамматика загружена успешно!")
     
     # Тестируем
-    test = "nrel_idtf -> concept: [text];;"
+    test = """
+    nrel_idtf -> concept: [text];;
+    concept_test <= nrel_test_nrel: [this is test nrel] (* <- lang_en (* <- concept_language_type ;; *);; *);;"""
     tree = parser.parse(test)
     print(tree.pretty())
     
