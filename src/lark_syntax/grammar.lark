@@ -1,0 +1,83 @@
+// SCs-code grammar for Lark (LALR)
+// Based on OSTIS SCs specification (levels 1–6)
+
+start: sentence+
+
+// Предложение всегда заканчивается ;;
+sentence: element edge element sentence_suffix END_SENTENCE
+
+// Quintuple: a -> c: b; d; e;;  |  Обычная тройка: a -> b;;
+sentence_suffix: ":" element_list
+               |
+
+// Элемент может иметь подструктуру или быть ею сам
+element: primary_element sub_structure?
+       | sub_structure
+
+primary_element: identifier
+               | compound
+               | set
+               | link
+               | sc_structure
+               | unnamed
+               | string_literal
+
+// Compound: (subject -> object)
+compound: "(" element edge element ")"
+
+// Подструктура: (* edge element [end] ... *)
+// Субъект подразумевается — это объект, к которому привязана подструктура
+sub_structure: "(*" internal_sentence* "*)"
+
+// Внутреннее предложение
+internal_sentence: edge element end_of_construction
+
+// Множество: { a; b; c }
+set: "{" element_list? "}"
+
+// SC-link: [произвольный текст] — НЕ может быть пустым
+link: "[" link_content? "]"
+link_content: /[^\]]+/
+
+// SC-структура: [* sentence ... *]
+sc_structure: "[*" sentence* "*]"
+
+// Безымянный объект
+unnamed: "..."
+
+// Идентификатор с опциональным visibility-префиксом
+identifier: visibility? ID
+
+visibility: "_" | "." | ".."
+
+string_literal: STRING
+
+// Список элементов, разделённых ;
+element_list: element (SEP element)*
+
+// Конец конструкции: ; или ;;
+end_of_construction: SEP
+                   | END_SENTENCE
+
+// Дуги
+edge: "<-"
+    | "->"
+    | "<="
+    | "=>"
+    | "<-_"
+    | "_->"
+    | "_=>"
+    | "<=_"
+
+// Токены
+ID: /[a-zA-Z_][a-zA-Z0-9_]*/
+STRING: /"([^"\\]|\\.)*"/
+
+SEP: ";"
+END_SENTENCE: ";;"
+
+WS: /[ \t\n\r]+/
+COMMENT: /\/\/[^\n]*/
+
+%ignore WS
+%ignore COMMENT
