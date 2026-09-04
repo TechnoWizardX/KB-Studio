@@ -11,8 +11,6 @@ class MainWindow(QMainWindow):
 
 
 
-
-
 def init_app():
     app = QApplication(sys.argv)
     app.setApplicationName("KB Studio")

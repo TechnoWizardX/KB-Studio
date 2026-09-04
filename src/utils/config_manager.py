@@ -4,7 +4,7 @@ from src.resources.data import DEFAULT_CONFIG
 from typing import Any
 import json
 class ConfigManager():
-
+    
     DEFAULT_CONFIG: dict[str, Any] = DEFAULT_CONFIG
 
     _current_config: dict[str, Any] = {}
@@ -15,6 +15,7 @@ class ConfigManager():
         return config_dir / "config.json"
     @classmethod
     def init_config(cls) -> None:
+        """Initializes config file: if it exists - loads in class atribute, else - makes config dir and laods default config"""
         config_file = cls.get_config_path()
 
         if not config_file.exists():
@@ -31,6 +32,7 @@ class ConfigManager():
 
     @classmethod
     def load(cls):
+        """Loads config from a file"""
         config_file = cls.get_config_path()
         try:
             with open(config_file, "r", encoding="utf-8") as f:
@@ -45,6 +47,7 @@ class ConfigManager():
 
     @classmethod
     def save(cls):
+        """Saves current config in config file"""
         config_file = cls.get_config_path()
         try:
             with open(config_file, "w", encoding="utf-8") as f:
