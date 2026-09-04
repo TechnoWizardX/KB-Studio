@@ -4,7 +4,7 @@ from src.resources.data import DEFAULT_CONFIG
 from typing import Any
 import json
 class ConfigManager():
-    
+
     DEFAULT_CONFIG: dict[str, Any] = DEFAULT_CONFIG
 
     _current_config: dict[str, Any] = {}
@@ -54,3 +54,21 @@ class ConfigManager():
                 json.dump(cls._current_config, f, indent=4, ensure_ascii=False)
         except:
             print("ERROR: can't save current config")
+
+    @classmethod
+    def get(cls, key):
+        """Returns current config value by a key, if not avaiable - reuturns default value"""
+        try:
+            return cls._current_config[key]
+        except Exception as e:
+            print(f"Unable get config value: {e}")
+            return cls.DEFAULT_CONFIG[key]
+
+    @classmethod
+    def set(cls, key, value):
+        """Set new value for config and automaticaly saves it"""
+        try:
+            cls._current_config[key] = value
+            cls.save()
+        except Exception as e:
+            print(f"ERROR: Unable to set new value {value} for a key {key}")
