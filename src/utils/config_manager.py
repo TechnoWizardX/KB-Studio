@@ -3,6 +3,8 @@ from pathlib import Path
 from src.resources.data import DEFAULT_CONFIG
 from typing import Any
 import json
+
+
 class ConfigManager():
 
     DEFAULT_CONFIG: dict[str, Any] = DEFAULT_CONFIG
@@ -13,9 +15,10 @@ class ConfigManager():
     def get_config_path(cls):
         config_dir = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
         return config_dir / "config.json"
+
     @classmethod
     def init_config(cls) -> None:
-        """Initializes config file: if it exists - loads in class atribute, else - makes config dir and laods default config"""
+        """Initializes config file: if it exists - loads in class attribute, else - makes config dir and loads default config"""
         config_file = cls.get_config_path()
 
         if not config_file.exists():
@@ -57,7 +60,7 @@ class ConfigManager():
 
     @classmethod
     def get(cls, key):
-        """Returns current config value by a key, if not avaiable - reuturns default value"""
+        """Returns current config value by a key, if not available - returns default value"""
         try:
             return cls._current_config[key]
         except Exception as e:
@@ -66,7 +69,7 @@ class ConfigManager():
 
     @classmethod
     def set(cls, key, value):
-        """Set new value for config and automaticaly saves it"""
+        """Set new value for config and automatically saves it"""
         try:
             cls._current_config[key] = value
             cls.save()

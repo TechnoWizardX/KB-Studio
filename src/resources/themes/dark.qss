@@ -1,0 +1,141 @@
+QMainWindow, QWidget {
+    background-color: {{bg}};
+    color: {{fg}};
+}
+
+QFrame {
+    background-color: {{frame_bg}};
+    border: 1px solid {{border}};
+}
+
+QTextEdit, QPlainTextEdit {
+    background-color: {{editor_bg}};
+    color: {{fg}};
+    selection-background-color: {{hover}};
+    border: 1px solid {{border}};
+}
+
+QTreeView {
+    background-color: {{frame_bg}};
+    color: {{fg}};
+    border: 1px solid {{border}};
+    alternate-background-color: {{nav_bg}};
+}
+QTreeView::item:selected {
+    background-color: {{hover}};
+}
+
+QLineEdit {
+    background-color: {{input_bg}};
+    color: {{input_fg}};
+    border: 1px solid {{input_border}};
+    padding: 4px;
+}
+
+QDockWidget {
+    background-color: {{frame_bg}};
+}
+QDockWidget::title {
+    color: {{fg}};
+    padding: 4px;
+}
+QDockWidget::title-bar {
+    background-color: {{nav_bg}};
+}
+
+QMenuBar {
+    background-color: {{nav_bg}};
+    color: {{fg}};
+}
+QMenuBar::item:selected {
+    background-color: {{hover}};
+}
+QMenuBar::item:pressed {
+    background-color: {{bg}};
+}
+
+QToolBar {
+    background-color: {{nav_bg}};
+    border-bottom: 1px solid {{border}};
+    padding: 4px;
+}
+QToolBar::separator {
+    background-color: {{border}};
+}
+
+QStatusBar {
+    background-color: {{accent}};
+    color: #ffffff;
+}
+
+QSplitter::handle {
+    background-color: {{border}};
+}
+QSplitter::handle:hover {
+    background-color: {{accent}};
+}
+
+QTabWidget::pane {
+    border: 1px solid {{border}};
+}
+QTabBar::tab {
+    background-color: {{nav_bg}};
+    color: {{fg}};
+    padding: 6px 12px;
+    border: 1px solid {{border}};
+}
+QTabBar::tab:selected {
+    background-color: {{bg}};
+}
+
+QPushButton {
+    background-color: {{nav_bg}};
+    color: {{fg}};
+    border: 1px solid {{border}};
+    padding: 6px 12px;
+}
+QPushButton:hover {
+    background-color: {{hover}};
+}
+QPushButton#btn-error {
+    background-color: {{error}};
+    color: #ffffff;
+}
+QPushButton#btn-success {
+    background-color: {{success}};
+    color: #000000;
+}
+QPushButton#btn-warning {
+    background-color: {{warning}};
+    color: #000000;
+}
+QPushButton#btn-accent {
+    background-color: {{accent}};
+    color: #ffffff;
+}
+
+QScrollBar:vertical {
+    background: {{scrollbar_bg}};
+    width: 12px;
+}
+QScrollBar::handle:vertical {
+    background: {{scrollbar_handle}};
+    min-height: 20px;
+    border-radius: 4px;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    background: {{scrollbar_bg}};
+    height: 12px;
+}
+QScrollBar::handle:horizontal {
+    background: {{scrollbar_handle}};
+    min-width: 20px;
+    border-radius: 4px;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
+}

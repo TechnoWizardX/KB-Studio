@@ -1,20 +1,14 @@
-from PySide6.QtWidgets import QApplication, QWidget, QMainWindow, QHBoxLayout, QVBoxLayout, QFrame, QSplitter
-from PySide6.QtCore import QStandardPaths 
+from PySide6.QtWidgets import QApplication, QMainWindow
 import sys
-from pathlib import Path
 from src.utils.config_manager import ConfigManager
+from src.utils.theme_manager import ThemeManager
+
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, theme_manager: ThemeManager):
         super().__init__()
+        self.theme_manager = theme_manager
         self.setWindowTitle("KB Studio")
-
-        self.main_frame = QFrame()
-        self.setCentralWidget(self.main_frame)
-
-        self.main_layout = QHBoxLayout(self.main_frame)
-
-
 
 
 def init_app():
@@ -23,7 +17,11 @@ def init_app():
     app.setOrganizationName("OSTIS")
 
     ConfigManager.init_config()
-    window = MainWindow()
+
+    theme_manager = ThemeManager(app)
+    theme_manager.apply(ConfigManager.get("theme"))
+
+    window = MainWindow(theme_manager)
     window.show()
 
     sys.exit(app.exec())

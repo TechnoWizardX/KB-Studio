@@ -1,0 +1,21 @@
+{
+    "bg": "#ffffff",
+    "frame_bg": "#f5f5f5",
+    "nav_bg": "#e8e8e8",
+    "editor_bg": "#ffffff",
+    "fg": "#1e1e1e",
+    "fg_dim": "#888888",
+    "border": "#cccccc",
+    "accent": "#007acc",
+    "hover": "#b4d5ff",
+    "input_bg": "#ffffff",
+    "input_fg": "#1e1e1e",
+    "input_border": "#999999",
+    "error": "#cd3131",
+    "success": "#16825d",
+    "warning": "#bf8803",
+    "number_line_bg": "#ffffff",
+    "number_line_fg": "#999999",
+    "scrollbar_bg": "#f5f5f5",
+    "scrollbar_handle": "#c1c1c1"
+}
