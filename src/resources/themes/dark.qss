@@ -2,7 +2,12 @@ QMainWindow, QWidget {
     background-color: {{bg}};
     color: {{fg}};
 }
-
+QPlainTextEdit {
+    font-size: 12pt;
+}
+QWidget#lineNumberArea {
+    background-color: transparent
+}
 QFrame {
     background-color: {{frame_bg}};
     border: 1px solid {{border}};

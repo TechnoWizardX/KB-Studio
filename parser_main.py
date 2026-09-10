@@ -8,5 +8,10 @@ with open('src/lark_syntax/grammar.lark', 'r', encoding='utf-8') as f:
 if __name__ == "__main__": 
     parser = parser.SCSParser()
     test = """  nrel_idtf -> concept: [text];;
- concept_test <= nrel_test_nrel: [this is test nrel] (* <- lang_en (* <- concept_language_type ;; *);; *);;"""
+ concept_test <= nrel_test_nrel: [this is test nrel] (* 
+ <- lang_en (* 
+ <- concept_language_type ;; 
+ *);; 
+ *);;"""
+    print(test)
     print(parser.parse(test).pretty())

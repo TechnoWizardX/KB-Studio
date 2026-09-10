@@ -1,0 +1,6 @@
+concept_test
+=> nrel_test: [This is test .scs file] (*
+    <= concept_sc_file (*
+        <- concept_node;;
+    *);;
+*)

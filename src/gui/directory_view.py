@@ -1,4 +1,5 @@
 from PySide6.QtWidgets import QTreeView, QFileSystemModel, QFrame, QWidget, QVBoxLayout
+from PySide6.QtCore import QStandardPaths
 class DirectoryTreeViewWidget(QFrame):
     def __init__(self, parent: QWidget = None):
         super().__init__()
@@ -9,7 +10,11 @@ class DirectoryTreeViewWidget(QFrame):
 
         self.main_layout.addWidget(self.dir_view)
 class DirectoryTreeView(QTreeView):
-    def __init__(self, root_path : str = None):
+    def __init__(self, root_path : str = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.HomeLocation)):
         super().__init__()
-        self.tree_model = QFileSystemModel
-    
+        self.root_path = root_path
+        self.tree_model = QFileSystemModel()
+        self.tree_model.setRootPath(self.root_path)
+        
+        self.setModel(self.tree_model)
+        self.setRootIndex(self.tree_model.index(root_path))

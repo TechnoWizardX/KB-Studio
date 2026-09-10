@@ -2,7 +2,9 @@ QMainWindow, QWidget {
     background-color: {{bg}};
     color: {{fg}};
 }
-
+QPlainTextEdit {
+    font-size: 12pt;
+}
 QFrame {
     background-color: {{frame_bg}};
     border: 1px solid {{border}};
