@@ -3,6 +3,9 @@ from PySide6.QtCore import Qt, QProcess
 from PySide6.QtGui import QColor, QPainter, QKeySequence, QShortcut
 import sys
 from pathlib import Path
+from src.utils.theme_manager import ThemeManager
+from src.lark_syntax.parser import SCSParser
+from lark.exceptions import UnexpectedToken
 class CodeEditorWidget(QFrame):
     def __init__(self, parent : QWidget = None):
         super().__init__(parent=parent)
@@ -22,11 +25,14 @@ class CodeEditorWidget(QFrame):
 
         self.splitter.setSizes([700, 300])
 
+
     def apply_file(self, file_path : str | Path):
         self.code_editor.apply_file(file_path)
     
 
 class CodeEditor(QPlainTextEdit):
+
+    parser = SCSParser()
     def __init__(self):
         super().__init__()
         self.setViewportMargins(30, 0, 0, 0)
@@ -38,6 +44,8 @@ class CodeEditor(QPlainTextEdit):
 
         self.shorcut_zoom_in = QShortcut(QKeySequence("Ctrl+-"), self)
         self.shorcut_zoom_in.activated.connect(self.zoom_out)
+
+        self.line_highlight = ThemeManager.get_color("line_highlight")
 
     def zoom_in(self, range : int = 2):
         self.zoomIn(range)
@@ -51,9 +59,23 @@ class CodeEditor(QPlainTextEdit):
             self.setPlainText(text)
             print(f"Inserted next file: {text}")
 
-    def test_syntax(self, parser):
-        text = self.toPlainText
+    def parse_syntax(self):
+        text = self.toPlainText()
+        print(f"Parse {text} ...")
+        if not text:
+            return
+        try:
+            tree = self.parser.parse(text)
+        except UnexpectedToken as e:
+            return f"Unexpected Token: {e}"
+        except Exception as e:
+            print (f"Unexpected exception: {e}!")
+            return 
 
+        return tree
+        
+    def test_parse(self):
+        print(self.parse_syntax())
 class LineNumberArea(QWidget):
     def __init__(self, editor : CodeEditor):
             super().__init__(editor)
@@ -62,8 +84,6 @@ class LineNumberArea(QWidget):
             
     def getFirstVisibleBlock(self) -> int:
         return self.editor.firstVisibleBlock().blockNumber() + 1
-    
-    
     
     def paintEvent(self, event):
         pass

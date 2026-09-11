@@ -40,11 +40,13 @@ def init_app():
 
     ConfigManager.init_config()
 
-    theme_manager = ThemeManager(app)
-    theme_manager.apply(ConfigManager.get("theme"))
-
+    theme_manager = ThemeManager()
+    theme = ConfigManager.get("theme")
+    qss = theme_manager.build_qss(theme)
+    app.setStyleSheet(qss)
     window = MainWindow(theme_manager)
     window.show()
 
     window.apply_file_test("./test.scs")
+    window.code_editor.code_editor.test_parse()
     sys.exit(app.exec())

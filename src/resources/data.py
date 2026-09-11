@@ -8,3 +8,26 @@ DEFAULT_CONFIG = {
     "file_encoding": "utf-8",
     "parser_cache": True,
 }
+
+DEFAULT_THEME_CONFIG = {
+    "bg": "#1e1e1e",
+    "frame_bg": "#252526",
+    "nav_bg": "#2d2d30",
+    "editor_bg": "#1e1e1e",
+    "fg": "#d4d4d4",
+    "fg_dim": "#808080",
+    "border": "#3c3c3c",
+    "accent": "#007acc",
+    "hover": "#264f78",
+    "input_bg": "#3c3c3c",
+    "input_fg": "#d4d4d4",
+    "input_border": "#555555",
+    "error": "#f14c4c",
+    "success": "#4ec9b0",
+    "warning": "#cca700",
+    "number_line_bg": "#1e1e1e",
+    "number_line_fg": "#858585",
+    "scrollbar_bg": "#1e1e1e",
+    "scrollbar_handle": "#424242",
+    "line_highlight_color" : "#3c3c3c"
+}
