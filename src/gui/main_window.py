@@ -48,5 +48,5 @@ def init_app():
     window.show()
 
     window.apply_file_test("./test.scs")
-    window.code_editor.code_editor.test_parse()
+    # window.code_editor.code_editor.test_parse()
     sys.exit(app.exec())
