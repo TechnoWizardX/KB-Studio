@@ -2,9 +2,7 @@ QMainWindow, QWidget {
     background-color: {{bg}};
     color: {{fg}};
 }
-QPlainTextEdit {
-    font-size: 12pt;
-}
+
 QFrame {
     background-color: {{frame_bg}};
     border: 1px solid {{border}};
@@ -15,6 +13,7 @@ QTextEdit, QPlainTextEdit {
     color: {{fg}};
     selection-background-color: {{hover}};
     border: 1px solid {{border}};
+    font-size: 12pt;
 }
 
 QTreeView {

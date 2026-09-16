@@ -2,9 +2,6 @@ QMainWindow, QWidget {
     background-color: {{bg}};
     color: {{fg}};
 }
-QPlainTextEdit {
-    font-size: 12pt;
-}
 QWidget#lineNumberArea {
     background-color: transparent
 }
@@ -18,6 +15,7 @@ QTextEdit, QPlainTextEdit {
     color: {{fg}};
     selection-background-color: {{hover}};
     border: 1px solid {{border}};
+    font-size: 12pt;
 }
 
 QTreeView {

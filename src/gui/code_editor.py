@@ -4,7 +4,7 @@ from PySide6.QtGui import QColor, QPainter, QKeySequence, QShortcut
 import sys 
 from pathlib import Path
 from src.utils.theme_manager import ThemeManager
-from src.core import signals
+from src.core.signals import signals
 from src.lark_syntax.parser import SCSParser
 from lark.exceptions import UnexpectedToken
 
@@ -23,8 +23,8 @@ class CodeEditorWidget(QFrame):
         self.code_editor = CodeEditor()
         self.splitter.addWidget(self.code_editor)
 
-        self.terminal = Terminal()
-        self.splitter.addWidget(self.terminal)
+        self.dev_panel_widget = DevPanelWidget()
+        self.splitter.addWidget(self.dev_panel_widget)
 
         self.splitter.setSizes([700, 300])
 
@@ -37,24 +37,32 @@ class DevPanelWidget(QWidget):
         super().__init__()
         self.main_layout = QVBoxLayout(self)
 
-        self.buttons_layout = QHBoxLayout(self)
+        self.buttons_layout = QHBoxLayout()
         self.main_layout.addLayout(self.buttons_layout)
 
         self.problems_btn = QPushButton("Problems")
         self.problems_btn.setMaximumSize(80, 40)
         self.buttons_layout.addWidget(self.problems_btn)
 
-        
+        self.problems_wgt = ProblemsWidget()
 
         self.terminal_btn = QPushButton("Terminal")
         self.terminal_btn.setMaximumSize(80, 40)
         self.buttons_layout.addWidget(self.terminal_btn)
 
+        self.terminal = Terminal()
+
         self.stacked_widget = QStackedWidget()
 
-        self.main_layout.addWidget(self.stacked_widget)
+        self.stacked_widget.addWidget(self.problems_wgt)
+        self.stacked_widget.addWidget(self.terminal)
 
         self.buttons_layout.addStretch(1)
+        self.main_layout.addWidget(self.stacked_widget)
+
+        self.problems_btn.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.problems_wgt))
+        self.terminal_btn.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.terminal))
+        
 
 class ProblemsWidget(QTextEdit):
     def __init__(self):
@@ -62,8 +70,10 @@ class ProblemsWidget(QTextEdit):
         self.setReadOnly(True)
         signals.gaps_appeared.connect(self.appear_gaps)
         signals.gaps_resolved.connect(self.gaps_resolved)
+
     def appear_gaps(self, error):
         self.setText(error)
+
     def gaps_resolved(self):
         self.setText("There is no syntax issues")
 
@@ -88,17 +98,13 @@ class CodeEditor(QPlainTextEdit):
         self.updateRequest.connect(self.update_line_area)
         self.cursorPositionChanged.connect(self.highlight_current_line)
 
-        self.init_parsing()
-
-    def init_parsing(self):
         self.parse_timer = QTimer()
-
+        self.parse_timer.timeout.connect(self.parse_syntax)
         self.parse_timer.setSingleShot(True)
 
         self.parse_timer.setInterval(1500)
 
         self.textChanged.connect(self.reset_parse_timer)
-        self.parse_syntax()
 
     def reset_parse_timer(self):
         self.parse_timer.start()
@@ -163,12 +169,13 @@ class CodeEditor(QPlainTextEdit):
             signals.gaps_resolved.emit()
             tree = self.parser.parse(text)
         except UnexpectedToken as e:
-            signals.gaps_appeared.emit(e)
-            return f"Unexpected Token: {e}"
+            error = f"Unexpected Token: {e}"
+            signals.gaps_appeared.emit(error)
+            return error
         except Exception as e:
-            signals.gaps_appeared.emit(e)
-            print (f"Unexpected exception: {e}!")
-            return 
+            error = f"Unexpected Token: {e}"
+            signals.gaps_appeared.emit(error)
+            return error
 
         return tree
 
