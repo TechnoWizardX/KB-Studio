@@ -36,18 +36,21 @@ class DevPanelWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
 
         self.buttons_layout = QHBoxLayout()
+        self.buttons_layout.setContentsMargins(0, 0, 0, 0)
+        self.buttons_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.main_layout.addLayout(self.buttons_layout)
 
         self.problems_btn = QPushButton("Problems")
-        self.problems_btn.setMaximumSize(80, 40)
+        self.problems_btn.setMaximumSize(100, 60)
         self.buttons_layout.addWidget(self.problems_btn)
 
         self.problems_wgt = ProblemsWidget()
 
         self.terminal_btn = QPushButton("Terminal")
-        self.terminal_btn.setMaximumSize(80, 40)
+        self.terminal_btn.setMaximumSize(100, 60)
         self.buttons_layout.addWidget(self.terminal_btn)
 
         self.terminal = Terminal()
@@ -57,7 +60,6 @@ class DevPanelWidget(QWidget):
         self.stacked_widget.addWidget(self.problems_wgt)
         self.stacked_widget.addWidget(self.terminal)
 
-        self.buttons_layout.addStretch(1)
         self.main_layout.addWidget(self.stacked_widget)
 
         self.problems_btn.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.problems_wgt))

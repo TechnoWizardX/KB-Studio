@@ -1,5 +1,8 @@
 DEFAULT_CONFIG = {
-    "working_dir": "",
+    "project_dir": "",
+    "selected_dir" : "",
+    "selected_file" : "",
+    "last_viewed_file" : "",
     "theme": "dark",
     "grammar_path": "",
     "recent_projects": [],

@@ -1,13 +1,25 @@
 QMainWindow, QWidget {
     background-color: {{bg}};
     color: {{fg}};
+    font-size: 12pt;
 }
 
 QFrame {
     background-color: {{frame_bg}};
     border: 1px solid {{border}};
 }
-
+QPushButton#IconButton{
+    border: 0px;
+    background-color: transparent;
+}
+QPushButton#IconButton:hover {
+    background-color: {{hover}};
+}
+QLabel#TransparentLabel{
+    border: 0px;
+    background-color: transparent;
+    font-size:12pt;
+}
 QTextEdit, QPlainTextEdit {
     background-color: {{editor_bg}};
     color: {{fg}};

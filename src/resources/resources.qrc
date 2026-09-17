@@ -1,0 +1,7 @@
+<!DOCTYPE RCC><RCC version="1.0">
+  <qresource prefix="icons">
+    <file>icons/file_add.svg</file>
+    <file>icons/folder_add.svg</file>
+    <file>icons/folder_search.svg</file>
+  </qresource>
+</RCC>
