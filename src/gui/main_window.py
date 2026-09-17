@@ -31,9 +31,10 @@ class MainWindow(QMainWindow):
         self.main_splitter.addWidget(self.code_editor)
         self.main_splitter.setSizes([300, 700])
 
-    def apply_file_test(self, file_path):
-        self.code_editor.apply_file(file_path)
-
+    def closeEvent(self, event):
+        super().closeEvent(event)
+        ConfigManager.set("selected_dir", "")
+        ConfigManager.set("selected_file", "")
 
 def init_app():
     app = QApplication(sys.argv)
@@ -48,7 +49,5 @@ def init_app():
     app.setStyleSheet(qss)
     window = MainWindow(theme_manager)
     window.show()
-
-    window.apply_file_test("./test.scs")
     # window.code_editor.code_editor.test_parse()
     sys.exit(app.exec())

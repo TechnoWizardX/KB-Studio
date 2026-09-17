@@ -6,5 +6,8 @@ class Signals(QObject):
 
     gaps_resolved = Signal()
 
+    selected_new_project_folder = Signal(str)
+
+    selected_new_file = Signal(str)
 
 signals = Signals()

@@ -6,6 +6,7 @@ from pathlib import Path
 from src.utils.theme_manager import ThemeManager
 from src.core.signals import signals
 from src.lark_syntax.parser import SCSParser
+from src.utils.config_manager import ConfigManager
 from lark.exceptions import UnexpectedToken
 
 
@@ -104,9 +105,13 @@ class CodeEditor(QPlainTextEdit):
         self.parse_timer.timeout.connect(self.parse_syntax)
         self.parse_timer.setSingleShot(True)
 
-        self.parse_timer.setInterval(1500)
+        self.parse_timer.setInterval(1000)
 
         self.textChanged.connect(self.reset_parse_timer)
+
+
+        self.apply_file(ConfigManager.get("last_viewed_file"))
+        signals.selected_new_file.connect(self.apply_file)
 
     def reset_parse_timer(self):
         self.parse_timer.start()
@@ -157,10 +162,15 @@ class CodeEditor(QPlainTextEdit):
         self.update_line_area_width()
     
     def apply_file(self, file_path : str | Path):
-        with open(file_path, "r", encoding="utf-8") as f:
-            text = f.read()
-            self.setPlainText(text)
-            print(f"Inserted next file: {text}")
+        if file_path:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    text = f.read()
+                    self.setPlainText(text)
+                    print(f"Inserted next file: {text}")
+            except Exception as e:
+                print("Cannot load file")
+                self.setPlainText("")
 
     def parse_syntax(self):
         text = self.toPlainText()
