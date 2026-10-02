@@ -8,6 +8,7 @@ from src.utils.config_manager import ConfigManager
 class DirectoryTreeViewWidget(QFrame):
     def __init__(self, parent: QWidget = None, root_path : str = None):
         super().__init__()
+        ConfigManager.set("selected_file", ConfigManager.get("last_viewed_file"))
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
 

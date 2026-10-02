@@ -89,11 +89,14 @@ class CodeEditor(QPlainTextEdit):
 
         self.line_number_area = LineNumberArea(self)
 
-        self.shorcut_zoom_in = QShortcut(QKeySequence("Ctrl++"), self)
-        self.shorcut_zoom_in.activated.connect(self.zoom_in)
+        self.shortcut_zoom_in = QShortcut(QKeySequence("Ctrl++"), self)
+        self.shortcut_zoom_in.activated.connect(self.zoom_in)
 
-        self.shorcut_zoom_in = QShortcut(QKeySequence("Ctrl+-"), self)
-        self.shorcut_zoom_in.activated.connect(self.zoom_out)
+        self.shortcut_zoom_out = QShortcut(QKeySequence("Ctrl+-"), self)
+        self.shortcut_zoom_out.activated.connect(self.zoom_out)
+
+        self.shorcut_save_changes = QShortcut(QKeySequence("Ctrl+S"), self)
+        self.shorcut_save_changes.activated.connect(self.save_changes)
 
         self.line_highlight = ThemeManager.get_color("line_highlight_color")
 
@@ -171,6 +174,15 @@ class CodeEditor(QPlainTextEdit):
             except Exception as e:
                 print("Cannot load file")
                 self.setPlainText("")
+
+    def save_changes(self):
+        text = self.toPlainText()
+        file_path = ConfigManager.get("selected_file")
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except Exception as e:
+            print(f"ERROR: {e}")
 
     def parse_syntax(self):
         text = self.toPlainText()
