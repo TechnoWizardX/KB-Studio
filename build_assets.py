@@ -8,7 +8,7 @@ def build():
     qrc_path = os.path.join(base_dir, "src", "resources", "resources.qrc")
     py_path = os.path.join(base_dir, "src", "resources", "resources_rc.py")
 
-    qrc_content = ['<!DOCTYPE RCC><RCC version="1.0">', '  <qresource prefix="icons">']
+    qrc_content = ['<!DOCTYPE RCC><RCC version="1.0">', '  <qresource prefix="/">']
     
     if os.path.exists(icons_dir):
         for file in os.listdir(icons_dir):
