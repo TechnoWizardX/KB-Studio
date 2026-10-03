@@ -1,6 +1,10 @@
-from PySide6.QtWidgets import QTreeView, QFileSystemModel, QFrame, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFileDialog
+from PySide6.QtWidgets import (QTreeView, QFileSystemModel, QFrame, QWidget, QVBoxLayout, 
+                               QHBoxLayout, QLabel, QPushButton, QFileDialog, QLineEdit,
+                               QMessageBox)
 from PySide6.QtCore import QStandardPaths, QSize
 from PySide6.QtGui import QIcon
+
+from pathlib import Path
 
 from src.resources.icons import Icons
 from src.core.signals import signals
@@ -46,33 +50,41 @@ class DirectoryTreeViewWidget(QFrame):
         
         self.mk_dir_btn = QPushButton()
         self.mk_dir_btn.setIcon(Icons.FOLDER_ADD)
-        self.mk_dir_btn.setObjectName("TransparentLabel")
+        self.mk_dir_btn.setObjectName("IconButton")
         self.mk_dir_btn.setFixedSize(QSize(30, 30))
         self.mk_dir_btn.setIconSize(QSize(30, 30))
         self.project_struct_manage_layout.addWidget(self.mk_dir_btn)
+        self.mk_dir_btn.clicked.connect(self.make_new_dir)
 
         self.mk_file_btn = QPushButton()
         self.mk_file_btn.setIcon(Icons.FILE_ADD)
-        self.mk_file_btn.setObjectName("TransparentLabel")
+        self.mk_file_btn.setObjectName("IconButton")
         self.mk_file_btn.setFixedSize(QSize(30, 30))
         self.mk_file_btn.setIconSize(QSize(30, 30))
         self.project_struct_manage_layout.addWidget(self.mk_file_btn)
+        self.mk_file_btn.clicked.connect(self.make_new_file)
+
+        self.name_edit = QLineEdit()
+        self.name_edit.hide()
+        self.name_edit.returnPressed.connect(self.create_file_or_dir)
+        self.creation_mode = None
+        self.project_manage_layout.insertWidget(1, self.name_edit)
 
         self.project_struct_manage_layout.addStretch(0)
 
-    def on_selection_changed(self, index):
+    def on_selection_changed(self, index) -> None:
         if not self.dir_view.tree_model.isDir(index):
             ConfigManager.set("selected_file", self.dir_view.tree_model.filePath(index))
         else:
             ConfigManager.set("selected_dir", self.dir_view.tree_model.filePath(index))
 
-    def on_double_clicked(self, index):
+    def on_double_clicked(self, index) -> None:
         if not self.dir_view.tree_model.isDir(index):
             path = self.dir_view.tree_model.filePath(index)
             signals.selected_new_file.emit(path)
             ConfigManager.set("last_viewed_file", path)
             
-    def select_project(self):
+    def select_project(self) -> None:
         new_folder = QFileDialog.getExistingDirectory(
             self,
             caption="Select new project folder",
@@ -88,11 +100,61 @@ class DirectoryTreeViewWidget(QFrame):
         else:
             print("Choose declined")
 
-    def make_new_file(self, name):
-        pass
-    def make_new_dir(self, name):
-        pass
-    
+    def make_new_file(self) -> None:
+        self.creation_mode = "file"
+        self.name_edit.setText("")
+        self.name_edit.setPlaceholderText("Enter file name...")
+        self.name_edit.show()
+        self.name_edit.setFocus()
+
+    def make_new_dir(self) -> None:
+        self.creation_mode = "dir"
+        self.name_edit.setText("")
+        self.name_edit.setPlaceholderText("Enter dir name...")
+        self.name_edit.show()
+        self.name_edit.setFocus()
+
+    def execute_create_dir(self, name: str) -> None:
+        try:
+            selected_dir = ConfigManager.get("selected_dir")
+            if selected_dir:
+                path = selected_dir
+            else:
+                path = ConfigManager.get("project_dir")
+            full_path = Path(path) / name
+
+            if full_path.exists():
+                QMessageBox.warning(self, "Error", f"Directory with name '{name}' already exists!")
+                return
+            
+            full_path.mkdir(parents=True, exist_ok=True)
+            print(full_path)
+        except Exception as e:
+            print(f"ERROR: {e}")
+
+    def execute_make_file(self, name: str) -> None:
+        try:
+            selected_dir = ConfigManager.get("selected_dir")
+            if selected_dir:
+                path = selected_dir
+            else:
+                path = ConfigManager.get("project_dir")
+            full_path = Path(path) / name
+            if full_path.exists():
+                QMessageBox.warning(self, "Error", f"File with name '{name}' already exists!")  
+                return
+            full_path.touch()
+        except Exception as e:
+            print(f"ERROR {e}")
+
+    def create_file_or_dir(self):
+        name = self.name_edit.text()
+        self.name_edit.hide()
+        if self.creation_mode == "dir":
+            self.execute_create_dir(name)
+        elif self.creation_mode == "file":
+            self.execute_make_file(name)
+            
 class DirectoryTreeView(QTreeView):
     def __init__(self, root_path : str = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.HomeLocation)):
         super().__init__()
