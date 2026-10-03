@@ -1,111 +1,97 @@
-from lark import Lark, UnexpectedToken, UnexpectedCharacters
-import sys
+"""Тесты SCs-парсера.
 
-GRAMMAR = r"""
-start: sentence+
+В отличие от прежней версии, грамматика НЕ дублируется здесь, а берётся
+из src/lark_syntax/grammar.lark через SCSParser — иначе тесты проверяют
+не тот парсер, что использует редактор.
 
-sentence: element edge element sentence_suffix END_SENTENCE
-
-sentence_suffix: ":" element_list
-               |
-
-element: primary_element sub_structure?
-       | sub_structure
-
-primary_element: identifier
-               | compound
-               | set
-               | link
-               | sc_structure
-               | unnamed
-               | string_literal
-
-compound: "(" element edge element ")"
-
-sub_structure: "(*" internal_sentence* "*)"
-
-internal_sentence: edge element end_of_construction
-
-set: "{" element_list? "}"
-
-link: "[" link_content? "]"
-link_content: /[^\]]+/
-
-sc_structure: "[*" sentence* "*]"
-
-unnamed: "..."
-
-identifier: visibility? ID
-
-visibility: "_" | "." | ".."
-
-string_literal: STRING
-
-element_list: element (SEP element)*
-
-end_of_construction: SEP
-                   | END_SENTENCE
-
-edge: "<-"
-    | "->"
-    | "<="
-    | "=>"
-    | "<-_"
-    | "_->"
-    | "_=>"
-    | "<="
-
-ID: /[a-zA-Z_][a-zA-Z0-9_]*/
-STRING: /"([^"\\]|\\.)*"/
-
-SEP: ";"
-END_SENTENCE: ";;"
-
-WS: /[ \t\n\r]+/
-COMMENT: /\/\/[^\n]*/
-
-%ignore WS
-%ignore COMMENT
+Запуск:  python parse_test.py
 """
+import re
+import sys
+from pathlib import Path
 
+from lark.exceptions import UnexpectedToken, UnexpectedCharacters
+
+from src.lark_syntax.parser import SCSParser
+
+# (код, причина) — причина указывается только для кейсов, которые ДОЛЖНЫ падать
 TEST_CASES = {
-    "Level 1 - Basic triples": [
+    "Level 2 - коннекторы и compound": [
         "concept_A -> concept_B;;",
         "concept_C <- concept_D;;",
         "nrel_example => concept_E;;",
         "concept_F <= nrel_example;;",
         "a -> b;; c -> d;; e -> f;;",
-    ],
-    "Level 2 - Positive edges and compound": [
         'nrel_image -> (fruit => "file://apple.png");;',
         "nrel_main_idtf -> (concept_A => [apple]);;",
         "set -> (item -> subitem);;",
         "a -> (b -> c);;",
         "nrel_example -> (x <- y);;",
+        "(a -> b) -> (c <- d);;",
+        "(a -> b);;",
+        "(a -> b: c);;",
+        "banana <- fruit;;",
     ],
-    "Level 3 - Quintuple (attributes)": [
+    "Level 2 - расширенная таблица коннекторов": [
+        "a <=> b;;",
+        "a _<=> b;;",
+        "a ..> b;;",
+        "a <.. b;;",
+        "a -|> b;;",
+        "a <|- b;;",
+        "a /> b;;",
+        "a </ b;;",
+        "a ~> b;;",
+        "a %|> b;;",
+        "a .> b;;",
+        "a _.> b;;",
+        "a ??|> b;;",
+        "a ?=> b;;",
+        "a ?-> b;;",
+        "a _..> b;;",
+        "a _%|> b;;",
+        "a <?? b;;",
+        "a </? b;;",
+        "a ?=> b;;",
+    ],
+    "Level 3 - квинтупли (атрибуты : и ::)": [
         "a -> c: b;;",
         "a => c: b; d; e;;",
         "nrel_idtf -> concept: [text];;",
         "set -> item: sub1; sub2; sub3;;",
         "a <- c: b; d;;",
         "nrel_example -> concept: (a -> b); (c -> d); [text];;",
+        "a -> c:: b;;",
+        "a <=> c: d:: b;;",
+        "apple => nrel_image: \"file://apple.png\";;",
+        "a -> c: d: b: e;;",
     ],
-    "Level 4 - Negative/variable edges": [
+    "Level 4 - цепочки через ;": [
+        "fruit -> apple; -> banana;;",
+        "a -> c: d: b; -> e; -> g: f;;",
+        "set -> a; b; c;;",
+        "x\n-> y;\n<- z;\n=> h: r;;",
+        "scs\n<- test;\n=> test2;;",
+        "@a -> b; -> c;;",
+    ],
+    "Level 4/5 - переменные и негативные дуги": [
         "a <-_ b;;",
         "a _-> b;;",
         "a _=> b;;",
         "nrel_example _-> (a -> b);;",
     ],
-    "Level 5 - Substructures (*...*)": [
+    "Level 5 - подструктуры (*...*)": [
         "set -> item (* -> subitem;; *);;",
         "concept_A -> concept_B (* <- concept_C;; => concept_D;; *);;",
         "a -> b (* -> c;; <- d;; *);;",
         "complex -> node (* -> child1;; -> child2;; *);;",
         "a -> b (* -> c;; *) (* -> d;; *);;",
         "parent -> child (* -> grandchild;; <- _parent;; *);;",
+        "a -> b (* => r: [x];; *);;",
+        "set -> attr: item (* -> subitem;; -> attr2: subitem2;; *);;",
+        "sc_element => nrel_main_idtf: [sc-element] (* <- lang_en;; *);;",
     ],
-    "Level 6 - Sets, SC-structures, links as elements": [
+    "Level 6 - множества, структуры, линки": [
         "a -> { concept_A; concept_B; concept_C };;",
         "{ a; b; c } -> set;;",
         "a -> [some text content];;",
@@ -113,131 +99,181 @@ TEST_CASES = {
         "a -> [* b -> c;; d -> e;; *];;",
         "a -> [* [* nested -> inner;; *] -> outer;; *];;",
         "outer -> [* _var -> .local;; [text];; *];;",
+        "root -> [* leaf -> value;; branch -> { l1; l2 };; *];;",
+        "x -> [^\"int: 5\"];;",
+        "x -> [^\"float: 435.2346\"];;",
+        "x -> [this is a\n multiline text];;",
+        "x -> [see [1]];;",
+        "x -> [];;",
+        "meta -> [* _subject -> _object (* => attr: val;; *) ;; *];;",
+        # множества уровня 6
+        "@set = { element1; attr2: element2 };;",
+        "@oriented = < element1; attr2: element2 >;;",
+        "x -> { a; b: c };;",
+        "x -> < a; b >;;",
+        "{\n  a;\n  b (* -> c;; *);\n  [text]\n} -> container;;",
     ],
-    "Visibility prefixes": [
+    "Алиасы (@name = value;;)": [
+        '@file_alias = "file://...";;',
+        "@link_alias = [];;",
+        "@element_alias = element_idtf;;",
+        "@arc_alias = (c -> b);;",
+        "@alias_to_alias = @element_alias;;",
+        "@s = { a; b };;",
+        "@st = [* set -> item;; *];;",
+        "@a -> b;;",
+        "@arc_alias -> x;;",
+    ],
+    "Имена и visibility (#names)": [
         "_var -> _other;;",
         ".hidden -> visible;;",
         "..local -> global;;",
         "_x -> .y;;",
-        "..a -> _b (* -> ..c;; *);;",
-    ],
-    "Unnamed objects": [
+        ".._x -> y;;",
         "... -> concept_A;;",
         "set -> ...;;",
         "... -> ...;;",
-        "a -> b (* ... -> c;; *);;",
         "{ ...; a; _b } -> set;;",
+        "my_node -> y;;",
     ],
-    "Strings with escaping": [
+    "Кейноды-типы": [
+        "a <- sc_node_class;;",
+        "a _-> _b;;",
+        "_b <- sc_node_material;;",
+        "_x => nrel_y: t;;",
+        "nrel_y <- sc_node_non_role_relation;;",
+    ],
+    "Строки с экранированием": [
         "a -> [simple text];;",
         'a -> "hello world";;',
         'a -> "say \\"hello\\" to me";;',
         'a -> "line1\\nline2";;',
         'nrel_idtf -> (concept => "multi\\nline\\ttext");;',
+        'a -> "file://apple.png";;',
     ],
-    "Comments and whitespace": [
+    "Комменты и пробелы": [
         "a -> b;; // comment",
         "// start\na -> b;;\n// middle\nc -> d;;\n// end",
         "a   ->   b   ;;",
         "a->b;;",
         "/* not a comment */ a -> b;;",
+        "/* Multiline\n * comment\n */\nfruit -> apple;;",
+        "/* a */ x -> y; // b\n z;;",
+        "",
     ],
-    "Deep nesting and combinations": [
-        "nrel_image -> (fruit => \"file://apple.png\");;\nnrel_main_idtf -> (fruit => [apple]);;",
+    "Глубокая вложенность": [
+        'nrel_image -> (fruit => "file://apple.png");;\nnrel_main_idtf -> (fruit => [apple]);;',
         "set -> item (*\n    -> child1;;\n    -> child2 (* -> grandchild;; *);;\n*);;",
-        "{\n    a;\n    b (* -> c;; *);\n    [text]\n} -> container;;",
         "_input -> processor (*\n    -> stage1;;\n    -> stage2 (* -> substage;; *);;\n    -> output;;\n*);;",
-        "a -> (b -> (c -> d);;);;",
-        "root -> [* leaf -> value;; branch -> { leaf1; leaf2 };; *];;",
-        "meta -> [* _subject -> _object (* => attr: val;; *) ;; *];;",
     ],
-    "Should fail - syntax errors": [
-        ("a b;;", "no edge between elements"),
-        ("a -> b;", "single ; instead of ;;"),
-        ("-> a b;;", "no subject"),
-        ("a -> ;;", "no object"),
-        ("a -> b c;;", "two objects without separator"),
-        ("(* a -> b;; *)", "substructure without context"),
-        ("a -> b :;;", "empty list after :"),
-        ("[", "unclosed bracket"),
-        ('"unclosed string', "unclosed string"),
-        ("a -> (* b;; *)", "internal sentence without edge"),
-        ("{ a; b; c };;", "set without edge is not a sentence"),
-        ("[* a -> b;; *];;", "sc-structure without edge is not a sentence"),
-        ("a -> (* => c: b;; *)", "quintuple inside substructure"),
-        ("a -> (* ... -> b;; *)", "subject inside substructure (implied)"),
+    "Должно НЕ парситься": [
+        ("a b;;", "нет коннектора между элементами"),
+        ("a -> b;", "одиночный ; вместо ;;"),
+        ("-> a b;;", "нет subject"),
+        ("a -> ;;", "нет object"),
+        ("a -> b c;;", "два object без разделителя"),
+        ("a -> b :;;", "пустой атрибут после :"),
+        ("[", "незакрытая скобка линка"),
+        ('"unclosed string', "незакрытая строка"),
+        ("a -> (* b;; *)", "внутреннее предложение без коннектора"),
+        ("a -> (* ... -> b;; *)", "subject внутри (* *), он подразумевается"),
+        ("a -> (b -> (c -> d);;);;", ";; внутри compound — по спеке там нет ;;"),
+        ("fruit apple;;", "два идентификатора подряд"),
+        ("!!!", "мусор"),
+        ("a -> b;;;", "лишняя ;"),
+        ("a -> (b;;", "незакрытая скобка compound"),
+        ("@ = b;;", "алиас без имени"),
+        ("@a =;;", "алиас без значения"),
+        ("a <=> c: ;;", "пустой атрибут"),
     ],
 }
 
-def run_tests():
+
+def _edge_connectors() -> list:
+    """Все строковые литералы терминала EDGE_T из src/lark_syntax/grammar.lark."""
+    grammar = Path(__file__).parent / "src" / "lark_syntax" / "grammar.lark"
+    text = grammar.read_text(encoding="utf-8")
+    block = re.search(r"EDGE_T:(.*?)\n\nID:", text, re.S)
+    if not block:
+        raise RuntimeError("терминал EDGE_T не найден в grammar.lark")
+    return re.findall(r'"((?:[^"\\]|\\.)*)"', block.group(1))
+
+
+def run_tests() -> int:
     print("=" * 60)
-    print("   SCs-CODE: COMPLEX TEST SUITE (FIXED)")
+    print("   SCs-CODE: TEST SUITE (против grammar.lark)")
     print("=" * 60)
 
     try:
-        parser = Lark(GRAMMAR, parser="lalr", start="start")
-        print("Grammar compiled (LALR)")
+        parser = SCSParser()
+        print("Грамматика загружена: src/lark_syntax/grammar.lark (LALR)")
     except Exception as e:
-        print(f"Grammar compilation error: {e}")
-        sys.exit(1)
+        print(f"Ошибка компиляции грамматики: {e}")
+        return 1
 
-    total_pass = 0
-    total_fail = 0
-    total_expected_fail = 0
+    total_pass = total_rejected = total_fail = 0
 
     for group_name, cases in TEST_CASES.items():
-        print(f"\n{'-' * 60}")
-        print(f"  {group_name}")
-        print(f"{'-' * 60}")
+        print(f"\n{'-' * 60}\n  {group_name}\n{'-' * 60}")
 
         for case in cases:
             if isinstance(case, tuple):
                 code, reason = case
                 should_fail = True
             else:
-                code = case
-                reason = ""
-                should_fail = False
+                code, reason, should_fail = case, "", False
 
-            code_clean = code.strip()
-            if not code_clean:
-                continue
+            if not code.strip() and not should_fail:
+                # пустой файл — отдельный кейс, парсится в позитивном списке
+                if code != "":
+                    continue
 
             try:
-                tree = parser.parse(code_clean)
+                parser.parse(code)
                 if should_fail:
-                    print(f"  WARN: Expected failure but parsed:")
-                    print(f"     Code: {code_clean[:60]}...")
-                    print(f"     Reason: {reason}")
+                    print(f"  FAIL ожидалась ошибка: {code.strip()[:45]!r}")
+                    print(f"       причина: {reason}")
                     total_fail += 1
                 else:
-                    print(f"  OK  {code_clean[:55]}...")
+                    print(f"  OK   {code.strip()[:52] or '(пусто)'!r}")
                     total_pass += 1
             except (UnexpectedToken, UnexpectedCharacters, Exception) as e:
                 if should_fail:
-                    print(f"  OK  Correctly rejected: {code_clean[:40]}...")
-                    print(f"      ({reason})")
-                    total_expected_fail += 1
+                    print(f"  OK   отклонено: {code.strip()[:40]!r}")
+                    print(f"       ({reason})")
+                    total_rejected += 1
                 else:
-                    print(f"  FAIL Unexpected error:")
-                    print(f"     Code: {code_clean[:60]}...")
-                    print(f"     Error: {str(e)[:80]}")
+                    print(f"  FAIL неожиданная ошибка: {code.strip()[:45]!r}")
+                    print(f"       {str(e).splitlines()[0][:90]}")
                     total_fail += 1
 
-    print(f"\n{'=' * 60}")
-    print(f"   RESULTS")
-    print(f"{'=' * 60}")
-    print(f"  Parsed successfully:     {total_pass}")
-    print(f"  Correctly rejected:      {total_expected_fail}")
-    print(f"  Unexpected errors:       {total_fail}")
-    print(f"  Total tests:             {total_pass + total_expected_fail + total_fail}")
+    # Сплошная проверка таблицы коннекторов: каждый терминал EDGE_T из
+    # grammar.lark обязан разбираться в предложении вида `a <conn> b;;`.
+    print(f"\n{'-' * 60}\n  Вся таблица EDGE_T (сплошная проверка)\n{'-' * 60}")
+    conns = _edge_connectors()
+    conn_fail = 0
+    for c in conns:
+        try:
+            parser.parse(f"a {c} b;;")
+            total_pass += 1
+        except Exception as e:
+            conn_fail += 1
+            total_fail += 1
+            print(f"  FAIL {c!r}: {str(e).splitlines()[0][:70]}")
+    print(f"  Коннекторов в EDGE_T: {len(conns)}, упавших: {conn_fail}")
+    if conn_fail == 0:
+        total_pass += 0  # каждый уже посчитан выше
+        print(f"  OK   все {len(conns)} коннекторов разбираются")
 
-    if total_fail == 0:
-        print(f"\n  ALL TESTS PASSED!")
-    else:
-        print(f"\n  ISSUES: {total_fail} unexpected errors")
+    print(f"\n{'=' * 60}\n   RESULTS\n{'=' * 60}")
+    print(f"  Разобрано:                {total_pass}")
+    print(f"  Корректно отклонено:      {total_rejected}")
+    print(f"  Ошибок:                   {total_fail}")
+    print(f"  Всего:                    {total_pass + total_rejected + total_fail}")
+    print(f"\n  {'ALL TESTS PASSED!' if total_fail == 0 else f'ISSUES: {total_fail}'}")
+    print("=" * 60)
+    return 0 if total_fail == 0 else 1
 
-    print(f"{'=' * 60}")
 
 if __name__ == "__main__":
-    run_tests()
+    sys.exit(run_tests())

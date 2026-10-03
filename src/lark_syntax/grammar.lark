@@ -1,83 +1,182 @@
-// SCs-code grammar for Lark (LALR)
-// Based on OSTIS SCs specification (levels 1–6)
+start: sentence*
 
-start: sentence+
+sentence: sentence_body END_SENTENCE
 
-// Предложение всегда заканчивается ;;
-sentence: element edge element sentence_suffix END_SENTENCE
+sentence_body: element chain
+             | element
+             | alias_decl
 
-// Quintuple: a -> c: b; d; e;;  |  Обычная тройка: a -> b;;
-sentence_suffix: ":" element_list
-               |
+alias_decl: ALIAS EQUALS element
 
-// Элемент может иметь подструктуру или быть ею сам
-element: primary_element sub_structure?
+chain: head_tail (SEP tail)*
+head_tail: edge element attr*
+tail: edge? element attr*
+
+attr: COLON element
+    | DCOLON element
+
+element: primary sub_structure*
        | sub_structure
 
-primary_element: identifier
-               | compound
-               | set
-               | link
-               | sc_structure
-               | unnamed
-               | string_literal
+primary: identifier
+       | compound
+       | set
+       | oriented_set
+       | link
+       | sc_structure
+       | unnamed
+       | string_literal
+       | alias_ref
 
-// Compound: (subject -> object)
-compound: "(" element edge element ")"
+compound: "(" element edge element attr* ")"
 
-// Подструктура: (* edge element [end] ... *)
-// Субъект подразумевается — это объект, к которому привязана подструктура
-sub_structure: "(*" internal_sentence* "*)"
+sub_structure: "(*" internal* "*)"
+internal: chain end_of_construction
 
-// Внутреннее предложение
-internal_sentence: edge element end_of_construction
+set: "{" set_body? "}"
 
-// Множество: { a; b; c }
-set: "{" element_list? "}"
+oriented_set: "<" set_body? ">"
 
-// SC-link: [произвольный текст] — НЕ может быть пустым
+set_body: set_item (SEP set_item)* SEP?
+set_item: element attr*
+
 link: "[" link_content? "]"
-link_content: /[^\]]+/
+link_content: /(?:[^\[\]]|\[[^\[\]]*\])+/
 
-// SC-структура: [* sentence ... *]
 sc_structure: "[*" sentence* "*]"
 
-// Безымянный объект
 unnamed: "..."
 
-// Идентификатор с опциональным visibility-префиксом
-identifier: visibility? ID
+alias_ref: ALIAS
 
+identifier: visibility? ID
 visibility: "_" | "." | ".."
 
 string_literal: STRING
 
-// Список элементов, разделённых ;
-element_list: element (SEP element)*
-
-// Конец конструкции: ; или ;;
 end_of_construction: SEP
                    | END_SENTENCE
 
-// Дуги
-edge: "<-"
-    | "->"
-    | "<="
+edge: EDGE_T
+
+EDGE_T: "?<=>"
+    | "?=>"
+    | "<=?"
+    | "?.?>"
+    | "<?.?"
+    | "<=>"
+    | "_<=>"
     | "=>"
-    | "<-_"
-    | "_->"
+    | "<="
     | "_=>"
     | "<=_"
+    | "??>"
+    | "<??"
+    | "_??>"
+    | "<??_"
+    | "?-?>"
+    | "<?-?"
+    | "?..?>"
+    | "<?..?"
+    | "-?>"
+    | "<?-"
+    | "_-?>"
+    | "<?-_"
+    | "..?>"
+    | "<?.."
+    | "_..?>"
+    | "<?.._"
+    | "?~?>"
+    | "<?~?"
+    | "?%?>"
+    | "<?%?"
+    | "~?>"
+    | "<?~"
+    | "_~?>"
+    | "<?~_"
+    | "%?>"
+    | "<?%"
+    | "_%?>"
+    | "<?%_"
+    | "??|>"
+    | "<|??"
+    | "?/>"
+    | "</?"
+    | ".>"
+    | "<."
+    | "_.>"
+    | "<._"
+    | "?->"
+    | "<-?"
+    | "?..>"
+    | "<..?"
+    | "?~>"
+    | "<~?"
+    | "?%>"
+    | "<%?"
+    | "->"
+    | "<-"
+    | "..>"
+    | "<.."
+    | "~>"
+    | "<~"
+    | "%>"
+    | "<%"
+    | "_->"
+    | "<-_"
+    | "_..>"
+    | "<.._"
+    | "_~>"
+    | "<~_"
+    | "_%>"
+    | "<%_"
+    | "?|>"
+    | "<|?"
+    | "_?|>"
+    | "<|?_"
+    | "?-|>"
+    | "<|-?"
+    | "?..|>"
+    | "<|..?"
+    | "?~|>"
+    | "<|~?"
+    | "?%|>"
+    | "<|%?"
+    | "-|>"
+    | "<|-"
+    | "..|>"
+    | "<|.."
+    | "~|>"
+    | "<|~"
+    | "%|>"
+    | "<|%"
+    | "_-|>"
+    | "<|-_"
+    | "_..|>"
+    | "<|.._"
+    | "_~|>"
+    | "<|~_"
+    | "_%|>"
+    | "<|%_"
+    | "/>"
+    | "</"
+    | "_/>"
+    | "</_"
 
-// Токены
 ID: /[a-zA-Z_][a-zA-Z0-9_]*/
+ALIAS: /@[a-zA-Z_][a-zA-Z0-9_]*/
 STRING: /"([^"\\]|\\.)*"/
 
+EQUALS: "="
+COLON: ":"
+DCOLON: "::"
 SEP: ";"
 END_SENTENCE: ";;"
 
 WS: /[ \t\n\r]+/
 COMMENT: /\/\/[^\n]*/
+COMMENT_BLOCK: /\/\*(?s:.)*?\*\//
 
 %ignore WS
 %ignore COMMENT
+%ignore COMMENT_BLOCK
