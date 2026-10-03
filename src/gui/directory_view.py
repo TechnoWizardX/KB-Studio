@@ -19,26 +19,46 @@ class DirectoryTreeViewWidget(QFrame):
         self.dir_view.doubleClicked.connect(self.on_double_clicked)
 
         self.project_manage_layout = QVBoxLayout()
-        self.project_dir_manage_layout = QHBoxLayout()
-        self.project_manage_layout.addLayout(self.project_dir_manage_layout)
+        self.project_struct_manage_layout = QHBoxLayout()
+        self.project_manage_layout.addLayout(self.project_struct_manage_layout)
 
         self.project_dir_label = QLabel(text=root_path)
         self.project_dir_label.setObjectName("TransparentLabel")
         
-
         self.select_project_dir_btn = QPushButton()
         self.select_project_dir_btn.setObjectName("IconButton")
         self.select_project_dir_btn.setIcon(Icons.FOLDER_SEARCH)
-        self.select_project_dir_btn.setIconSize(QSize(25, 25))
+        self.select_project_dir_btn.setIconSize(QSize(30, 30))
         self.select_project_dir_btn.setFixedSize(QSize(30, 30))
         self.select_project_dir_btn.clicked.connect(self.select_project)
         
-        self.project_dir_manage_layout.addWidget(self.select_project_dir_btn)
-        self.project_dir_manage_layout.addWidget(self.project_dir_label)
+        self.project_struct_manage_layout.addWidget(self.select_project_dir_btn)
+
+        self.project_manage_layout.addWidget(self.project_dir_label)
 
 
         self.main_layout.addLayout(self.project_manage_layout)
         self.main_layout.addWidget(self.dir_view)
+
+        #------------------------------------------------------------------------------
+        #Mkdir, Mkfile, name edit
+        #------------------------------------------------------------------------------
+        
+        self.mk_dir_btn = QPushButton()
+        self.mk_dir_btn.setIcon(Icons.FOLDER_ADD)
+        self.mk_dir_btn.setObjectName("TransparentLabel")
+        self.mk_dir_btn.setFixedSize(QSize(30, 30))
+        self.mk_dir_btn.setIconSize(QSize(30, 30))
+        self.project_struct_manage_layout.addWidget(self.mk_dir_btn)
+
+        self.mk_file_btn = QPushButton()
+        self.mk_file_btn.setIcon(Icons.FILE_ADD)
+        self.mk_file_btn.setObjectName("TransparentLabel")
+        self.mk_file_btn.setFixedSize(QSize(30, 30))
+        self.mk_file_btn.setIconSize(QSize(30, 30))
+        self.project_struct_manage_layout.addWidget(self.mk_file_btn)
+
+        self.project_struct_manage_layout.addStretch(0)
 
     def on_selection_changed(self, index):
         if not self.dir_view.tree_model.isDir(index):
@@ -67,7 +87,12 @@ class DirectoryTreeViewWidget(QFrame):
             self.project_dir_label.setText(new_folder)
         else:
             print("Choose declined")
-            
+
+    def make_new_file(self, name):
+        pass
+    def make_new_dir(self, name):
+        pass
+    
 class DirectoryTreeView(QTreeView):
     def __init__(self, root_path : str = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.HomeLocation)):
         super().__init__()
