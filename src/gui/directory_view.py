@@ -32,6 +32,7 @@ class DirectoryTreeViewWidget(QFrame):
         self.project_manage_layout.addLayout(self.project_struct_manage_layout)
 
         self.project_dir_label = QLabel(text=root_path)
+        self.project_dir_label.setWordWrap(True)
         self.project_dir_label.setObjectName("TransparentLabel")
         
         self.select_project_dir_btn = QPushButton()
