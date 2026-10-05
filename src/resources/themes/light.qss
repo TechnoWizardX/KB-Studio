@@ -4,10 +4,17 @@ QMainWindow, QWidget {
     font-size: 12pt;
 }
 
+QWidget#lineNumberArea {
+    background-color: {{number_line_bg}};
+    color: {{number_line_fg}};
+    border-right: 1px solid {{border}};
+}
+
 QFrame {
     background-color: {{frame_bg}};
     border: 1px solid {{border}};
 }
+
 QPushButton#IconButton{
     border: 0px;
     background-color: transparent;
@@ -15,11 +22,13 @@ QPushButton#IconButton{
 QPushButton#IconButton:hover {
     background-color: {{hover}};
 }
+
 QLabel#TransparentLabel{
     border: 0px;
     background-color: transparent;
     font-size:12pt;
 }
+
 QTextEdit, QPlainTextEdit {
     background-color: {{editor_bg}};
     color: {{fg}};
@@ -33,9 +42,12 @@ QTreeView {
     color: {{fg}};
     border: 1px solid {{border}};
     alternate-background-color: {{nav_bg}};
+    font-size: 12pt;
 }
+
 QTreeView::item:selected {
     background-color: {{hover}};
+    color: {{bg}};
 }
 
 QLineEdit {
@@ -47,13 +59,19 @@ QLineEdit {
 
 QDockWidget {
     background-color: {{frame_bg}};
+    margin: 4px;
 }
 QDockWidget::title {
     color: {{fg}};
     padding: 4px;
+    background-color: {{nav_bg}};
+    border: 1px solid {{border}};
+    border-radius: 3px;
 }
 QDockWidget::title-bar {
     background-color: {{nav_bg}};
+    border: 1px solid {{border}};
+    border-radius: 3px 3px 0 0;
 }
 
 QMenuBar {
@@ -79,26 +97,37 @@ QToolBar::separator {
 QStatusBar {
     background-color: {{accent}};
     color: #ffffff;
+    padding: 4px;
 }
 
 QSplitter::handle {
     background-color: {{border}};
+    height: 2px;
+    width: 2px;
 }
 QSplitter::handle:hover {
     background-color: {{accent}};
+    height: 2px;
+    width: 2px;
 }
 
 QTabWidget::pane {
     border: 1px solid {{border}};
+    top: 2px;
 }
+
 QTabBar::tab {
     background-color: {{nav_bg}};
     color: {{fg}};
     padding: 6px 12px;
     border: 1px solid {{border}};
+    border-bottom: none;
+    margin-right: 2px;
 }
+
 QTabBar::tab:selected {
     background-color: {{bg}};
+    color: {{fg}};
 }
 
 QPushButton {
@@ -106,6 +135,7 @@ QPushButton {
     color: {{fg}};
     border: 1px solid {{border}};
     padding: 6px 12px;
+    border-radius: 3px;
 }
 QPushButton:hover {
     background-color: {{hover}};
@@ -113,28 +143,38 @@ QPushButton:hover {
 QPushButton#btn-error {
     background-color: {{error}};
     color: #ffffff;
+    border: 1px solid {{border}};
+    border-radius: 3px;
 }
 QPushButton#btn-success {
     background-color: {{success}};
     color: #000000;
+    border: 1px solid {{border}};
+    border-radius: 3px;
 }
 QPushButton#btn-warning {
     background-color: {{warning}};
     color: #000000;
+    border: 1px solid {{border}};
+    border-radius: 3px;
 }
 QPushButton#btn-accent {
     background-color: {{accent}};
     color: #ffffff;
+    border: 1px solid {{border}};
+    border-radius: 3px;
 }
 
 QScrollBar:vertical {
     background: {{scrollbar_bg}};
     width: 12px;
+    margin: 0px;
 }
 QScrollBar::handle:vertical {
     background: {{scrollbar_handle}};
     min-height: 20px;
     border-radius: 4px;
+    margin: 2px;
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0px;
@@ -143,12 +183,51 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 QScrollBar:horizontal {
     background: {{scrollbar_bg}};
     height: 12px;
+    margin: 0px;
 }
 QScrollBar::handle:horizontal {
     background: {{scrollbar_handle}};
     min-width: 20px;
     border-radius: 4px;
+    margin: 2px;
 }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     width: 0px;
+}
+
+QMenu {
+    background-color: {{frame_bg}};
+    color: {{fg}};
+    border: 1px solid {{border}};
+    padding: 4px;
+}
+QMenu::item {
+    padding: 5px 25px 5px 20px;
+    margin: 1px 4px;
+}
+QMenu::item:selected {
+    background-color: {{hover}};
+    color: {{bg}};
+    border-radius: 3px;
+}
+QMenu::separator {
+    height: 1px;
+    background-color: {{border}};
+    margin: 5px 8px;
+}
+
+QComboBox {
+    background-color: {{input_bg}};
+    color: {{input_fg}};
+    border: 1px solid {{input_border}};
+    padding: 4px;
+    border-radius: 3px;
+}
+QComboBox::drop-down {
+    border: none;
+}
+QComboBox QAbstractItemView {
+    background-color: {{frame_bg}};
+    color: {{fg}};
+    border: 1px solid {{border}};
 }
