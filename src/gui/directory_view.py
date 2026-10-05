@@ -178,13 +178,13 @@ class DirectoryTreeView(QTreeView):
         self.root_path = root_path
         self.tree_model = QFileSystemModel()
         self.tree_model.setRootPath(self.root_path)
+        self.tree_model.setReadOnly(False)
         
         self.setModel(self.tree_model)
         self.setRootIndex(self.tree_model.index(root_path))
         for column in range(1, self.model().columnCount()):
             self.setColumnHidden(column, True)
         self.setAnimated(True)
-
         signals.selected_new_project_folder.connect(self.update_project_dir)
 
     def update_project_dir(self, new_path):
@@ -192,6 +192,15 @@ class DirectoryTreeView(QTreeView):
         self.setModel(self.tree_model)
         self.setRootIndex(self.tree_model.index(new_path))
         self.root_path = new_path
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_F2:
+            current_index = self.currentIndex()
+            if current_index.isValid():
+                self.edit(current_index)
+                
+        super().keyPressEvent(event)
+
 
 class ProjectContextMenu(QMenu):
     def __init__(self, tree: DirectoryTreeView, index: QModelIndex):
@@ -221,11 +230,20 @@ class ProjectContextMenu(QMenu):
             delete_act.triggered.connect(self._delete_act)
             self.addAction(delete_act)
 
+            rename_act = QAction("Rename", self)
+            rename_act.setShortcut("F2")
+            rename_act.triggered.connect(self._rename_act)
+            self.addAction(rename_act)
+
     def _create_file_act(self):
         signals.create_file_act.emit()
 
     def _create_dir_act(self):
         signals.create_dir_act.emit()
+
+    def _rename_act(self):
+        if self.index.isValid():
+            self.tree.edit(self.index)
 
     def _delete_act(self):
         path = Path(self.target_path)
