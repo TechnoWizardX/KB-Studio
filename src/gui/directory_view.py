@@ -1,24 +1,29 @@
 from PySide6.QtWidgets import (QTreeView, QFileSystemModel, QFrame, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QPushButton, QFileDialog, QLineEdit,
-                               QMessageBox)
-from PySide6.QtCore import QStandardPaths, QSize
-from PySide6.QtGui import QIcon
+                               QMessageBox, QMenu)
+from PySide6.QtCore import QStandardPaths, QSize, QPoint, QModelIndex, Qt
+from PySide6.QtGui import QIcon, QAction
 
 from pathlib import Path
+import shutil
 
 from src.resources.icons import Icons
 from src.core.signals import signals
 from src.utils.config_manager import ConfigManager
+
+
 class DirectoryTreeViewWidget(QFrame):
     def __init__(self, parent: QWidget = None, root_path : str = None):
         super().__init__()
+
         ConfigManager.set("selected_file", ConfigManager.get("last_viewed_file"))
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
 
         self.project_path = root_path
         self.dir_view = DirectoryTreeView(root_path=self.project_path)
-
+        self.dir_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.dir_view.customContextMenuRequested.connect(self.on_tree_context_menu)
         self.dir_view.clicked.connect(self.on_selection_changed)
         self.dir_view.doubleClicked.connect(self.on_double_clicked)
 
@@ -71,6 +76,18 @@ class DirectoryTreeViewWidget(QFrame):
         self.project_manage_layout.insertWidget(1, self.name_edit)
 
         self.project_struct_manage_layout.addStretch(0)
+
+        signals.create_file_act.connect(self.make_new_file)
+        signals.create_dir_act.connect(self.make_new_dir)
+        signals.execute_create_file.connect(self.execute_create_file)
+        signals.execute_create_dir.connect(self.execute_create_dir)
+
+    def on_tree_context_menu(self, point: QPoint):
+        index = self.dir_view.indexAt(point)
+
+        menu = ProjectContextMenu(tree = self.dir_view, index=index)
+
+        menu.exec(self.dir_view.mapToGlobal(point))
 
     def on_selection_changed(self, index) -> None:
         if not self.dir_view.tree_model.isDir(index):
@@ -132,7 +149,7 @@ class DirectoryTreeViewWidget(QFrame):
         except Exception as e:
             print(f"ERROR: {e}")
 
-    def execute_make_file(self, name: str) -> None:
+    def execute_create_file(self, name: str) -> None:
         try:
             selected_dir = ConfigManager.get("selected_dir")
             if selected_dir:
@@ -147,14 +164,14 @@ class DirectoryTreeViewWidget(QFrame):
         except Exception as e:
             print(f"ERROR {e}")
 
-    def create_file_or_dir(self):
+    def create_file_or_dir(self) -> None:
         name = self.name_edit.text()
         self.name_edit.hide()
         if self.creation_mode == "dir":
-            self.execute_create_dir(name)
+            signals.execute_create_dir.emit(name)
         elif self.creation_mode == "file":
-            self.execute_make_file(name)
-            
+            signals.execute_create_file.emit(name)
+
 class DirectoryTreeView(QTreeView):
     def __init__(self, root_path : str = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.HomeLocation)):
         super().__init__()
@@ -170,9 +187,60 @@ class DirectoryTreeView(QTreeView):
 
         signals.selected_new_project_folder.connect(self.update_project_dir)
 
-        
     def update_project_dir(self, new_path):
         self.tree_model.setRootPath(new_path)
         self.setModel(self.tree_model)
         self.setRootIndex(self.tree_model.index(new_path))
         self.root_path = new_path
+
+class ProjectContextMenu(QMenu):
+    def __init__(self, tree: DirectoryTreeView, index: QModelIndex):
+        super().__init__()
+        self.tree = tree
+        self.index = index
+        self.model = tree.tree_model
+
+        self.target_path = self.model.filePath(index) if self.index.isValid() else None
+        self.is_directory = self.model.isDir(index) if self.index.isValid else False
+
+        self.setObjectName("ContextMenu")
+        self._build_menu()
+
+    def _build_menu(self):
+        create_file_act = QAction("Create new file", self)
+        create_file_act.triggered.connect(self._create_file_act)
+        self.addAction(create_file_act)
+
+        create_dir_act = QAction("Create new dir", self)
+        create_dir_act.triggered.connect(self._create_dir_act)
+        self.addAction(create_dir_act)
+
+        if self.target_path:
+            self.addSeparator()
+            delete_act = QAction("Delete", self)
+            delete_act.triggered.connect(self._delete_act)
+            self.addAction(delete_act)
+
+    def _create_file_act(self):
+        signals.create_file_act.emit()
+
+    def _create_dir_act(self):
+        signals.create_dir_act.emit()
+
+    def _delete_act(self):
+        path = Path(self.target_path)
+        reply = QMessageBox.question(self.window(), "Confirmation", f"Are you sure to delete: \n{path}?", 
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        match reply:
+            case QMessageBox.StandardButton.Yes:
+                try:
+                    if self.is_directory:
+                        shutil.rmtree(path)
+                    else:
+                        path.unlink()
+                except Exception as e:
+                    QMessageBox.critical(self.window(), "Ошибка", f"Не удалось удалить:\n{e}")
+            case QMessageBox.StandardButton.Cancel:
+                pass
+            case _:
+                pass

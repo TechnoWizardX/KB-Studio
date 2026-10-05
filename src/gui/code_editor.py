@@ -33,6 +33,8 @@ class CodeEditorWidget(QFrame):
     def apply_file(self, file_path : str | Path):
         self.code_editor.apply_file(file_path)
 
+
+
 class DevPanelWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -67,6 +69,7 @@ class DevPanelWidget(QWidget):
         self.terminal_btn.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.terminal))
         
 
+
 class ProblemsWidget(QTextEdit):
     def __init__(self):
         super().__init__()
@@ -79,6 +82,7 @@ class ProblemsWidget(QTextEdit):
 
     def gaps_resolved(self):
         self.setText("There is no syntax issues")
+
 
     
 class CodeEditor(QPlainTextEdit):
@@ -213,6 +217,8 @@ class CodeEditor(QPlainTextEdit):
             cr.height()
         )
 
+
+
 class LineNumberArea(QWidget):
     def __init__(self, editor : CodeEditor):
         super().__init__(editor)
@@ -246,6 +252,8 @@ class LineNumberArea(QWidget):
             top    = bottom
             bottom = top + self.editor.blockBoundingRect(block).height()
             blockNumber += 1
+
+
 
 class Terminal(QFrame):
 

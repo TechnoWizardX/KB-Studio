@@ -10,4 +10,10 @@ class Signals(QObject):
 
     selected_new_file = Signal(str)
 
+    create_file_act = Signal()
+    create_dir_act = Signal()
+
+    execute_create_file = Signal(str)
+    execute_create_dir = Signal(str)
+
 signals = Signals()
