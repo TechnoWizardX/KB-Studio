@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 import re
 from src.resources.data import DEFAULT_THEME_CONFIG
+from src.resources.icons import Icons
 
 class ThemeManager():
 
@@ -50,6 +51,9 @@ class ThemeManager():
 
         qss = cls._render_qss(qss_template, cls.colors)
         cls.last_used_theme = name
+
+        icon_color = cls.colors.get("icon_fg", "#d4d4d4")
+        Icons.set_theme_color(icon_color)
         return qss
 
     @classmethod

@@ -18,5 +18,6 @@
     "number_line_fg": "#808080",
     "scrollbar_bg": "#1e1e1e",
     "scrollbar_handle": "#3a3a3c",
-    "line_highlight_color": "#2a2d36"
+    "line_highlight_color": "#2a2d36",
+    "icon_fg": "#d4d4d4"
 }

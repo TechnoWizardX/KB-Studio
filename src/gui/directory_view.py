@@ -37,7 +37,7 @@ class DirectoryTreeViewWidget(QFrame):
         
         self.select_project_dir_btn = QPushButton()
         self.select_project_dir_btn.setObjectName("IconButton")
-        self.select_project_dir_btn.setIcon(Icons.FOLDER_SEARCH)
+        self.select_project_dir_btn.setIcon(Icons.folder_search())
         self.select_project_dir_btn.setIconSize(QSize(30, 30))
         self.select_project_dir_btn.setFixedSize(QSize(30, 30))
         self.select_project_dir_btn.clicked.connect(self.select_project)
@@ -55,7 +55,7 @@ class DirectoryTreeViewWidget(QFrame):
         #------------------------------------------------------------------------------
         
         self.mk_dir_btn = QPushButton()
-        self.mk_dir_btn.setIcon(Icons.FOLDER_ADD)
+        self.mk_dir_btn.setIcon(Icons.folder_add())
         self.mk_dir_btn.setObjectName("IconButton")
         self.mk_dir_btn.setFixedSize(QSize(30, 30))
         self.mk_dir_btn.setIconSize(QSize(30, 30))
@@ -63,7 +63,7 @@ class DirectoryTreeViewWidget(QFrame):
         self.mk_dir_btn.clicked.connect(self.make_new_dir)
 
         self.mk_file_btn = QPushButton()
-        self.mk_file_btn.setIcon(Icons.FILE_ADD)
+        self.mk_file_btn.setIcon(Icons.file_add())
         self.mk_file_btn.setObjectName("IconButton")
         self.mk_file_btn.setFixedSize(QSize(30, 30))
         self.mk_file_btn.setIconSize(QSize(30, 30))
