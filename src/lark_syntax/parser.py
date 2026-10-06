@@ -23,7 +23,7 @@ class SCSParser:
             start='start',          
             propagate_positions=True,
             maybe_placeholders=False, 
-            cache=True            
+            cache=False            
         )
 
     def parse(self, text: str):

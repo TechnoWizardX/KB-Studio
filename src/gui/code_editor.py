@@ -7,6 +7,7 @@ from src.utils.theme_manager import ThemeManager
 from src.core.signals import signals
 from src.lark_syntax.parser import SCSParser
 from src.utils.config_manager import ConfigManager
+from src.gui.syntax_highlighter import SCSHighlighter
 from lark.exceptions import UnexpectedToken, UnexpectedCharacters, UnexpectedEOF, LexError, ParseError
 
 
@@ -104,6 +105,8 @@ class CodeEditor(QPlainTextEdit):
 
         self.line_highlight = ThemeManager.get_color("line_highlight_color")
 
+        self.highlighter = SCSHighlighter(self.document(), self.parser)
+
         self.blockCountChanged.connect(self.update_line_area_width)
         self.updateRequest.connect(self.update_line_area)
         self.cursorPositionChanged.connect(self.highlight_current_line)
@@ -119,6 +122,8 @@ class CodeEditor(QPlainTextEdit):
 
         self.apply_file(ConfigManager.get("last_viewed_file"))
         signals.selected_new_file.connect(self.apply_file)
+        
+        signals.theme_changed.connect(self.on_theme_changed)
 
     def reset_parse_timer(self):
         self.parse_timer.start()
@@ -192,13 +197,14 @@ class CodeEditor(QPlainTextEdit):
         text = self.toPlainText()
         if not text:
             signals.gaps_resolved.emit()
+            self.highlighter.clear_errors()
             return
-
         try:
             tree = self.parser.parse(text)
             signals.gaps_resolved.emit()
+            self.highlighter.clear_errors()
+            self.highlighter.refresh_tokens()
             return tree
-
         except UnexpectedToken as e:
             # Синтаксическая ошибка: неожиданный токен
             line = getattr(e, 'line', '?')
@@ -208,6 +214,7 @@ class CodeEditor(QPlainTextEdit):
             if expected:
                 error += f", expected: {', '.join(expected)}"
             signals.gaps_appeared.emit(error)
+            self._highlight_error_position(e)
 
         except UnexpectedCharacters as e:
             # Лексическая ошибка: недопустимый символ
@@ -216,6 +223,7 @@ class CodeEditor(QPlainTextEdit):
             char = getattr(e, 'char', '?')
             error = f"Line {line}, col {column}: invalid character '{char}'"
             signals.gaps_appeared.emit(error)
+            self._highlight_error_position(e)
 
         except UnexpectedEOF as e:
             # Неожиданный конец файла (незакрытые скобки и т.д.)
@@ -224,6 +232,7 @@ class CodeEditor(QPlainTextEdit):
             if expected:
                 error += f", expected: {', '.join(expected)}"
             signals.gaps_appeared.emit(error)
+            self._highlight_error_position(e)
 
         except LexError as e:
             # Ошибка токенизатора
@@ -237,6 +246,29 @@ class CodeEditor(QPlainTextEdit):
             import traceback
             traceback.print_exc()
             signals.gaps_appeared.emit(f"Internal parser error: {type(e).__name__}")
+
+    def _highlight_error_position(self, exception):
+        """Set error highlight position from Lark exception."""
+        # Lark exceptions have pos_in_stream for character position
+        pos = getattr(exception, 'pos_in_stream', None)
+        if pos is not None:
+            # Highlight a small range around the error
+            self.highlighter.set_error_positions([(pos, pos + 1)])
+        else:
+            self.highlighter.clear_errors()
+
+    def on_theme_changed(self, theme_name: str):
+        """Handle theme change - update highlighter colors."""
+        self.highlighter.set_theme(theme_name)
+        self.line_highlight = ThemeManager.get_color("line_highlight_color")
+        self.line_number_area.background = ThemeManager.get_color("editor_bg")
+        self.line_number_area.number_col = ThemeManager.get_color("number_line_fg")
+        self.line_number_area.update()
+        self.viewport().update()
+
+    def update_theme_colors(self):
+        """Public method to refresh theme colors."""
+        self.on_theme_changed(ConfigManager.get("theme"))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

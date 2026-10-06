@@ -3,6 +3,7 @@ import json
 import re
 from src.resources.data import DEFAULT_THEME_CONFIG
 from src.resources.icons import Icons
+from src.core.signals import signals
 
 
 class ThemeManager:
@@ -43,6 +44,9 @@ class ThemeManager:
 
         icon_color = cls.colors.get("icon_fg", "#d4d4d4")
         Icons.set_theme_color(icon_color)
+        
+        signals.theme_changed.emit(name)
+        
         return qss
 
     @classmethod

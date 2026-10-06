@@ -17,4 +17,7 @@ class Signals(QObject):
     execute_create_dir = Signal(str)
 
     delete_act = Signal()
+
+    theme_changed = Signal(str)
+
 signals = Signals()
