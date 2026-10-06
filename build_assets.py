@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 
 def build():
 
@@ -21,11 +22,17 @@ def build():
         f.write("\n".join(qrc_content))
     print("✓ resources.qrc успешно обновлен.")
     
+    rcc_path = os.path.join(os.path.dirname(sys.executable), "pyside6-rcc")
+    if not os.path.exists(rcc_path):
+        rcc_path = "pyside6-rcc"
+    
     try:
-        subprocess.run(["pyside6-rcc", qrc_path, "-o", py_path], check=True)
+        subprocess.run([rcc_path, qrc_path, "-o", py_path], check=True)
         print("✓ resources_rc.py успешно пересобран!")
     except FileNotFoundError:
         print("Ошибка: Убедитесь, что PySide6 установлен в вашем виртуальном окружении.")
+    except subprocess.CalledProcessError as e:
+        print(f"Ошибка при компиляции ресурсов: {e}")
 
 if __name__ == "__main__":
     build()
