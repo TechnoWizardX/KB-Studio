@@ -7,7 +7,7 @@ from src.utils.theme_manager import ThemeManager
 from src.core.signals import signals
 from src.lark_syntax.parser import SCSParser
 from src.utils.config_manager import ConfigManager
-from lark.exceptions import UnexpectedToken
+from lark.exceptions import UnexpectedToken, UnexpectedCharacters, UnexpectedEOF, LexError, ParseError
 
 
 class CodeEditorWidget(QFrame):
@@ -190,22 +190,53 @@ class CodeEditor(QPlainTextEdit):
 
     def parse_syntax(self):
         text = self.toPlainText()
-        print(f"Parse {text} ...")
         if not text:
-            return
-        try:
             signals.gaps_resolved.emit()
-            tree = self.parser.parse(text)
-        except UnexpectedToken as e:
-            error = f"Unexpected Token: {e}"
-            signals.gaps_appeared.emit(error)
-            return error
-        except Exception as e:
-            error = f"Unexpected Token: {e}"
-            signals.gaps_appeared.emit(error)
-            return error
+            return
 
-        return tree
+        try:
+            tree = self.parser.parse(text)
+            signals.gaps_resolved.emit()
+            return tree
+
+        except UnexpectedToken as e:
+            # Синтаксическая ошибка: неожиданный токен
+            line = getattr(e, 'line', '?')
+            column = getattr(e, 'column', '?')
+            expected = getattr(e, 'expected', [])
+            error = f"Line {line}, col {column}: unexpected token '{e.token}'"
+            if expected:
+                error += f", expected: {', '.join(expected)}"
+            signals.gaps_appeared.emit(error)
+
+        except UnexpectedCharacters as e:
+            # Лексическая ошибка: недопустимый символ
+            line = getattr(e, 'line', '?')
+            column = getattr(e, 'column', '?')
+            char = getattr(e, 'char', '?')
+            error = f"Line {line}, col {column}: invalid character '{char}'"
+            signals.gaps_appeared.emit(error)
+
+        except UnexpectedEOF as e:
+            # Неожиданный конец файла (незакрытые скобки и т.д.)
+            expected = getattr(e, 'expected', [])
+            error = f"Unexpected end of input"
+            if expected:
+                error += f", expected: {', '.join(expected)}"
+            signals.gaps_appeared.emit(error)
+
+        except LexError as e:
+            # Ошибка токенизатора
+            signals.gaps_appeared.emit(f"Lexer error: {e}")
+
+        except ParseError as e:
+            # Общая ошибка парсера (fallback)
+            signals.gaps_appeared.emit(f"Parse error: {e}")
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            signals.gaps_appeared.emit(f"Internal parser error: {type(e).__name__}")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -263,6 +294,11 @@ class Terminal(QFrame):
 
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
+        self.output.setTextInteractionFlags(   
+        Qt.TextInteractionFlag.TextSelectableByMouse |
+        Qt.TextInteractionFlag.TextSelectableByKeyboard |
+        Qt.TextInteractionFlag.LinksAccessibleByMouse
+        )
 
         self.input = QLineEdit()
         self.input.setPlaceholderText("Введите команду...")
@@ -275,6 +311,7 @@ class Terminal(QFrame):
         self.process = QProcess(self)
         self.process.readyReadStandardOutput.connect(self._on_output)
         self.process.readyReadStandardError.connect(self._on_error)
+        self.process.setWorkingDirectory(ConfigManager.get("project_dir"))
 
         shell = "powershell.exe" if sys.platform == "win32" else "bash"
         self.process.start(shell)
@@ -282,6 +319,8 @@ class Terminal(QFrame):
         self.input.returnPressed.connect(self._execute)
 
     def _execute(self):
+        if self.process.state() != QProcess.ProcessState.Running:
+            self.output.appendPlainText("[Terminal: shell not running]")
         cmd = self.input.text().strip()
         if not cmd:
             return
@@ -299,3 +338,11 @@ class Terminal(QFrame):
         self.output.insertPlainText(text)
         self.output.ensureCursorVisible()
 
+    def closeEvent(self, event):
+        if self.process.state() != QProcess.ProcessState.NotRunning:
+            self.process.terminate()
+        self.process.waitForFinished(1000)
+        if self.process.state() != QProcess.ProcessState.NotRunning:
+            self.process.kill()
+        super().closeEvent(event)
+    
