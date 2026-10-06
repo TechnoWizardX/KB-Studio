@@ -202,6 +202,19 @@ class DirectoryTreeView(QTreeView):
                 
         super().keyPressEvent(event)
 
+    def mouseDoubleClickEvent(self, event):
+            index = self.indexAt(event.position().toPoint())
+            if not index.isValid():
+                return
+            
+            if self.tree_model.isDir(index):
+                if self.isExpanded(index):
+                    self.collapse(index)
+                else:
+                    self.expand(index)
+            else:
+                self.doubleClicked.emit(index)
+    
 
 class ProjectContextMenu(QMenu):
     def __init__(self, tree: DirectoryTreeView, index: QModelIndex):

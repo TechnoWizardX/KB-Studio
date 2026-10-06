@@ -9,14 +9,16 @@ def build():
     qrc_path = os.path.join(base_dir, "src", "resources", "resources.qrc")
     py_path = os.path.join(base_dir, "src", "resources", "resources_rc.py")
 
-    qrc_content = ['<!DOCTYPE RCC><RCC version="1.0">', '  <qresource prefix="/">']
+    qrc_content = ['<!DOCTYPE RCC><RCC version="1.0">']
     
+    qrc_content.append('  <qresource prefix="/">')
     if os.path.exists(icons_dir):
-        for file in os.listdir(icons_dir):
+        for file in sorted(os.listdir(icons_dir)):
             if file.endswith('.svg') or file.endswith('.png'):
                 qrc_content.append(f'    <file>icons/{file}</file>')
-                
-    qrc_content.extend(['  </qresource>', '</RCC>'])
+    qrc_content.append('  </qresource>')
+    
+    qrc_content.append('</RCC>')
     
     with open(qrc_path, "w", encoding="utf-8") as f:
         f.write("\n".join(qrc_content))
