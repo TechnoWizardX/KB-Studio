@@ -28,29 +28,29 @@ primary: identifier
        | string_literal
        | alias_ref
 
-compound: "(" element edge element attr* ")"
+compound: LPAREN element edge element attr* RPAREN
 
-sub_structure: "(*" internal* "*)"
+sub_structure: LPAREN_STAR internal* STAR_RPAREN
 internal: chain end_of_construction
 
-set: "{" set_body? "}"
+set: LBRACE set_body? RBRACE
 
-oriented_set: "<" set_body? ">"
+oriented_set: LANGLE set_body? RANGLE
 
 set_body: set_item (SEP set_item)* SEP?
 set_item: element attr*
 
-link: "[" link_content? "]"
+link: LBRACKET link_content? RBRACKET
 link_content: /(?:[^\[\]]|\[[^\[\]]*\])+/
 
-sc_structure: "[*" sentence* "*]"
+sc_structure: LBRACKET_STAR sentence* STAR_RBRACKET
 
-unnamed: "..."
+unnamed: ELLIPSIS
 
 alias_ref: ALIAS
 
 identifier: visibility? ID
-visibility: "_" | "." | ".."
+visibility: UNDERSCORE | DOT | DOTDOT
 
 string_literal: STRING
 
@@ -163,6 +163,21 @@ EDGE_T: "?<=>"
     | "_/>"
     | "</_"
 
+# Explicit delimiter terminals for highlighting
+LPAREN: "("
+RPAREN: ")"
+LPAREN_STAR: "(*"
+STAR_RPAREN: "*)"
+LBRACE: "{"
+RBRACE: "}"
+LANGLE: "<"
+RANGLE: ">"
+LBRACKET: "["
+RBRACKET: "]"
+LBRACKET_STAR: "[*"
+STAR_RBRACKET: "*]"
+ELLIPSIS: "..."
+
 ID: /[a-zA-Z_][a-zA-Z0-9_]*/
 ALIAS: /@[a-zA-Z_][a-zA-Z0-9_]*/
 STRING: /"([^"\\]|\\.)*"/
@@ -172,6 +187,9 @@ COLON: ":"
 DCOLON: "::"
 SEP: ";"
 END_SENTENCE: ";;"
+UNDERSCORE: "_"
+DOT: "."
+DOTDOT: ".."
 
 WS: /[ \t\n\r]+/
 COMMENT: /\/\/[^\n]*/
