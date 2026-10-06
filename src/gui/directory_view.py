@@ -199,7 +199,27 @@ class DirectoryTreeView(QTreeView):
             current_index = self.currentIndex()
             if current_index.isValid():
                 self.edit(current_index)
-                
+
+        if event.key() == Qt.Key.Key_Delete:
+            current_index = self.currentIndex()
+            if current_index.isValid():
+                path = self.tree_model.filePath(current_index)
+                reply = QMessageBox.question(self.window(), "Confirmation", f"Are you sure to delete: \n{path}?", 
+                                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+                match reply:
+                    case QMessageBox.StandardButton.Yes:
+                        try:
+                            if self.tree_model.isDir(current_index):
+                                shutil.rmtree(path)
+                            else:
+                                path.unlink()
+                        except Exception as e:
+                            QMessageBox.critical(self.window(), "Ошибка", f"Не удалось удалить:\n{e}")
+                    case QMessageBox.StandardButton.Cancel:
+                        pass
+                    case _:
+                        pass
+
         super().keyPressEvent(event)
 
     def mouseDoubleClickEvent(self, event):
@@ -241,6 +261,7 @@ class ProjectContextMenu(QMenu):
         if self.target_path:
             self.addSeparator()
             delete_act = QAction("Delete", self)
+            delete_act.setShortcut("Del")
             delete_act.triggered.connect(self._delete_act)
             self.addAction(delete_act)
 

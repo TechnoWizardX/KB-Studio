@@ -16,4 +16,5 @@ class Signals(QObject):
     execute_create_file = Signal(str)
     execute_create_dir = Signal(str)
 
+    delete_act = Signal()
 signals = Signals()
