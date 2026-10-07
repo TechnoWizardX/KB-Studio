@@ -71,12 +71,13 @@ class DirectoryTreeViewWidget(QFrame):
         self.mk_file_btn.clicked.connect(self.make_new_file)
 
         self.name_edit = QLineEdit()
+        self.name_edit_status = False
         self.name_edit.hide()
         self.name_edit.returnPressed.connect(self.create_file_or_dir)
         self.creation_mode = None
         self.project_manage_layout.insertWidget(1, self.name_edit)
 
-        self.project_struct_manage_layout.addStretch(0)
+        self.project_struct_manage_layout.addStretch(1)
 
         signals.create_file_act.connect(self.make_new_file)
         signals.create_dir_act.connect(self.make_new_dir)
@@ -120,6 +121,7 @@ class DirectoryTreeViewWidget(QFrame):
 
     def make_new_file(self) -> None:
         self.creation_mode = "file"
+        self.name_edit_status = True
         self.name_edit.setText("")
         self.name_edit.setPlaceholderText("Enter file name...")
         self.name_edit.show()
@@ -127,6 +129,7 @@ class DirectoryTreeViewWidget(QFrame):
 
     def make_new_dir(self) -> None:
         self.creation_mode = "dir"
+        self.name_edit_status = True
         self.name_edit.setText("")
         self.name_edit.setPlaceholderText("Enter dir name...")
         self.name_edit.show()
@@ -142,7 +145,7 @@ class DirectoryTreeViewWidget(QFrame):
             full_path = Path(path) / name
 
             if full_path.exists():
-                QMessageBox.warning(self, "Error", f"Directory with name '{name}' already exists!")
+                QMessageBox.warning(self, "Error", f"File or directory with name '{name}' already exists!")
                 return
             
             full_path.mkdir(parents=True, exist_ok=True)
@@ -159,7 +162,7 @@ class DirectoryTreeViewWidget(QFrame):
                 path = ConfigManager.get("project_dir")
             full_path = Path(path) / name
             if full_path.exists():
-                QMessageBox.warning(self, "Error", f"File with name '{name}' already exists!")  
+                QMessageBox.warning(self, "Error", f"File or directory with name '{name}' already exists!")  
                 return
             full_path.touch()
         except Exception as e:
@@ -168,11 +171,18 @@ class DirectoryTreeViewWidget(QFrame):
     def create_file_or_dir(self) -> None:
         name = self.name_edit.text()
         self.name_edit.hide()
+        self.name_edit_status = False
         if self.creation_mode == "dir":
             signals.execute_create_dir.emit(name)
         elif self.creation_mode == "file":
             signals.execute_create_file.emit(name)
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.name_edit_status:
+            self.name_edit.hide()
+            self.name_edit_status = False
+            
+        super().keyPressEvent(event)
 class DirectoryTreeView(QTreeView):
     def __init__(self, root_path : str = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.HomeLocation)):
         super().__init__()
