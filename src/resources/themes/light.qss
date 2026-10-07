@@ -29,7 +29,7 @@ QFrame#codeEditorWidget {
 }
 QFrame#devPanelWidget {
     border-color: {{border}};
-    border-size: 1px;
+    border: 1px;
 }
 QFrame#Terminal {
     border-color: transparent;
