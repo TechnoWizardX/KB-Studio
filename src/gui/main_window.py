@@ -25,6 +25,7 @@ class MainWindow(QMainWindow):
         self.code_editor = CodeEditorWidget()
 
         self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setHandleWidth(5)
         self.main_layout.addWidget(self.main_splitter)
         
         self.main_splitter.addWidget(self.dir_view)

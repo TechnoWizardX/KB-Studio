@@ -15,11 +15,13 @@ class CodeEditorWidget(QFrame):
     def __init__(self, parent : QWidget = None):
         super().__init__(parent=parent)
 
+        self.setObjectName("codeEditorWidget")
         self.main_layout = QVBoxLayout()
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(self.main_layout)
 
         self.splitter = QSplitter(Qt.Vertical)
+        self.splitter.setHandleWidth(5)
         self.main_layout.addWidget(self.splitter)
 
         self.code_editor = CodeEditor()
@@ -36,11 +38,13 @@ class CodeEditorWidget(QFrame):
 
 
 
-class DevPanelWidget(QWidget):
+class DevPanelWidget(QFrame):
     def __init__(self):
         super().__init__()
+        self.setObjectName("devPanelWidget")
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
 
         self.buttons_layout = QHBoxLayout()
         self.buttons_layout.setContentsMargins(0, 0, 0, 0)
@@ -48,12 +52,14 @@ class DevPanelWidget(QWidget):
         self.main_layout.addLayout(self.buttons_layout)
 
         self.problems_btn = QPushButton("Problems")
+        self.problems_btn.setObjectName("devPanelBtn")
         self.problems_btn.setMaximumSize(100, 60)
         self.buttons_layout.addWidget(self.problems_btn)
 
         self.problems_wgt = ProblemsWidget()
 
         self.terminal_btn = QPushButton("Terminal")
+        self.terminal_btn.setObjectName("devPanelBtn")
         self.terminal_btn.setMaximumSize(100, 60)
         self.buttons_layout.addWidget(self.terminal_btn)
 
@@ -319,7 +325,7 @@ class LineNumberArea(QWidget):
 
 
 class Terminal(QFrame):
-
+    """This is terminal widget that allows users to execute shell commands within the application."""
     def __init__(self):
         super().__init__()
         self.setObjectName("terminal")

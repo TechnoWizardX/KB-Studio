@@ -24,6 +24,21 @@ QFrame {
     border: 1px solid {{border}};
     border-radius: 4px;
 }
+QFrame#codeEditorWidget {
+    border-color: transparent;
+}
+QFrame#devPanelWidget {
+    border-color: {{border}};
+    border-size: 1px;
+}
+QFrame#Terminal {
+    border-color: transparent;
+}
+
+/* ---- Dev Panel Buttons ------------------------------------ */
+QPushButton#devPanelBtn {
+    border-color: transparent;
+}
 
 /* ---- Icon Buttons (toolbar, etc.) ------------------------- */
 QPushButton#IconButton {
@@ -204,7 +219,7 @@ QStatusBar::item {
 
 /* ---- Splitter --------------------------------------------- */
 QSplitter::handle {
-    background-color: {{border}};
+    background-color: transparent;
     height: 1px;
     width: 1px;
 }
