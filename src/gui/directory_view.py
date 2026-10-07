@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QTreeView, QFileSystemModel, QFrame, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QPushButton, QFileDialog, QLineEdit,
-                               QMessageBox, QMenu)
+                               QMessageBox, QMenu, QFileIconProvider)
 from PySide6.QtCore import QStandardPaths, QSize, QPoint, QModelIndex, Qt
 from PySide6.QtGui import QIcon, QAction
 
@@ -180,14 +180,13 @@ class DirectoryTreeView(QTreeView):
         self.tree_model = QFileSystemModel()
         self.tree_model.setRootPath(self.root_path)
         self.tree_model.setReadOnly(False)
+        self.tree_model.setIconProvider(QFileIconProvider())
         
         self.setModel(self.tree_model)
         self.setRootIndex(self.tree_model.index(root_path))
         for column in range(1, self.model().columnCount()):
             self.setColumnHidden(column, True)
         self.setAnimated(True)
-        self.setIndentation(20)  
-        self.setExpandsOnDoubleClick(True)
         signals.selected_new_project_folder.connect(self.update_project_dir)
 
     def update_project_dir(self, new_path):
