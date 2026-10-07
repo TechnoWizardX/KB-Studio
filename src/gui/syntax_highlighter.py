@@ -9,14 +9,13 @@ class SCSHighlighter(QSyntaxHighlighter):
     """Syntax highlighter for SCs code - highlights ONLY brackets/delimiters and errors."""
 
     # Only bracket/delimiter tokens with distinct colors per type (dark theme)
-    # Muted, pleasant colors for dark theme - inspired by VS Code / One Dark
     BRACKET_COLORS_DARK = {
-        # Round brackets ( ) - warm orange/amber
-        'LPAREN': '#d49b4f',
-        'RPAREN': '#d49b4f',
-        # Sub-structure brackets (* *) - teal/cyan
-        'LPAREN_STAR': '#4db8c7',
-        'STAR_RPAREN': '#4db8c7',
+        # Round brackets ( ) - warm amber (warning color)
+        'LPAREN': '#cca700',
+        'RPAREN': '#cca700',
+        # Sub-structure brackets (* *) - teal/cyan (success color)
+        'LPAREN_STAR': '#4ec9b0',
+        'STAR_RPAREN': '#4ec9b0',
         # Square brackets [ ] - muted green
         'LBRACKET': '#7ab87a',
         'RBRACKET': '#7ab87a',
@@ -26,27 +25,28 @@ class SCSHighlighter(QSyntaxHighlighter):
         # Curly braces { } - warm yellow/gold
         'LBRACE': '#e5c07b',
         'RBRACE': '#e5c07b',
-        # Angle brackets < > - soft blue
-        'LANGLE': '#61afef',
-        'RANGLE': '#61afef',
+        # Angle brackets < > - accent blue
+        'LANGLE': '#007acc',
+        'RANGLE': '#007acc',
         # Ellipsis ... - muted purple
         'ELLIPSIS': '#b388d6',
     }
 
     # Light theme - distinct colors per bracket type
+    # Colors aligned with VS Code Light 2026 palette
     BRACKET_COLORS_LIGHT = {
-        'LPAREN': '#cc6600',      # dark orange
-        'RPAREN': '#cc6600',
-        'LPAREN_STAR': '#00aaaa', # dark cyan
-        'STAR_RPAREN': '#00aaaa',
+        'LPAREN': '#bf8803',      # warning amber
+        'RPAREN': '#bf8803',
+        'LPAREN_STAR': '#16825d', # success teal
+        'STAR_RPAREN': '#16825d',
         'LBRACKET': '#66aa00',    # dark green
         'RBRACKET': '#66aa00',
         'LBRACKET_STAR': '#cc00cc', # dark magenta
         'STAR_RBRACKET': '#cc00cc',
         'LBRACE': '#ccaa00',      # dark yellow
         'RBRACE': '#ccaa00',
-        'LANGLE': '#0066cc',      # dark blue
-        'RANGLE': '#0066cc',
+        'LANGLE': '#007acc',      # accent blue
+        'RANGLE': '#007acc',
         'ELLIPSIS': '#8800cc',    # dark purple
     }
 
@@ -58,7 +58,6 @@ class SCSHighlighter(QSyntaxHighlighter):
         self.parser = parser
         self._formats = {}
         self._error_format = QTextCharFormat()
-        self._error_format.setUnderlineColor(QColor('#f14c4c'))
         self._error_format.setUnderlineStyle(QTextCharFormat.UnderlineStyle.SpellCheckUnderline)
         self._error_positions = []  # List of (start, end) positions
         self._theme = 'dark'
@@ -68,15 +67,18 @@ class SCSHighlighter(QSyntaxHighlighter):
     def _build_formats(self):
         """Create QTextCharFormat for each bracket type based on current theme."""
         colors = self.BRACKET_COLORS_DARK if self._theme == 'dark' else self.BRACKET_COLORS_LIGHT
+        error_color = '#f14c4c' if self._theme == 'dark' else '#cd3131'
         
         self._formats.clear()
         for token_type, color in colors.items():
             fmt = QTextCharFormat()
             fmt.setForeground(QColor(color))
-            fmt.setFontWeight(QFont.Weight.Bold)
+            # Normal weight (not bold) for brackets
             self._formats[token_type] = fmt
         
-        # No default format - we don't highlight anything else
+        # Update error format with theme-appropriate color
+        self._error_format.setUnderlineColor(QColor(error_color))
+        
 
     def set_theme(self, theme_name: str):
         """Update highlighter colors for a new theme."""

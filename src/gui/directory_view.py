@@ -186,6 +186,8 @@ class DirectoryTreeView(QTreeView):
         for column in range(1, self.model().columnCount()):
             self.setColumnHidden(column, True)
         self.setAnimated(True)
+        self.setIndentation(20)  
+        self.setExpandsOnDoubleClick(True)
         signals.selected_new_project_folder.connect(self.update_project_dir)
 
     def update_project_dir(self, new_path):
