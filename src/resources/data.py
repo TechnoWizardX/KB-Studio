@@ -16,7 +16,7 @@ DEFAULT_CONFIG = {
             "provider" : "", 
             "model": "", 
             "base_url" : "",
-            "api_name" : ""
+            "api" : ""
         }
         ],
     "last_model" : {
@@ -24,7 +24,7 @@ DEFAULT_CONFIG = {
         "provider" : "", 
         "model": "", 
         "base_url" : "",
-        "api_name" : ""
+        "api" : ""
     }
 }
 

@@ -12,6 +12,10 @@ class ConfigManager():
     _current_config: dict[str, Any] = {}
 
     @classmethod
+    def get_str_config_path(cls):
+        return QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation)
+    
+    @classmethod
     def get_config_path(cls):
         config_dir = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
         return config_dir / "config.json"
