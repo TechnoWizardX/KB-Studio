@@ -5,7 +5,7 @@ from src.utils.config_manager import ConfigManager
 from src.utils.theme_manager import ThemeManager
 from src.gui.directory_view import DirectoryTreeViewWidget
 from src.gui.code_editor import CodeEditorWidget
-
+from src.gui.ai_chat import ChatBot
 
 class MainWindow(QMainWindow):
     def __init__(self, theme_manager: ThemeManager):
@@ -23,6 +23,7 @@ class MainWindow(QMainWindow):
         self.last_project = ConfigManager.get("project_dir")
         self.dir_view = DirectoryTreeViewWidget(root_path=self.last_project)
         self.code_editor = CodeEditorWidget()
+        self.chat_bot = ChatBot()
 
         self.main_splitter = QSplitter(Qt.Horizontal)
         self.main_splitter.setHandleWidth(5)
@@ -30,7 +31,8 @@ class MainWindow(QMainWindow):
         
         self.main_splitter.addWidget(self.dir_view)
         self.main_splitter.addWidget(self.code_editor)
-        self.main_splitter.setSizes([300, 700])
+        self.main_splitter.addWidget(self.chat_bot)
+        self.main_splitter.setSizes([300, 500, 200])
 
     def closeEvent(self, event):
         super().closeEvent(event)

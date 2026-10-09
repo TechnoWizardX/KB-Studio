@@ -10,6 +10,22 @@ DEFAULT_CONFIG = {
     "editor_font_size": 14,
     "file_encoding": "utf-8",
     "parser_cache": True,
+    "models" : [
+        {   
+            "display_name" : "",
+            "provider" : "", 
+            "model": "", 
+            "base_url" : "",
+            "api_name" : ""
+        }
+        ],
+    "last_model" : {
+        "display_name" : "",
+        "provider" : "", 
+        "model": "", 
+        "base_url" : "",
+        "api_name" : ""
+    }
 }
 
 DEFAULT_THEME_CONFIG = {

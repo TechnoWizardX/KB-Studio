@@ -49,3 +49,7 @@ class Icons:
     @classmethod
     def folder_search(cls) -> QIcon:
         return cls._get("folder_search", ":/icons/folder_search.svg")
+
+    @classmethod
+    def send(cls) -> QIcon:
+        return cls._get("send", ":/icons/send.svg")

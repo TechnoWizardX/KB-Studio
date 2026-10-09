@@ -17,7 +17,13 @@ QWidget#lineNumberArea {
     color: {{number_line_fg}};
     border-right: 1px solid {{border}};
 }
-
+/* ---- AI Chat ---------------------------------------------- */
+QTextEdit#chatBotInput {
+    border-color: transparent;
+}
+QFrame#chatSender {
+    background-color: {{editor_bg}};
+}
 /* ---- Frames ----------------------------------------------- */
 QFrame {
     background-color: {{frame_bg}};
