@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QSplitter, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QSplitter, QVBoxLayout, QMessageBox
 from PySide6.QtCore import Qt
 import sys
 from src.utils.config_manager import ConfigManager
@@ -6,6 +6,7 @@ from src.utils.theme_manager import ThemeManager
 from src.gui.directory_view import DirectoryTreeViewWidget
 from src.gui.code_editor import CodeEditorWidget
 from src.gui.ai_chat import ChatBot
+from src.core.signals import signals
 
 class MainWindow(QMainWindow):
     def __init__(self, theme_manager: ThemeManager):
@@ -33,6 +34,11 @@ class MainWindow(QMainWindow):
         self.main_splitter.addWidget(self.code_editor)
         self.main_splitter.addWidget(self.chat_bot)
         self.main_splitter.setSizes([300, 500, 200])
+
+        signals.error_occured.connect(self.show_error)
+
+    def show_error(self, error):
+        QMessageBox.critical(self, "ERROR", error)
 
     def closeEvent(self, event):
         super().closeEvent(event)

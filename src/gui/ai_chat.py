@@ -3,6 +3,7 @@ from PySide6.QtCore import QSize
 from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
 from src.core.ai_worker import send_request
+from src.core.crypto_manager import decrypt, encrypt
 class ChatBot(QFrame):
     def __init__(self):
         super().__init__()
@@ -11,7 +12,6 @@ class ChatBot(QFrame):
         print(f"last model: {self._display_name}")
         self._model = last_model.get("model")
         self._provider = last_model.get("provider")
-        self._api_name = last_model.get("api_name")
         self._base_url = last_model.get("base_url")
         self.models_list = ConfigManager.get("models")
 
@@ -41,6 +41,7 @@ class ChatBot(QFrame):
         self.send_btn.setIconSize(QSize(30, 30))
         self.send_btn.setFixedSize(QSize(30, 30))
         self.sender_bottom_layout.addWidget(self.send_btn)
+        self.send_btn.clicked.connect(self.send_request)
 
         self.models_combo_box = QComboBox()
         self.sender_bottom_layout.addWidget(self.models_combo_box)
@@ -54,6 +55,7 @@ class ChatBot(QFrame):
         if self.models_list:
             for model_data in self.models_list: 
                 display_name = model_data.get("display_name")
+                model_data.pop("api", None)
                 self.models_combo_box.addItem(model_data.get("display_name"), userData=model_data)
             last_index = self.models_combo_box.findText(self._display_name)
             self.models_combo_box.setCurrentIndex(last_index)
@@ -67,8 +69,14 @@ class ChatBot(QFrame):
             self._display_name = data.get("display_name")
             self._model = data.get("model")
             self._provider = data.get("provider")
-            self._api_name = data.get("api_name")
             self._base_url = data.get("base_url")
             ConfigManager.set("last_model", data)
+
     def send_request(self):
-        pass
+        for model in self.models_list:
+            if model.get("display_name") == self._display_name:
+                api = model.get("api")
+        decrypted_key = decrypt(api)
+        model = self._model
+        provider = self._providerя
+        
