@@ -22,5 +22,6 @@ class Signals(QObject):
 
     send_request = Signal(str, str, str, str, str, str, list)
     text_chunk_recieved = Signal(str)
+    generation_ended = Signal()
     error_occured = Signal(str)
 signals = Signals()

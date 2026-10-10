@@ -68,6 +68,8 @@ class AiWorker(QObject):
                 if chunk.choices and chunk.choices[0].delta.content is not None:
                     text_chunk = chunk.choices[0].delta.content
                     signals.text_chunk_recieved.emit(text_chunk)
-                    print()
+                    print(text_chunk)
+                    
+            signals.generation_ended.emit()
         except Exception as e:
             signals.error_occured.emit(f"AI request failed: {e}")

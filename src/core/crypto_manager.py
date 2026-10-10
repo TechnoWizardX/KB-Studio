@@ -38,4 +38,4 @@ def decrypt(string : str) -> str:
         return decrypted_bytes.decode("utf-8")
     except Exception as e:
         signals.error_occured.emit(str(e))
-    
+        return
