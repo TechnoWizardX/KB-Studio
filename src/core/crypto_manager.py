@@ -39,5 +39,3 @@ def decrypt(string : str) -> str:
     except Exception as e:
         signals.error_occured.emit(str(e))
     
-
-

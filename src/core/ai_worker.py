@@ -1,8 +1,9 @@
 from dotenv import load_dotenv
 from openai import OpenAI
 import os
-
+from PySide6.QtCore import QObject
 from src.core.signals import signals
+
 DEFAULT_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "openrouter/free"
 DEFAULT_SYSTEM_PROMPT = """
@@ -16,67 +17,57 @@ SC.n - представляет знания в виде множеств
 
 """
 
-class AiWorker():
+OLLAMA_URL = "http://localhost:11434/v1"
+
+
+class AiWorker(QObject):
     def __init__(self, api, model, provider, base_url):
+        super().__init__()
         self._model = model
         self.__api = api
         self._provider = provider
         self._base_url = base_url
-
-        self.open_ai_client = OpenAI()
-        signals.send_request.connect(self.send_request)
+        self.open_ai_client = None
         
-    def send_request(self, provider: str = "openai", base_url : str = DEFAULT_URL, model : str = DEFAULT_MODEL,
-                  api: str = "",  prompt : str = "", system_prompt : str = DEFAULT_SYSTEM_PROMPT, 
-                  files : list = []):
+    def send_request(self, provider: str = "openai", base_url: str = DEFAULT_URL, 
+                     model: str = DEFAULT_MODEL, api: str = "", prompt: str = "", 
+                     system_prompt: str = DEFAULT_SYSTEM_PROMPT, files: list = []):
         messages = [
-            { 
-                "role" : "system",
-                "content" : system_prompt
-            },
-            {
-                "role" : "user",
-                "content" : prompt
-            }
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
         ]
-        if provider.lower() != "ollama":
-            if self._model != model:
-                if self._provider != provider:
-                    self.open_ai_client = OpenAI(api_key=api,
-                                                base_url=self._base_url
-                                                )
-                    self._model = model
-                    self._provider = provider
-                    self._base_url = base_url
-                    self.__api = api
-            
-                if not api:
-                    signals.error_occured.emit("There's no API key for current model")
-                    return
+        
+        is_ollama = provider.lower() == "ollama"
+        target_url = OLLAMA_URL if is_ollama else base_url
+        target_api = "ollama" if is_ollama else api
+        
+        need_recreate = (
+            self.open_ai_client is None or
+            self._provider != provider or
+            self._model != model or
+            self._base_url != target_url
+        )
+        
+        if need_recreate:
+            if not is_ollama and not api:
+                signals.error_occured.emit("There's no API key for current model")
+                return
+            self.open_ai_client = OpenAI(api_key=target_api, base_url=target_url)
+            self._model = model
+            self._provider = provider
+            self._base_url = target_url
+            self.__api = api
+        
+        try:
             stream = self.open_ai_client.chat.completions.create(
                 model=self._model,
                 messages=messages,
                 stream=True
             )
             for chunk in stream:
-                if chunk.choises.delta.content is not None:
-                    text_chunk = chunk.choises.delta.content
+                if chunk.choices and chunk.choices[0].delta.content is not None:
+                    text_chunk = chunk.choices[0].delta.content
                     signals.text_chunk_recieved.emit(text_chunk)
-        else:
-            if self._base_url != "http://localhost:11434/v1":
-                self._base_url = "http://localhost:11434/v1"
-            if self._model != model:
-                self._model = model
-                self.open_ai_client = OpenAI(api_key="ollama",
-                                             base_url=self._base_url
-                                            )
-            stream = self.open_ai_client.chat.completions.create(
-                            model=self._model,
-                            messages=messages,
-                            stream=True
-                        )
-            
-            for chunk in stream:
-                if chunk.choises.delta.content is not None:
-                    text_chunk = chunk.choises.delta.content
-                    signals.text_chunk_recieved.emit(text_chunk)
+                    print()
+        except Exception as e:
+            signals.error_occured.emit(f"AI request failed: {e}")
