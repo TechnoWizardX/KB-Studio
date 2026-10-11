@@ -27,10 +27,9 @@ class AiWorker(QObject):
     # Signal to trigger request in worker thread
     do_request = Signal(str, str, str, str, str, str, list)
 
-    def __init__(self, api, model, provider, base_url):
+    def __init__(self, model, provider, base_url):
         super().__init__()
         self._model = model
-        self.__api = api
         self._provider = provider
         self._base_url = base_url
         self.open_ai_client = None
@@ -65,7 +64,6 @@ class AiWorker(QObject):
             self._model = model
             self._provider = provider
             self._base_url = target_url
-            self.__api = api
         
         try:
             stream = self.open_ai_client.chat.completions.create(

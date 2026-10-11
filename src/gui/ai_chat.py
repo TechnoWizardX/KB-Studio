@@ -74,8 +74,7 @@ class ChatBot(QFrame):
             if model.get("display_name") == self._display_name:
                 api = model.get("api", None)
         
-        decrypted_key = decrypt(api) if api else ""
-        self.worker = AiWorker(api=decrypted_key, model=self._model, provider=self._provider, base_url=self._base_url)
+        self.worker = AiWorker(model=self._model, provider=self._provider, base_url=self._base_url)
 
         self.ai_thread = QThread()
         self.worker.moveToThread(self.ai_thread)
@@ -100,7 +99,7 @@ class ChatBot(QFrame):
                 ConfigManager.set("last_model", {"display_name": "", "model": "", "provider": "", "base_url": "", "api": ""})
                 if hasattr(self, 'worker'):
                     self.worker.deleteLater()
-                self.worker = AiWorker(api="", model="", provider="", base_url="")
+                self.worker = AiWorker(model="", provider="", base_url="")
                 self.worker.moveToThread(self.ai_thread)
 
             self._changing_model = True
@@ -164,10 +163,9 @@ class ChatBot(QFrame):
 
     def _recreate_worker(self, model_data):
         """Recreate AI worker with new model configuration"""
-        api = decrypt(model_data.get("api", "")) if model_data.get("api") else ""
         if hasattr(self, 'worker'):
             self.worker.deleteLater()
-        self.worker = AiWorker(api=api, model=self._model, provider=self._provider, base_url=self._base_url)
+        self.worker = AiWorker(model=self._model, provider=self._provider, base_url=self._base_url)
         self.worker.moveToThread(self.ai_thread)
 
     def ready_for_sent(self) -> bool:
