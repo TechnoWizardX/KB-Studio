@@ -51,7 +51,12 @@ class ChatBot(QFrame):
         self.sender_bottom_layout.addWidget(self.models_combo_box)
         self.load_models_to_list()
 
-        self.models_combo_box.currentIndexChanged.connect(self.on_selection_changed)
+        self.delete_model_btn = QPushButton()
+        self.delete_model_btn.setFixedSize(QSize(30, 30))
+        self.sender_bottom_layout.addWidget(self.delete_model_btn)
+        self.delete_model_btn.clicked.connect(self._delete_model)
+
+        self.models_combo_box.activated.connect(self.on_selection_changed)
         self.main_layout.addWidget(self.messages_box)
         self.main_layout.addWidget(self.chat_sender)
 
@@ -76,6 +81,32 @@ class ChatBot(QFrame):
         self.worker.moveToThread(self.ai_thread)
         
         self.ai_thread.start()
+
+    def _delete_model(self):
+        if self.models_combo_box.currentIndex() != self.models_combo_box.findData("add_model"):
+            self.models_list = [m for m in self.models_list if m.get("display_name") != self._display_name]
+            ConfigManager.set("models", self.models_list)
+
+            if self.models_list:
+                self._changing_model = True
+                self.models_combo_box.setCurrentIndex(0)
+                self._changing_model = False
+                self.on_selection_changed(0)
+            else:
+                self._display_name = ""
+                self._model = ""
+                self._provider = ""
+                self._base_url = ""
+                ConfigManager.set("last_model", {"display_name": "", "model": "", "provider": "", "base_url": "", "api": ""})
+                if hasattr(self, 'worker'):
+                    self.worker.deleteLater()
+                self.worker = AiWorker(api="", model="", provider="", base_url="")
+                self.worker.moveToThread(self.ai_thread)
+
+            self._changing_model = True
+            self.models_combo_box.clear()
+            self.load_models_to_list()
+            self._changing_model = False
 
     def load_models_to_list(self):
         """Loads models info from config, deletes "api" key from userData"""
