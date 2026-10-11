@@ -24,6 +24,15 @@ QTextEdit#chatBotInput {
 QFrame#chatSender {
     background-color: {{editor_bg}};
 }
+QLabel#messageText {
+    border-color : transparent;
+    background-color : transparent;
+}
+QLabel#messageDate {
+    background-color: transparent;
+    font-size: 8 pt;
+    border-color : transparent;
+}
 /* ---- Frames ----------------------------------------------- */
 QFrame {
     background-color: {{frame_bg}};

@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QDialogButtonBox, QFrame, QFormLayout, 
                                QPushButton, QLabel, QTextEdit, QComboBox, QScrollArea,
                                QVBoxLayout, QHBoxLayout, QDialog, QMessageBox, QLineEdit)
-from PySide6.QtCore import QSize, QThread, Qt, QTimer
+from PySide6.QtCore import QSize, QThread, Qt, QTimer, QEvent
 from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
 from src.core.ai_worker import AiWorker, DEFAULT_SYSTEM_PROMPT
@@ -31,6 +31,7 @@ class ChatBot(QFrame):
 
         # Input message
         self.chat_input = QTextEdit()
+        self.chat_input.installEventFilter(self)
         self.chat_input.setPlaceholderText("Ask AI...")
         self.setObjectName("chatBotInput")
         self.chat_sender_layout.addWidget(self.chat_input)
@@ -196,7 +197,19 @@ class ChatBot(QFrame):
             current = self.last_ai_message.label.text()
             self.last_ai_message.label.setText(current + f"\n\n[Error: {error}]")
 
+    def eventFilter(self, obj, event):
+        if obj is self.chat_input and event.type() == QEvent.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                    return False  
+                else:
+                    self.send_request()  
+                    return True  
+        return super().eventFilter(obj, event)
+    
+        
 
+    
 class MessagesBox(QScrollArea):
     def __init__(self):
         super().__init__() 
@@ -231,8 +244,8 @@ class Message(QFrame):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
-        # Use QLabel instead of QTextEdit
         self.label = QLabel(text)
+        self.label.setObjectName("messageText")
         self.label.setWordWrap(True)
         self.label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse |
