@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QDialogButtonBox, QFrame, QFormLayout, 
                                QPushButton, QLabel, QTextEdit, QComboBox, QScrollArea,
                                QVBoxLayout, QHBoxLayout, QDialog, QMessageBox, QLineEdit)
-from PySide6.QtCore import QSize, QThread, Qt, QTimer, QEvent
+from PySide6.QtCore import QSize, QThread, Qt, QTimer, QEvent, QUrl
 from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
 from src.core.ai_worker import AiWorker, DEFAULT_SYSTEM_PROMPT
@@ -384,8 +384,19 @@ class AddModelDialog(QDialog):
             errors.append("Provider is required")
         if not self.model_edit.text().strip():
             errors.append("Model ID is required")
-        if not self.base_url_edit.text().strip():
+        
+        # Base URL validation using QUrl
+        base_url = self.base_url_edit.text().strip()
+        if not base_url:
             errors.append("Base URL is required")
+        else:
+            qurl = QUrl(base_url)
+            if not qurl.isValid():
+                errors.append(f"Invalid URL: {qurl.errorString()}")
+            elif qurl.scheme().lower() not in ("http", "https"):
+                errors.append("Base URL must use http:// or https://")
+            elif not qurl.host():
+                errors.append("Base URL must have a host")
         
         if errors:
             QMessageBox.warning(self, "Validation Error", "\n".join(errors))
