@@ -15,7 +15,7 @@ def get_machine_key() -> bytes:
     hasher = hashlib.sha256(machine_id.encode('utf-8')).digest()
     return base64.urlsafe_b64encode(hasher)
 
-def encrypt(string : str) -> str:
+def encrypt(string: str) -> str:
     """Encrypting string with machine-id"""
     try:
         if not string:
@@ -26,8 +26,9 @@ def encrypt(string : str) -> str:
         return encrypted_bytes.decode("utf-8")
     except Exception as e:
         signals.error_occured.emit(str(e))
+        return ""
         
-def decrypt(string : str) -> str:
+def decrypt(string: str) -> str:
     """Decrypting string with machine-id"""
     if not string:
         return ""
@@ -38,4 +39,4 @@ def decrypt(string : str) -> str:
         return decrypted_bytes.decode("utf-8")
     except Exception as e:
         signals.error_occured.emit(str(e))
-        return
+        return ""

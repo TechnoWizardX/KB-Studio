@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 from openai import OpenAI
 import os
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, Signal
 from src.core.signals import signals
 
 DEFAULT_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -21,6 +21,12 @@ OLLAMA_URL = "http://localhost:11434/v1"
 
 
 class AiWorker(QObject):
+    text_chunk_received = Signal(str)
+    generation_ended = Signal()
+    error_occurred = Signal(str)
+    # Signal to trigger request in worker thread
+    do_request = Signal(str, str, str, str, str, str, list)
+
     def __init__(self, api, model, provider, base_url):
         super().__init__()
         self._model = model
@@ -28,6 +34,8 @@ class AiWorker(QObject):
         self._provider = provider
         self._base_url = base_url
         self.open_ai_client = None
+        # Connect signal to slot (will run in worker thread)
+        self.do_request.connect(self.send_request)
         
     def send_request(self, provider: str = "openai", base_url: str = DEFAULT_URL, 
                      model: str = DEFAULT_MODEL, api: str = "", prompt: str = "", 
@@ -41,6 +49,7 @@ class AiWorker(QObject):
         target_url = OLLAMA_URL if is_ollama else base_url
         target_api = "ollama" if is_ollama else api
         
+        # Check if we need to recreate the client
         need_recreate = (
             self.open_ai_client is None or
             self._provider != provider or
@@ -50,7 +59,7 @@ class AiWorker(QObject):
         
         if need_recreate:
             if not is_ollama and not api:
-                signals.error_occured.emit("There's no API key for current model")
+                self.error_occurred.emit("There's no API key for current model")
                 return
             self.open_ai_client = OpenAI(api_key=target_api, base_url=target_url)
             self._model = model
@@ -67,9 +76,7 @@ class AiWorker(QObject):
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content is not None:
                     text_chunk = chunk.choices[0].delta.content
-                    signals.text_chunk_recieved.emit(text_chunk)
-                    print(text_chunk)
-                    
-            signals.generation_ended.emit()
+                    self.text_chunk_received.emit(text_chunk)
+            self.generation_ended.emit()
         except Exception as e:
-            signals.error_occured.emit(f"AI request failed: {e}")
+            self.error_occurred.emit(f"AI request failed: {e}")

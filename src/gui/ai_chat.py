@@ -1,18 +1,20 @@
 from PySide6.QtWidgets import (QWidget, QDialogButtonBox, QFrame, QFormLayout, 
                                QPushButton, QLabel, QTextEdit, QComboBox, QScrollArea,
                                QVBoxLayout, QHBoxLayout, QDialog, QMessageBox, QLineEdit)
-from PySide6.QtCore import QSize, QThread, Qt
+from PySide6.QtCore import QSize, QThread, Qt, QTimer
 from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
-from src.core.ai_worker import AiWorker
+from src.core.ai_worker import AiWorker, DEFAULT_SYSTEM_PROMPT
 from src.core.crypto_manager import decrypt, encrypt
 from src.core.signals import signals
 
 from datetime import datetime
 
+
 class ChatBot(QFrame):
     def __init__(self):
         super().__init__()
+        self._changing_model = False
         self.init_ai_connect()
 
         self.main_layout = QVBoxLayout()
@@ -48,11 +50,9 @@ class ChatBot(QFrame):
         self.sender_bottom_layout.addWidget(self.models_combo_box)
         self.load_models_to_list()
 
-        self.models_combo_box.activated.connect(self.on_selection_changed)
+        self.models_combo_box.currentIndexChanged.connect(self.on_selection_changed)
         self.main_layout.addWidget(self.messages_box)
         self.main_layout.addWidget(self.chat_sender)
-
-        signals.generation_ended.connect(self.unconnect_message)
 
     def init_ai_connect(self):
         """Initialize connection with AI and puts it in QThread"""
@@ -87,15 +87,20 @@ class ChatBot(QFrame):
             self.models_combo_box.setCurrentIndex(last_index)
         self.models_combo_box.addItem("Add new model...", userData="add_model")
 
-    def on_selection_changed(self):
+    def on_selection_changed(self, index: int):
         """Emits when model in combobox of models changed"""
-        if self.models_combo_box.currentIndex() == self.models_combo_box.findData("add_model"):
+        if self._changing_model:
+            return
+            
+        if index == self.models_combo_box.findData("add_model"):
             print("Add model function called")
             model_data = AddModelDialog.get_model_data_from_user(self)
 
             if model_data is None:  
                 last_index = self.models_combo_box.findText(self._display_name)
+                self._changing_model = True
                 self.models_combo_box.setCurrentIndex(last_index)
+                self._changing_model = False
                 return
         
             if model_data["api"]:
@@ -104,96 +109,186 @@ class ChatBot(QFrame):
             self.models_list.append(model_data)
             ConfigManager.set("models", self.models_list)   
 
+            self._changing_model = True
             self.models_combo_box.clear()
             self.load_models_to_list()    
 
             new_index = self.models_combo_box.findText(model_data["display_name"])
             self.models_combo_box.setCurrentIndex(new_index)
+            self._changing_model = False
+            return
 
-        elif (self.models_combo_box.currentIndex() is not None) and (
-                self.models_combo_box.currentIndex() != self.models_combo_box.findText(self._display_name)):   
-            data = self.models_combo_box.currentData()
-            self._display_name = data.get("display_name")
-            self._model = data.get("model")
-            self._provider = data.get("provider")
-            self._base_url = data.get("base_url")
-            ConfigManager.set("last_model", data)
-            print("model changed")
+        data = self.models_combo_box.itemData(index)
+        if data is None or data.get("display_name") == self._display_name:
+            return
+        
+        self._display_name = data.get("display_name")
+        self._model = data.get("model")
+        self._provider = data.get("provider")
+        self._base_url = data.get("base_url")
+        ConfigManager.set("last_model", data)
+        print("model changed")
+        self._recreate_worker(data)
+
+    def _recreate_worker(self, model_data):
+        """Recreate AI worker with new model configuration"""
+        api = decrypt(model_data.get("api", "")) if model_data.get("api") else ""
+        if hasattr(self, 'worker'):
+            self.worker.deleteLater()
+        self.worker = AiWorker(api=api, model=self._model, provider=self._provider, base_url=self._base_url)
+        self.worker.moveToThread(self.ai_thread)
 
     def ready_for_sent(self) -> bool:
         return self._provider and self._base_url and self._model
     
     def send_request(self):
-        """Sends request to the LLM: localy (Ollama) or cloudly (with API and Provider)"""
-        self.last_ai_message = Message("delete this", "system")
+        """Sends request to the LLM: locally (Ollama) or cloud (with API and Provider)"""
         prompt = self.chat_input.toPlainText()
         if not prompt:
             return
         self.chat_input.clear()
+        
         api = None
         for model in self.models_list:
             if model.get("display_name") == self._display_name:
                 api = model.get("api")
         decrypted_key = decrypt(api) if api else ""
+        
         if self.ready_for_sent():
-            self.worker.send_request(
-                                    provider=self._provider,
-                                    base_url=self._base_url,
-                                    model=self._model,
-                                    api=decrypted_key,
-                                    prompt = prompt
-                                    )
-            self.messages_box.add_message(prompt, author = "user")
-            self.last_ai_message = self.messages_box.add_message(text = "...", author = "ai")
-            signals.text_chunk_recieved.connect(self.last_ai_message.add_chunk)
+            # Add user message first
+            self.messages_box.add_message(prompt, author="user")
+            # Add AI message placeholder
+            self.last_ai_message = self.messages_box.add_message(text="", author="ai")
+            
+            # Connect worker signals for this request
+            self.worker.text_chunk_received.connect(self.last_ai_message.add_chunk)
+            self.worker.generation_ended.connect(self._on_generation_ended)
+            self.worker.error_occurred.connect(self._on_worker_error)
+            
+            # Emit signal to run request in worker thread
+            self.worker.do_request.emit(
+                self._provider,
+                self._base_url,
+                self._model,
+                decrypted_key,
+                prompt,
+                DEFAULT_SYSTEM_PROMPT,
+                []
+            )
         else:
             QMessageBox.warning(self, "Request not ready", "Model data incorrect/corrupted")
     
-    def unconnect_message(self):
-        signals.text_chunk_recieved.disconnect(self.last_ai_message.add_chunk)
+    def _on_generation_ended(self):
+        """Clean up signal connections when generation ends"""
+        if self.last_ai_message:
+            self.last_ai_message.finish_streaming()
+        try:
+            self.worker.text_chunk_received.disconnect(self.last_ai_message.add_chunk)
+            self.worker.generation_ended.disconnect(self._on_generation_ended)
+            self.worker.error_occurred.disconnect(self._on_worker_error)
+        except:
+            pass
+    
+    def _on_worker_error(self, error: str):
+        """Handle worker error"""
+        self._on_generation_ended()
+        if self.last_ai_message:
+            current = self.last_ai_message.label.text()
+            self.last_ai_message.label.setText(current + f"\n\n[Error: {error}]")
+
 
 class MessagesBox(QScrollArea):
     def __init__(self):
         super().__init__() 
-        self.main_layout = QVBoxLayout(self)
-        self.current_message = None
+        self.container = QWidget()
+        self.layout = QVBoxLayout(self.container)
+        self.layout.addStretch()
+        self.setWidget(self.container)
+        self.setWidgetResizable(True)
 
-    def add_message(self, text, author) -> Message | None:
+    def add_message(self, text, author) -> "Message | None":
         message = Message(text, author)
-        self.main_layout.addWidget(message)
+        self.layout.insertWidget(self.layout.count() - 1, message)  # before stretch
+        self._scroll_to_bottom()
         if author == "ai":
             return message
+    
+    def _scroll_to_bottom(self):
+        """Scroll to bottom after adding message"""
+        QTimer.singleShot(0, lambda: self.verticalScrollBar().setValue(
+            self.verticalScrollBar().maximum()
+        ))
+
 
 class Message(QFrame):
     def __init__(self, text, author):
         super().__init__()
-        self.text = text    
         self.author = author
+        self._streaming = author == "ai" and text == ""
         time = datetime.now().strftime("%H:%M")
 
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
-        self.text = QTextEdit(text)
-        self.text.setReadOnly(True)
-        self.text.setTextInteractionFlags(   
-        Qt.TextInteractionFlag.TextSelectableByMouse |
-        Qt.TextInteractionFlag.TextSelectableByKeyboard |
-        Qt.TextInteractionFlag.LinksAccessibleByMouse
+        # Use QLabel instead of QTextEdit
+        self.label = QLabel(text)
+        self.label.setWordWrap(True)
+        self.label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard |
+            Qt.TextInteractionFlag.LinksAccessibleByMouse
         )
-        self.main_layout.addWidget(self.text)
+        self.label.setTextFormat(Qt.TextFormat.MarkdownText)
+        self.main_layout.addWidget(self.label)
 
         self.date = QLabel(time)
         self.date.setObjectName("messageDate")
         self.main_layout.addWidget(self.date)
 
+        # Typing cursor for AI messages
+        if self._streaming:
+            self._cursor_timer = QTimer(self)
+            self._cursor_timer.timeout.connect(self._toggle_cursor)
+            self._cursor_visible = True
+            self._cursor_timer.start(500)  # Blink every 500ms
+
+    def _toggle_cursor(self):
+        """Toggle typing cursor visibility"""
+        if not self._streaming:
+            return
+        current = self.label.text()
+        # Remove existing cursor if present
+        if current.endswith("▌"):
+            current = current[:-1]
+        # Add cursor if visible
+        if self._cursor_visible:
+            current += "▌"
+        self.label.setText(current)
+        self._cursor_visible = not self._cursor_visible
+
     def add_chunk(self, chunk):
-        text = self.text.toPlainText()
-        self.text.setPlainText(text + chunk)
+        """Append chunk to message text - runs in main thread via Qt queued connection"""
+        current = self.label.text()
+        # Remove cursor if present
+        if current.endswith("▌"):
+            current = current[:-1]
+        self.label.setText(current + chunk)
+
+    def finish_streaming(self):
+        """Called when streaming ends - remove cursor"""
+        if self._streaming:
+            self._streaming = False
+            if hasattr(self, '_cursor_timer'):
+                self._cursor_timer.stop()
+            # Remove cursor if present
+            current = self.label.text()
+            if current.endswith("▌"):
+                self.label.setText(current[:-1])
+
 
 class AddModelDialog(QDialog):
-    def __init__(self, parent : QWidget = None):
+    def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         self.setWindowTitle("Add new model")
         self.setMinimumWidth(400)
