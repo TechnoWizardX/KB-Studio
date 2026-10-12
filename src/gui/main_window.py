@@ -4,7 +4,7 @@ import sys
 from src.utils.config_manager import ConfigManager
 from src.utils.theme_manager import ThemeManager
 from src.gui.directory_view import DirectoryTreeViewWidget
-from src.gui.code_editor import CodeEditorWidget
+from src.gui.code_editor_widget import CodeEditorWidget
 from src.gui.ai_chat import ChatBot
 from src.core.signals import signals
 
