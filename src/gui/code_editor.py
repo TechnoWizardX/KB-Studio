@@ -58,22 +58,22 @@ class DevPanelWidget(QFrame):
 
         self.problems_wgt = ProblemsWidget()
 
-        self.terminal_btn = QPushButton("Terminal")
-        self.terminal_btn.setObjectName("devPanelBtn")
-        self.terminal_btn.setMaximumSize(100, 60)
-        self.buttons_layout.addWidget(self.terminal_btn)
+        #self.terminal_btn = QPushButton("Terminal")
+        #self.terminal_btn.setObjectName("devPanelBtn")
+        #self.terminal_btn.setMaximumSize(100, 60)
+        #self.buttons_layout.addWidget(self.terminal_btn)
 
-        self.terminal = Terminal()
+        #self.terminal = Terminal()
 
         self.stacked_widget = QStackedWidget()
 
         self.stacked_widget.addWidget(self.problems_wgt)
-        self.stacked_widget.addWidget(self.terminal)
+        #self.stacked_widget.addWidget(self.terminal)
 
         self.main_layout.addWidget(self.stacked_widget)
 
         self.problems_btn.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.problems_wgt))
-        self.terminal_btn.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.terminal))
+        #self.terminal_btn.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.terminal))
         
 
 
@@ -324,63 +324,63 @@ class LineNumberArea(QWidget):
 
 
 
-class Terminal(QFrame):
-    """This is terminal widget that allows users to execute shell commands within the application."""
-    def __init__(self):
-        super().__init__()
-        self.setObjectName("terminal")
-
-        self.output = QPlainTextEdit()
-        self.output.setReadOnly(True)
-        self.output.setTextInteractionFlags(   
-        Qt.TextInteractionFlag.TextSelectableByMouse |
-        Qt.TextInteractionFlag.TextSelectableByKeyboard |
-        Qt.TextInteractionFlag.LinksAccessibleByMouse
-        )
-
-        self.input = QLineEdit()
-        self.input.setPlaceholderText("Введите команду...")
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.output)
-        layout.addWidget(self.input)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        self.process = QProcess(self)
-        self.process.readyReadStandardOutput.connect(self._on_output)
-        self.process.readyReadStandardError.connect(self._on_error)
-        self.process.setWorkingDirectory(ConfigManager.get("project_dir"))
-
-        shell = "powershell.exe" if sys.platform == "win32" else "bash"
-        self.process.start(shell)
-
-        self.input.returnPressed.connect(self._execute)
-
-    def _execute(self):
-        if self.process.state() != QProcess.ProcessState.Running:
-            self.output.appendPlainText("[Terminal: shell not running]")
-        cmd = self.input.text().strip()
-        if not cmd:
-            return
-        self.output.appendPlainText(f"$ {cmd}")
-        self.process.write(cmd.encode() + b"\n")
-        self.input.clear()
-
-    def _on_output(self):
-        text = self.process.readAllStandardOutput().data().decode(errors="replace")
-        self.output.insertPlainText(text)
-        self.output.ensureCursorVisible()
-
-    def _on_error(self):
-        text = self.process.readAllStandardError().data().decode(errors="replace")
-        self.output.insertPlainText(text)
-        self.output.ensureCursorVisible()
-
-    def closeEvent(self, event):
-        if self.process.state() != QProcess.ProcessState.NotRunning:
-            self.process.terminate()
-        self.process.waitForFinished(1000)
-        if self.process.state() != QProcess.ProcessState.NotRunning:
-            self.process.kill()
-        super().closeEvent(event)
+# class Terminal(QFrame):
+#     """This is terminal widget that allows users to execute shell commands within the application."""
+#     def __init__(self):
+#         super().__init__()
+#         self.setObjectName("terminal")
+#
+#         self.output = QPlainTextEdit()
+#         self.output.setReadOnly(True)
+#         self.output.setTextInteractionFlags(   
+#         Qt.TextInteractionFlag.TextSelectableByMouse |
+#         Qt.TextInteractionFlag.TextSelectableByKeyboard |
+#         Qt.TextInteractionFlag.LinksAccessibleByMouse
+#         )
+#
+#         self.input = QLineEdit()
+#         self.input.setPlaceholderText("Введите команду...")
+#
+#         layout = QVBoxLayout(self)
+#         layout.addWidget(self.output)
+#         layout.addWidget(self.input)
+#         layout.setContentsMargins(0, 0, 0, 0)
+#
+#         self.process = QProcess(self)
+#         self.process.readyReadStandardOutput.connect(self._on_output)
+#         self.process.readyReadStandardError.connect(self._on_error)
+#         self.process.setWorkingDirectory(ConfigManager.get("project_dir"))
+#
+#         shell = "powershell.exe" if sys.platform == "win32" else "bash"
+#         self.process.start(shell)
+#
+#         self.input.returnPressed.connect(self._execute)
+#
+#     def _execute(self):
+#         if self.process.state() != QProcess.ProcessState.Running:
+#             self.output.appendPlainText("[Terminal: shell not running]")
+#         cmd = self.input.text().strip()
+#         if not cmd:
+#             return
+#         self.output.appendPlainText(f"$ {cmd}")
+#         self.process.write(cmd.encode() + b"\n")
+#         self.input.clear()
+#
+#     def _on_output(self):
+#         text = self.process.readAllStandardOutput().data().decode(errors="replace")
+#         self.output.insertPlainText(text)
+#         self.output.ensureCursorVisible()
+#
+#     def _on_error(self):
+#         text = self.process.readAllStandardError().data().decode(errors="replace")
+#         self.output.insertPlainText(text)
+#         self.output.ensureCursorVisible()
+#
+#     def closeEvent(self, event):
+#         if self.process.state() != QProcess.ProcessState.NotRunning:
+#             self.process.terminate()
+#         self.process.waitForFinished(1000)
+#         if self.process.state() != QProcess.ProcessState.NotRunning:
+#             self.process.kill()
+#         super().closeEvent(event)
     
