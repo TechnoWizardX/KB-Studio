@@ -1,9 +1,9 @@
-from dotenv import load_dotenv
 from openai import OpenAI
-import os
+from pathlib import Path
+
 from PySide6.QtCore import QObject, Signal
-from src.core.signals import signals
-from src.utils.file_manager import get_file_content
+from src.utils.file_manager import get_context_file_content
+
 DEFAULT_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "openrouter/free"
 DEFAULT_SYSTEM_PROMPT = """
@@ -38,14 +38,13 @@ class AiWorker(QObject):
         
     def send_request(self, provider: str = "openai", base_url: str = DEFAULT_URL, 
                      model: str = DEFAULT_MODEL, api: str = "", prompt: str = "", 
-                     system_prompt: str = DEFAULT_SYSTEM_PROMPT, files: list = []):
+                     system_prompt: str = DEFAULT_SYSTEM_PROMPT, files: list | None = None):
+        if files:
+            prompt = self.add_files_to_prompt(prompt, files)
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
         ]
-        if files:
-            prompt = self.add_files_to_prompt(prompt, files)
-            messages.append({"role": "user", "content": prompt})
             
         is_ollama = provider.lower() == "ollama"
         target_url = OLLAMA_URL if is_ollama else base_url
@@ -86,8 +85,8 @@ class AiWorker(QObject):
         """Append the content of the files to the prompt."""
         for file_path in files:
             try:
-                file_content = get_file_content(file_path)
-                prompt += f"\n\nContent of {file_path}:\n{file_content}"
+                file_content = get_context_file_content(file_path)
+                prompt += f"\n\nContent of {Path(file_path).name}:\n{file_content}"
             except Exception as e:
                 self.error_occurred.emit(f"Failed to read file '{file_path}': {e}")
         return prompt

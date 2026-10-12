@@ -1,14 +1,14 @@
-from PySide6.QtWidgets import (QWidget, QDialogButtonBox, QFrame, QFormLayout, QSizePolicy,
+from PySide6.QtWidgets import (QWidget, QDialogButtonBox, QFrame, QFormLayout,
                                QPushButton, QLabel, QTextEdit, QComboBox, QScrollArea,
                                QVBoxLayout, QHBoxLayout, QDialog, QMessageBox, QLineEdit, QFileDialog)
-from PySide6.QtCore import QSize, QThread, Qt, QTimer, QEvent, QUrl
+from PySide6.QtCore import QSize, QThread, Qt, QTimer, QEvent, QUrl, Signal
 from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
 from src.core.ai_worker import AiWorker, DEFAULT_SYSTEM_PROMPT
 from src.core.crypto_manager import decrypt, encrypt
-from src.core.signals import signals
 
 from datetime import datetime
+from pathlib import Path
 
 
 class ChatBot(QFrame):
@@ -67,12 +67,16 @@ class ChatBot(QFrame):
         self.add_file_to_context_menu.setIcon(Icons.file_add())
         self.add_file_to_context_menu.setIconSize(QSize(30, 30))
         self.add_file_to_context_menu.setFixedSize(QSize(30, 30))
+        self.add_file_to_context_menu.setToolTip("Add files to context")
         
-        self.chat_sender_layout.addWidget(self.add_file_to_context_menu)
+        self.sender_bottom_layout.insertWidget(0, self.add_file_to_context_menu)
         self.add_file_to_context_menu.clicked.connect(self._add_file_to_prompt)
 
-        self.files_list = QScrollArea()
-        
+        self.files_list = FileBox()
+        self.files_list.file_removed.connect(self._remove_context_file)
+        self.files_list.hide()
+        self.chat_sender_layout.insertWidget(1, self.files_list)
+
         self.main_layout.addWidget(self.messages_box, 2)
         self.main_layout.addWidget(self.chat_sender, 1)
 
@@ -82,9 +86,31 @@ class ChatBot(QFrame):
         file_dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
         if file_dialog.exec():
             selected_files = file_dialog.selectedFiles()
-            self._context_files.extend(selected_files)
-            
-            QMessageBox.information(self, "Files Added", f"Added {len(selected_files)} files to the prompt context.")
+            existing_paths = {str(Path(path).resolve()) for path in self._context_files}
+            added_files = [
+                path for path in selected_files
+                if str(Path(path).resolve()) not in existing_paths
+            ]
+            if not added_files:
+                return
+            self._context_files.extend(added_files)
+            for file_path in added_files:
+                self.files_list.add_file(file_path)
+            self.files_list.show()
+
+    def _remove_context_file(self, file_path: str):
+        self._context_files = [
+            path for path in self._context_files if path != file_path
+        ]
+        if not self._context_files:
+            self.files_list.hide()
+
+    def _load_context_files(self):
+        """Rebuild the visual list of files attached to the prompt."""
+        self.files_list.clear_files()
+        for file_path in self._context_files:
+            self.files_list.add_file(file_path)
+        self.files_list.setVisible(bool(self._context_files))
 
     def init_ai_connect(self):
         """Initialize connection with AI and puts it in QThread"""
@@ -95,10 +121,6 @@ class ChatBot(QFrame):
         self._provider = last_model.get("provider")
         self._base_url = last_model.get("base_url")
         self.models_list = ConfigManager.get("models")
-        api = None
-        for model in self.models_list:
-            if model.get("display_name") == self._display_name:
-                api = model.get("api", None)
         
         self.worker = AiWorker(model=self._model, provider=self._provider, base_url=self._base_url)
 
@@ -108,6 +130,7 @@ class ChatBot(QFrame):
         self.ai_thread.start()
 
     def _delete_model(self):
+        """Delete the currently selected model from the list and config."""
         if self.models_combo_box.currentIndex() != self.models_combo_box.findData("add_model"):
             self.models_list = [m for m in self.models_list if m.get("display_name") != self._display_name]
             ConfigManager.set("models", self.models_list)
@@ -185,9 +208,9 @@ class ChatBot(QFrame):
         self._base_url = data.get("base_url")
         ConfigManager.set("last_model", data)
         print("model changed")
-        self._recreate_worker(data)
+        self._recreate_worker()
 
-    def _recreate_worker(self, model_data):
+    def _recreate_worker(self):
         """Recreate AI worker with new model configuration"""
         if hasattr(self, 'worker'):
             self.worker.deleteLater()
@@ -199,9 +222,12 @@ class ChatBot(QFrame):
     
     def send_request(self):
         """Sends request to the LLM: locally (Ollama) or cloud (with API and Provider)"""
-        prompt = self.chat_input.toPlainText()
-        if not prompt:
+        prompt = self.chat_input.toPlainText().strip()
+        context_files = list(self._context_files)
+        if not prompt and not context_files:
             return
+        if not prompt:
+            prompt = "Please review the attached files."
         self.chat_input.clear()
         
         api = None
@@ -229,7 +255,7 @@ class ChatBot(QFrame):
                 decrypted_key,
                 prompt,
                 DEFAULT_SYSTEM_PROMPT,
-                []
+                context_files
             )
         else:
             QMessageBox.warning(self, "Request not ready", "Model data incorrect/corrupted")
@@ -284,26 +310,72 @@ class MessagesBox(QScrollArea):
     def _scroll_to_bottom(self):
         """Scroll to bottom after adding message"""
         QTimer.singleShot(0, lambda: self.verticalScrollBar().setValue(
-            self.verticalScrollBar().maximum()
+            self.verticalScrollBar().minimum()
         ))
 
+class FileBox(QScrollArea):
+    file_removed = Signal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("contextFilesList")
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setMaximumHeight(100)
+        self.container = QWidget()
+        self.layout = QVBoxLayout(self.container)
+        self.layout.setContentsMargins(4, 4, 4, 4)
+        self.layout.setSpacing(4)
+        self._files: dict[str, ContextFile] = {}
+        self.layout.addStretch()
+        self.setWidget(self.container)
+        self.setWidgetResizable(True)
+
+    def add_file(self, path: str) -> None:
+        if path in self._files:
+            return
+        context_file = ContextFile(path)
+        context_file.remove_requested.connect(self._remove_file)
+        self._files[path] = context_file
+        self.layout.insertWidget(self.layout.count() - 1, context_file)
+
+    def clear_files(self) -> None:
+        for path in tuple(self._files):
+            self._remove_file(path, notify=False)
+
+    def _remove_file(self, path: str, notify: bool = True) -> None:
+        context_file = self._files.pop(path, None)
+        if context_file is None:
+            return
+        self.layout.removeWidget(context_file)
+        context_file.deleteLater()
+        if notify:
+            self.file_removed.emit(path)
+
+
 class ContextFile(QFrame):
+    remove_requested = Signal(str)
+
     def __init__(self, file_path: str):
         super().__init__()
-        self.setMaximumHeight(30)
+        self.setObjectName("contextFileRow")
+        self.setMaximumHeight(32)
         self.file_path = file_path
         self.main_layout = QHBoxLayout(self)
-        self.label = QLabel(file_path)
-        self.remove_btn = QPushButton("Del")
-        self.remove_btn.clicked.connect(self._remove_self)
+        self.main_layout.setContentsMargins(8, 2, 4, 2)
+        self.label = QLabel(Path(file_path).name)
+        self.label.setObjectName("contextFileName")
+        self.label.setToolTip(Path(file_path).name)
+        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.remove_btn = QPushButton("×")
+        self.remove_btn.setObjectName("contextFileRemove")
+        self.remove_btn.setToolTip("Remove file from context")
+        self.remove_btn.setFixedSize(24, 24)
+        self.remove_btn.clicked.connect(
+            lambda: self.remove_requested.emit(self.file_path)
+        )
         self.main_layout.addWidget(self.label)
         self.main_layout.addWidget(self.remove_btn)
-
-    def _remove_self(self):
-        """Remove this context file from the parent layout"""
-        parent_layout = self.parentWidget().layout()
-        parent_layout.removeWidget(self)
-        self.deleteLater()
 
 class Message(QFrame):
     def __init__(self, text, author):

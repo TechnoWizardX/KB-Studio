@@ -24,6 +24,29 @@ QTextEdit#chatBotInput {
 QFrame#chatSender {
     background-color: {{editor_bg}};
 }
+QScrollArea#contextFilesList {
+    border: none;
+    background-color: transparent;
+}
+QFrame#contextFileRow {
+    background-color: {{nav_bg}};
+    border: 1px solid {{border}};
+    border-radius: 4px;
+}
+QLabel#contextFileName {
+    background-color: transparent;
+    border: none;
+}
+QPushButton#contextFileRemove {
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    background-color: transparent;
+}
+QPushButton#contextFileRemove:hover {
+    background-color: {{hover}};
+}
 QLabel#messageText {
     border-color : transparent;
     background-color : transparent;
