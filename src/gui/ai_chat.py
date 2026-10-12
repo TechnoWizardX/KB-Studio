@@ -131,30 +131,48 @@ class ChatBot(QFrame):
 
     def _delete_model(self):
         """Delete the currently selected model from the list and config."""
-        if self.models_combo_box.currentIndex() != self.models_combo_box.findData("add_model"):
-            self.models_list = [m for m in self.models_list if m.get("display_name") != self._display_name]
-            ConfigManager.set("models", self.models_list)
+        if self.models_combo_box.currentIndex() == self.models_combo_box.findData("add_model"):
+            return
 
-            if self.models_list:
-                self._changing_model = True
-                self.models_combo_box.setCurrentIndex(0)
-                self._changing_model = False
-                self.on_selection_changed(0)
-            else:
-                self._display_name = ""
-                self._model = ""
-                self._provider = ""
-                self._base_url = ""
-                ConfigManager.set("last_model", {"display_name": "", "model": "", "provider": "", "base_url": "", "api": ""})
-                if hasattr(self, 'worker'):
-                    self.worker.deleteLater()
-                self.worker = AiWorker(model="", provider="", base_url="")
-                self.worker.moveToThread(self.ai_thread)
+        reply = QMessageBox.question(
+            self,
+            "Delete model",
+            f"Are you sure you want to delete the model '{self._display_name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
 
+        self.models_list = [
+            model for model in self.models_list
+            if model.get("display_name") != self._display_name
+        ]
+        ConfigManager.set("models", self.models_list)
+
+        if self.models_list:
             self._changing_model = True
-            self.models_combo_box.clear()
-            self.load_models_to_list()
+            self.models_combo_box.setCurrentIndex(0)
             self._changing_model = False
+            self.on_selection_changed(0)
+        else:
+            self._display_name = ""
+            self._model = ""
+            self._provider = ""
+            self._base_url = ""
+            ConfigManager.set(
+                "last_model",
+                {"display_name": "", "model": "", "provider": "", "base_url": "", "api": ""},
+            )
+            if hasattr(self, "worker"):
+                self.worker.deleteLater()
+            self.worker = AiWorker(model="", provider="", base_url="")
+            self.worker.moveToThread(self.ai_thread)
+
+        self._changing_model = True
+        self.models_combo_box.clear()
+        self.load_models_to_list()
+        self._changing_model = False
 
     def load_models_to_list(self):
         """Loads models info from config, deletes "api" key from userData"""
