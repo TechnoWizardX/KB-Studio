@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QTreeView, QFileSystemModel, QFrame, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QPushButton, QFileDialog, QLineEdit,
-                               QMessageBox, QMenu, QFileIconProvider)
+                               QMessageBox, QMenu, QFileIconProvider, QSizePolicy)
 from PySide6.QtCore import QStandardPaths, QSize, QPoint, QModelIndex, Qt
 from PySide6.QtGui import QIcon, QAction
 
@@ -41,6 +41,7 @@ class DirectoryTreeViewWidget(QFrame):
         self.select_project_dir_btn.setIcon(Icons.folder_search())
         self.select_project_dir_btn.setIconSize(QSize(30, 30))
         self.select_project_dir_btn.setFixedSize(QSize(30, 30))
+        self.select_project_dir_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.select_project_dir_btn.clicked.connect(self.select_project)
         
         self.project_struct_manage_layout.addWidget(self.select_project_dir_btn)
@@ -60,6 +61,7 @@ class DirectoryTreeViewWidget(QFrame):
         self.mk_dir_btn.setObjectName("IconButton")
         self.mk_dir_btn.setFixedSize(QSize(30, 30))
         self.mk_dir_btn.setIconSize(QSize(30, 30))
+        self.mk_dir_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.project_struct_manage_layout.addWidget(self.mk_dir_btn)
         self.mk_dir_btn.clicked.connect(self.make_new_dir)
 
@@ -68,6 +70,7 @@ class DirectoryTreeViewWidget(QFrame):
         self.mk_file_btn.setObjectName("IconButton")
         self.mk_file_btn.setFixedSize(QSize(30, 30))
         self.mk_file_btn.setIconSize(QSize(30, 30))
+        self.mk_file_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.project_struct_manage_layout.addWidget(self.mk_file_btn)
         self.mk_file_btn.clicked.connect(self.make_new_file)
 

@@ -3,7 +3,7 @@ from openai import OpenAI
 import os
 from PySide6.QtCore import QObject, Signal
 from src.core.signals import signals
-
+from src.utils.file_manager import get_file_content
 DEFAULT_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "openrouter/free"
 DEFAULT_SYSTEM_PROMPT = """
@@ -43,7 +43,10 @@ class AiWorker(QObject):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
         ]
-        
+        if files:
+            prompt = self.add_files_to_prompt(prompt, files)
+            messages.append({"role": "user", "content": prompt})
+            
         is_ollama = provider.lower() == "ollama"
         target_url = OLLAMA_URL if is_ollama else base_url
         target_api = "ollama" if is_ollama else api
@@ -78,3 +81,13 @@ class AiWorker(QObject):
             self.generation_ended.emit()
         except Exception as e:
             self.error_occurred.emit(f"AI request failed: {e}")
+
+    def add_files_to_prompt(self, prompt: str, files: list) -> str:
+        """Append the content of the files to the prompt."""
+        for file_path in files:
+            try:
+                file_content = get_file_content(file_path)
+                prompt += f"\n\nContent of {file_path}:\n{file_content}"
+            except Exception as e:
+                self.error_occurred.emit(f"Failed to read file '{file_path}': {e}")
+        return prompt

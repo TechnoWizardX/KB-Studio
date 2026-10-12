@@ -1,6 +1,6 @@
-from PySide6.QtWidgets import (QWidget, QDialogButtonBox, QFrame, QFormLayout, 
+from PySide6.QtWidgets import (QWidget, QDialogButtonBox, QFrame, QFormLayout, QSizePolicy,
                                QPushButton, QLabel, QTextEdit, QComboBox, QScrollArea,
-                               QVBoxLayout, QHBoxLayout, QDialog, QMessageBox, QLineEdit)
+                               QVBoxLayout, QHBoxLayout, QDialog, QMessageBox, QLineEdit, QFileDialog)
 from PySide6.QtCore import QSize, QThread, Qt, QTimer, QEvent, QUrl
 from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
@@ -14,6 +14,7 @@ from datetime import datetime
 class ChatBot(QFrame):
     def __init__(self):
         super().__init__()
+        self._context_files = []
         self._changing_model = False
         self.init_ai_connect()
 
@@ -52,13 +53,38 @@ class ChatBot(QFrame):
         self.load_models_to_list()
 
         self.delete_model_btn = QPushButton()
+        self.delete_model_btn.setObjectName("IconButton")
+        self.delete_model_btn.setIcon(Icons.cross())
+        self.delete_model_btn.setIconSize(QSize(30, 30))
         self.delete_model_btn.setFixedSize(QSize(30, 30))
         self.sender_bottom_layout.addWidget(self.delete_model_btn)
         self.delete_model_btn.clicked.connect(self._delete_model)
 
         self.models_combo_box.activated.connect(self.on_selection_changed)
-        self.main_layout.addWidget(self.messages_box)
-        self.main_layout.addWidget(self.chat_sender)
+
+        self.add_file_to_context_menu = QPushButton()
+        self.add_file_to_context_menu.setObjectName("IconButton")
+        self.add_file_to_context_menu.setIcon(Icons.file_add())
+        self.add_file_to_context_menu.setIconSize(QSize(30, 30))
+        self.add_file_to_context_menu.setFixedSize(QSize(30, 30))
+        
+        self.chat_sender_layout.addWidget(self.add_file_to_context_menu)
+        self.add_file_to_context_menu.clicked.connect(self._add_file_to_prompt)
+
+        self.files_list = QScrollArea()
+        
+        self.main_layout.addWidget(self.messages_box, 2)
+        self.main_layout.addWidget(self.chat_sender, 1)
+
+    def _add_file_to_prompt(self):
+        """Open a file dialog to select files and add them to the context for the AI prompt."""
+        file_dialog = QFileDialog(self, "Select files to add to prompt")
+        file_dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
+        if file_dialog.exec():
+            selected_files = file_dialog.selectedFiles()
+            self._context_files.extend(selected_files)
+            
+            QMessageBox.information(self, "Files Added", f"Added {len(selected_files)} files to the prompt context.")
 
     def init_ai_connect(self):
         """Initialize connection with AI and puts it in QThread"""
@@ -261,6 +287,23 @@ class MessagesBox(QScrollArea):
             self.verticalScrollBar().maximum()
         ))
 
+class ContextFile(QFrame):
+    def __init__(self, file_path: str):
+        super().__init__()
+        self.setMaximumHeight(30)
+        self.file_path = file_path
+        self.main_layout = QHBoxLayout(self)
+        self.label = QLabel(file_path)
+        self.remove_btn = QPushButton("Del")
+        self.remove_btn.clicked.connect(self._remove_self)
+        self.main_layout.addWidget(self.label)
+        self.main_layout.addWidget(self.remove_btn)
+
+    def _remove_self(self):
+        """Remove this context file from the parent layout"""
+        parent_layout = self.parentWidget().layout()
+        parent_layout.removeWidget(self)
+        self.deleteLater()
 
 class Message(QFrame):
     def __init__(self, text, author):

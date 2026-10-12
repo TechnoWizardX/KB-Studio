@@ -53,3 +53,11 @@ class Icons:
     @classmethod
     def send(cls) -> QIcon:
         return cls._get("send", ":/icons/send.svg")
+
+    @classmethod
+    def cross(cls) -> QIcon:
+        return cls._get("cross", ":/icons/cross.svg")
+
+    @classmethod
+    def plus(cls) -> QIcon:
+        return cls._get("plus", ":/icons/plus.svg")
