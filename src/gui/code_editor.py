@@ -7,6 +7,7 @@ from src.utils.theme_manager import ThemeManager
 from src.core.signals import signals
 from src.lark_syntax.parser import SCSParser
 from src.utils.config_manager import ConfigManager
+from src.utils.security import safe_path, get_project_root, PathTraversalError
 from src.gui.syntax_highlighter import SCSHighlighter
 from lark.exceptions import UnexpectedToken, UnexpectedCharacters, UnexpectedEOF, LexError, ParseError
 
@@ -179,13 +180,17 @@ class CodeEditor(QPlainTextEdit):
         self.line_number_area.setFont(self.font())
         self.update_line_area_width()
     
-    def apply_file(self, file_path : str | Path):
+    def apply_file(self, file_path: str | Path):
         if file_path:
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
+                safe_file = safe_path(get_project_root(), str(file_path))
+                with open(safe_file, "r", encoding="utf-8") as f:
                     text = f.read()
                     self.setPlainText(text)
                     print(f"Inserted next file: {text}")
+            except PathTraversalError as e:
+                print(f"Security Error: {e}")
+                self.setPlainText("")
             except Exception as e:
                 print("Cannot load file")
                 self.setPlainText("")
@@ -193,9 +198,14 @@ class CodeEditor(QPlainTextEdit):
     def save_changes(self):
         text = self.toPlainText()
         file_path = ConfigManager.get("selected_file")
+        if not file_path:
+            return
         try:
-            with open(file_path, "w", encoding="utf-8") as f:
+            safe_file = safe_path(get_project_root(), file_path)
+            with open(safe_file, "w", encoding="utf-8") as f:
                 f.write(text)
+        except PathTraversalError as e:
+            print(f"Security Error: {e}")
         except Exception as e:
             print(f"ERROR: {e}")
 

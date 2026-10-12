@@ -10,6 +10,7 @@ import shutil
 from src.resources.icons import Icons
 from src.core.signals import signals
 from src.utils.config_manager import ConfigManager
+from src.utils.security import safe_path, validate_filename, PathTraversalError, get_project_root
 
 
 class DirectoryTreeViewWidget(QFrame):
@@ -137,12 +138,18 @@ class DirectoryTreeViewWidget(QFrame):
 
     def execute_create_dir(self, name: str) -> None:
         try:
+            # Validate filename
+            if not validate_filename(name):
+                QMessageBox.warning(self, "Error", f"Invalid directory name: '{name}'")
+                return
+            
             selected_dir = ConfigManager.get("selected_dir")
             if selected_dir:
-                path = selected_dir
+                base_path = selected_dir
             else:
-                path = ConfigManager.get("project_dir")
-            full_path = Path(path) / name
+                base_path = get_project_root()
+            
+            full_path = safe_path(base_path, name)
 
             if full_path.exists():
                 QMessageBox.warning(self, "Error", f"File or directory with name '{name}' already exists!")
@@ -150,21 +157,33 @@ class DirectoryTreeViewWidget(QFrame):
             
             full_path.mkdir(parents=True, exist_ok=True)
             print(full_path)
+        except PathTraversalError as e:
+            QMessageBox.warning(self, "Security Error", str(e))
         except Exception as e:
             print(f"ERROR: {e}")
 
     def execute_create_file(self, name: str) -> None:
         try:
+            # Validate filename
+            if not validate_filename(name):
+                QMessageBox.warning(self, "Error", f"Invalid file name: '{name}'")
+                return
+            
             selected_dir = ConfigManager.get("selected_dir")
             if selected_dir:
-                path = selected_dir
+                base_path = selected_dir
             else:
-                path = ConfigManager.get("project_dir")
-            full_path = Path(path) / name
+                base_path = get_project_root()
+            
+            full_path = safe_path(base_path, name)
+            
             if full_path.exists():
                 QMessageBox.warning(self, "Error", f"File or directory with name '{name}' already exists!")  
                 return
+            
             full_path.touch()
+        except PathTraversalError as e:
+            QMessageBox.warning(self, "Security Error", str(e))
         except Exception as e:
             print(f"ERROR {e}")
 
@@ -214,8 +233,14 @@ class DirectoryTreeView(QTreeView):
         if event.key() == Qt.Key.Key_Delete:
             current_index = self.currentIndex()
             if current_index.isValid():
-                path = self.tree_model.filePath(current_index)
-                reply = QMessageBox.question(self.window(), "Confirmation", f"Are you sure to delete: \n{path}?", 
+                path_str = self.tree_model.filePath(current_index)
+                try:
+                    path = safe_path(get_project_root(), path_str)
+                except PathTraversalError as e:
+                    QMessageBox.critical(self.window(), "Security Error", str(e))
+                    return
+                
+                reply = QMessageBox.question(self.window(), "Confirmation", f"Are you sure to delete: \n{path_str}?", 
                                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
                 match reply:
                     case QMessageBox.StandardButton.Yes:
@@ -292,8 +317,14 @@ class ProjectContextMenu(QMenu):
             self.tree.edit(self.index)
 
     def _delete_act(self):
-        path = Path(self.target_path)
-        reply = QMessageBox.question(self.window(), "Confirmation", f"Are you sure to delete: \n{path}?", 
+        path_str = self.target_path
+        try:
+            path = safe_path(get_project_root(), path_str)
+        except PathTraversalError as e:
+            QMessageBox.critical(self.window(), "Security Error", str(e))
+            return
+        
+        reply = QMessageBox.question(self.window(), "Confirmation", f"Are you sure to delete: \n{path_str}?", 
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
         match reply:
             case QMessageBox.StandardButton.Yes:

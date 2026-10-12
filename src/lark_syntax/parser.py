@@ -1,6 +1,8 @@
 from importlib.resources import files
 from lark import Lark
 from typing import Optional
+from src.utils.security import safe_path, get_project_root, PathTraversalError
+
 
 class SCSParser:
     """Парсер для SCs-кода с загрузкой грамматики из пакета src.lark_syntax"""
@@ -14,7 +16,8 @@ class SCSParser:
         if grammar_path is None:
             grammar_text = files("src.lark_syntax").joinpath("grammar.lark").read_text(encoding="utf-8")
         else:
-            with open(grammar_path, 'r', encoding='utf-8') as f:
+            safe_grammar = safe_path(get_project_root(), grammar_path)
+            with open(safe_grammar, 'r', encoding='utf-8') as f:
                 grammar_text = f.read()
 
         self.parser = Lark(
@@ -44,7 +47,8 @@ class SCSParser:
         Returns:
             дерево разбора Lark
         """
-        with open(filepath, 'r', encoding='utf-8') as f:
+        safe_file = safe_path(get_project_root(), filepath)
+        with open(safe_file, 'r', encoding='utf-8') as f:
             text = f.read()
         return self.parse(text)
 
