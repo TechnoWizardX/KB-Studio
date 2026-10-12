@@ -327,8 +327,11 @@ class MessagesBox(QScrollArea):
     
     def _scroll_to_bottom(self):
         """Scroll to bottom after adding message"""
-        QTimer.singleShot(0, lambda: self.verticalScrollBar().setValue(
-            self.verticalScrollBar().minimum()
+        QTimer.singleShot(0, lambda: QTimer.singleShot(
+            0,
+            lambda: self.verticalScrollBar().setValue(
+                self.verticalScrollBar().maximum()
+            ),
         ))
 
 class FileBox(QScrollArea):

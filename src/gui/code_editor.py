@@ -44,8 +44,8 @@ class DevPanelWidget(QFrame):
         super().__init__()
         self.setObjectName("devPanelWidget")
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(0)
+        self.main_layout.setContentsMargins(8, 8, 8, 8)
+        self.main_layout.setSpacing(6)
 
         self.buttons_layout = QHBoxLayout()
         self.buttons_layout.setContentsMargins(0, 0, 0, 0)

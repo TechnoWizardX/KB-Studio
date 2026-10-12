@@ -19,7 +19,7 @@ class MainWindow(QMainWindow):
 
         self.main_layout = QVBoxLayout()
         self.main_widget.setLayout(self.main_layout)
-        self.main_layout.setContentsMargins(0, 5, 0, 5)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
 
         self.last_project = ConfigManager.get("project_dir")
         self.dir_view = DirectoryTreeViewWidget(root_path=self.last_project)

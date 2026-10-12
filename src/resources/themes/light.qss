@@ -68,8 +68,9 @@ QFrame#codeEditorWidget {
     border-color: transparent;
 }
 QFrame#devPanelWidget {
-    border-color: {{border}};
-    border: 1px;
+    background-color: {{frame_bg}};
+    border: 1px solid {{border}};
+    border-radius: 6px;
 }
 QFrame#Terminal {
     border-color: transparent;
