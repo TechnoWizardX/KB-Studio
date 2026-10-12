@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (QTreeView, QFileSystemModel, QFrame, QWidget, QVB
                                QHBoxLayout, QLabel, QPushButton, QFileDialog, QLineEdit,
                                QMessageBox, QMenu, QFileIconProvider, QSizePolicy)
 from PySide6.QtCore import QStandardPaths, QSize, QPoint, QModelIndex, Qt
-from PySide6.QtGui import QIcon, QAction
+from PySide6.QtGui import QAction
 
 from pathlib import Path
 import shutil
@@ -14,8 +14,8 @@ from src.utils.security import safe_path, validate_filename, PathTraversalError,
 
 
 class DirectoryTreeViewWidget(QFrame):
-    def __init__(self, parent: QWidget = None, root_path : str = None):
-        super().__init__()
+    def __init__(self, parent: QWidget | None = None, root_path: str | None = None):
+        super().__init__(parent)
 
         ConfigManager.set("selected_file", ConfigManager.get("last_viewed_file"))
         self.main_layout = QVBoxLayout(self)
@@ -90,6 +90,16 @@ class DirectoryTreeViewWidget(QFrame):
 
     def on_tree_context_menu(self, point: QPoint):
         index = self.dir_view.indexAt(point)
+        if index.isValid():
+            item_path = Path(self.dir_view.tree_model.filePath(index))
+            selected_dir = (
+                item_path
+                if self.dir_view.tree_model.isDir(index)
+                else item_path.parent
+            )
+        else:
+            selected_dir = get_project_root()
+        ConfigManager.set("selected_dir", str(selected_dir))
 
         menu = ProjectContextMenu(tree = self.dir_view, index=index)
 
@@ -97,7 +107,9 @@ class DirectoryTreeViewWidget(QFrame):
 
     def on_selection_changed(self, index) -> None:
         if not self.dir_view.tree_model.isDir(index):
-            ConfigManager.set("selected_file", self.dir_view.tree_model.filePath(index))
+            selected_file = Path(self.dir_view.tree_model.filePath(index))
+            ConfigManager.set("selected_file", str(selected_file))
+            ConfigManager.set("selected_dir", str(selected_file.parent))
         else:
             ConfigManager.set("selected_dir", self.dir_view.tree_model.filePath(index))
 
@@ -119,6 +131,8 @@ class DirectoryTreeViewWidget(QFrame):
             signals.selected_new_project_folder.emit(new_folder)
             self.project_path = new_folder
             ConfigManager.set("project_dir", new_folder)
+            ConfigManager.set("selected_dir", "")
+            ConfigManager.set("selected_file", "")
             self.project_dir_label.setText(new_folder)
         else:
             print("Choose declined")
@@ -139,56 +153,71 @@ class DirectoryTreeViewWidget(QFrame):
         self.name_edit.show()
         self.name_edit.setFocus()
 
+    def _get_valid_base_path(self) -> Path:
+        """Get validated base path within project root."""
+        project_root = get_project_root()
+
+        selected_dir = ConfigManager.get("selected_dir")
+        if selected_dir:
+            try:
+                # Validate selected_dir is within project root
+                selected_path = Path(selected_dir).resolve()
+                selected_path.relative_to(project_root)
+                if selected_path.is_dir():
+                    return selected_path
+            except (OSError, ValueError):
+                # selected_dir is outside project root, fall back to project root
+                pass
+
+        return project_root
+
     def execute_create_dir(self, name: str) -> None:
         try:
+            name = name.strip()
             # Validate filename
             if not validate_filename(name):
                 QMessageBox.warning(self, "Error", f"Invalid directory name: '{name}'")
                 return
             
-            selected_dir = ConfigManager.get("selected_dir")
-            if selected_dir:
-                base_path = selected_dir
-            else:
-                base_path = get_project_root()
-            
+            base_path = self._get_valid_base_path()
             full_path = safe_path(base_path, name)
 
             if full_path.exists():
                 QMessageBox.warning(self, "Error", f"File or directory with name '{name}' already exists!")
                 return
             
-            full_path.mkdir(parents=True, exist_ok=True)
+            full_path.mkdir()
             print(full_path)
         except PathTraversalError as e:
             QMessageBox.warning(self, "Security Error", str(e))
-        except Exception as e:
-            print(f"ERROR: {e}")
+        except OSError as e:
+            QMessageBox.critical(self, "Error", f"Could not create directory '{name}':\n{e}")
+        except ValueError as e:
+            QMessageBox.critical(self, "Error", str(e))
 
     def execute_create_file(self, name: str) -> None:
         try:
+            name = name.strip()
             # Validate filename
             if not validate_filename(name):
                 QMessageBox.warning(self, "Error", f"Invalid file name: '{name}'")
                 return
             
-            selected_dir = ConfigManager.get("selected_dir")
-            if selected_dir:
-                base_path = selected_dir
-            else:
-                base_path = get_project_root()
-            
+            base_path = self._get_valid_base_path()
             full_path = safe_path(base_path, name)
             
             if full_path.exists():
                 QMessageBox.warning(self, "Error", f"File or directory with name '{name}' already exists!")  
                 return
             
-            full_path.touch()
+            with full_path.open("x", encoding="utf-8"):
+                pass
         except PathTraversalError as e:
             QMessageBox.warning(self, "Security Error", str(e))
-        except Exception as e:
-            print(f"ERROR {e}")
+        except OSError as e:
+            QMessageBox.critical(self, "Error", f"Could not create file '{name}':\n{e}")
+        except ValueError as e:
+            QMessageBox.critical(self, "Error", str(e))
 
     def create_file_or_dir(self) -> None:
         name = self.name_edit.text()
@@ -283,7 +312,7 @@ class ProjectContextMenu(QMenu):
         self.model = tree.tree_model
 
         self.target_path = self.model.filePath(index) if self.index.isValid() else None
-        self.is_directory = self.model.isDir(index) if self.index.isValid else False
+        self.is_directory = self.model.isDir(index) if self.index.isValid() else False
 
         self.setObjectName("ContextMenu")
         self._build_menu()

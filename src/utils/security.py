@@ -22,7 +22,7 @@ def safe_path(base: Union[str, Path], user_input: str) -> Path:
     
     Args:
         base: Base directory (project root, config dir, etc.)
-        user_input: User-provided path (filename, relative path, etc.)
+        user_input: User-provided path (filename, relative path, or absolute path within base)
     
     Returns:
         Resolved absolute Path within base directory
@@ -36,16 +36,14 @@ def safe_path(base: Union[str, Path], user_input: str) -> Path:
     
     user_input = user_input.strip()
     
-    # Reject obvious traversal attempts early
-    if ".." in user_input.split("/") or ".." in user_input.split("\\"):
-        raise PathTraversalError(f"Path traversal detected: '{user_input}'")
-    
-    # Reject absolute paths
-    if Path(user_input).is_absolute():
-        raise PathTraversalError(f"Absolute paths not allowed: '{user_input}'")
-    
     base_path = resolve_base_path(base)
-    target_path = (base_path / user_input).resolve()
+
+    input_path = Path(user_input)
+    target_path = (
+        input_path.resolve()
+        if input_path.is_absolute()
+        else (base_path / input_path).resolve()
+    )
     
     # Final check: ensure target is within base
     try:
@@ -54,6 +52,15 @@ def safe_path(base: Union[str, Path], user_input: str) -> Path:
         raise PathTraversalError(f"Path escapes base directory: '{user_input}'")
     
     return target_path
+
+
+def is_within_base(path: Union[str, Path], base: Union[str, Path]) -> bool:
+    """Check if path is within base directory (handles symlinks)."""
+    try:
+        Path(path).resolve().relative_to(Path(base).resolve())
+        return True
+    except (ValueError, OSError):
+        return False
 
 
 def safe_join(base: Union[str, Path], *parts: str) -> Path:
@@ -70,17 +77,16 @@ def safe_join(base: Union[str, Path], *parts: str) -> Path:
     if not parts:
         return resolve_base_path(base)
     
-    # Join all parts first, then validate
-    joined = "/".join(str(p).strip() for p in parts if p and str(p).strip())
-    return safe_path(base, joined)
+    normalized_parts = [str(part).strip() for part in parts if str(part).strip()]
+    return safe_path(base, str(Path(*normalized_parts)))
 
 
 def validate_filename(name: str) -> bool:
     """
-    Validate a filename for safety.
-    
-    Allows: alphanumeric, dash, underscore, dot
-    Rejects: empty, path separators, traversal, reserved names (Windows)
+    Validate that name is a safe single filename component.
+
+    Rejects empty names, path separators, control characters, Windows-invalid
+    characters, and reserved Windows device names.
     """
     if not name or not name.strip():
         return False
@@ -91,12 +97,17 @@ def validate_filename(name: str) -> bool:
     if "/" in name or "\\" in name:
         return False
     
-    # No traversal
-    if ".." in name:
+    # A filename must be one path component, not the current/parent directory.
+    if name in {".", ".."}:
         return False
     
     # No control characters
     if any(ord(c) < 32 for c in name):
+        return False
+
+    # Reject names that are invalid on Windows too, even when created on
+    # another platform and later opened there.
+    if any(char in name for char in '<>:"|?*') or name.endswith((".", " ")):
         return False
     
     # Windows reserved names (case-insensitive)
