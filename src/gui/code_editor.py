@@ -1,13 +1,13 @@
-from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QPlainTextEdit, QSplitter, QWidget, QLineEdit, QTextEdit, QStackedWidget
-from PySide6.QtCore import Qt, QProcess, QTimer
+from PySide6.QtWidgets import QVBoxLayout, QTabWidget, QHBoxLayout, QPushButton, QFrame, QPlainTextEdit, QSplitter, QWidget, QTextEdit, QStackedWidget, QMessageBox
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QKeySequence, QShortcut
-import sys 
 from pathlib import Path
 from src.utils.theme_manager import ThemeManager
 from src.core.signals import signals
 from src.lark_syntax.parser import SCSParser
 from src.utils.config_manager import ConfigManager
-from src.utils.security import safe_path, get_project_root, PathTraversalError
+from src.utils.security import safe_path, get_project_root
+from src.resources.icons import Icons
 from src.gui.syntax_highlighter import SCSHighlighter
 from lark.exceptions import UnexpectedToken, UnexpectedCharacters, UnexpectedEOF, LexError, ParseError
 
@@ -25,17 +25,34 @@ class CodeEditorWidget(QFrame):
         self.splitter.setHandleWidth(5)
         self.main_layout.addWidget(self.splitter)
 
-        self.code_editor = CodeEditor()
-        self.splitter.addWidget(self.code_editor)
+        self.code_editor_workspace = CodeEditorWorkspace()
+        self.splitter.addWidget(self.code_editor_workspace)
 
         self.dev_panel_widget = DevPanelWidget()
         self.splitter.addWidget(self.dev_panel_widget)
+        self.code_editor_workspace.currentChanged.connect(
+            self._show_current_editor_diagnostics
+        )
+        self.code_editor_workspace.syntax_status_changed.connect(
+            self._show_editor_diagnostics
+        )
 
         self.splitter.setSizes([700, 300])
 
 
     def apply_file(self, file_path : str | Path):
-        self.code_editor.apply_file(file_path)
+        self.code_editor_workspace.apply_file(file_path)
+
+    def _show_current_editor_diagnostics(self, index: int) -> None:
+        editor = self.code_editor_workspace.widget(index)
+        error = editor.syntax_error if isinstance(editor, CodeEditor) else None
+        self.dev_panel_widget.problems_wgt.show_diagnostics(error)
+
+    def _show_editor_diagnostics(
+        self, editor: "CodeEditor", error: str | None
+    ) -> None:
+        if self.code_editor_workspace.currentWidget() is editor:
+            self.dev_panel_widget.problems_wgt.show_diagnostics(error)
 
 
 
@@ -82,21 +99,180 @@ class ProblemsWidget(QTextEdit):
     def __init__(self):
         super().__init__()
         self.setReadOnly(True)
-        signals.gaps_appeared.connect(self.appear_gaps)
-        signals.gaps_resolved.connect(self.gaps_resolved)
+        self.show_diagnostics(None)
 
-    def appear_gaps(self, error):
-        self.setText(error)
-
-    def gaps_resolved(self):
-        self.setText("There is no syntax issues")
+    def show_diagnostics(self, error: str | None) -> None:
+        self.setText(error if error else "There is no syntax issues")
 
 
-    
-class CodeEditor(QPlainTextEdit):
-    parser = SCSParser()
+class CodeEditorWorkspace(QTabWidget):
+    syntax_status_changed = Signal(object, object)
+
     def __init__(self):
         super().__init__()
+        self.setObjectName("codeEditorWorkspace")
+        self.setTabsClosable(False)
+        self.setMovable(True)
+        self.setDocumentMode(True)
+        self.tabBar().setExpanding(False)
+        self.tabBar().setUsesScrollButtons(True)
+        self.tabBar().setElideMode(Qt.TextElideMode.ElideRight)
+        self.tabBar().setDrawBase(False)
+        self.currentChanged.connect(self._on_current_changed)
+        signals.theme_changed.connect(self._refresh_close_icons)
+        signals.selected_new_file.connect(self.apply_file)
+        last_viewed_files = ConfigManager.get("last_viewed_files")
+        if not isinstance(last_viewed_files, list):
+            last_viewed_files = []
+        last_viewed_file = ConfigManager.get("last_viewed_file")
+        paths_to_restore = list(dict.fromkeys(
+            [path for path in last_viewed_files if isinstance(path, str)]
+            + ([last_viewed_file] if isinstance(last_viewed_file, str) and last_viewed_file else [])
+        ))
+        for path in paths_to_restore:
+            self.apply_file(path)
+        if last_viewed_file:
+            for index in range(self.count()):
+                editor = self.widget(index)
+                if editor.abs_path == Path(last_viewed_file).resolve():
+                    self.setCurrentIndex(index)
+                    break
+
+    def apply_file(self, file_path : str | Path):
+        if not file_path:
+            return
+
+        try:
+            safe_file = safe_path(get_project_root(), str(file_path))
+            if not safe_file.is_file():
+                raise FileNotFoundError(f"Not a file: {safe_file}")
+        except (OSError, ValueError) as e:
+            QMessageBox.warning(self, "Cannot open file", str(e))
+            return
+
+        for i in range(self.count()):
+            editor = self.widget(i)
+            if editor.abs_path == safe_file:
+                self.setCurrentIndex(i)
+                return
+
+        try:
+            editor = CodeEditor(safe_file)
+            title = safe_file.name
+            index = self.addTab(editor, title)
+            self.setTabToolTip(index, str(safe_file))
+            self._set_close_icon(index)
+            editor.syntax_status_changed.connect(
+                lambda error, current_editor=editor: self.syntax_status_changed.emit(
+                    current_editor, error
+                )
+            )
+            editor.document().modificationChanged.connect(
+                lambda modified, current_editor=editor: self._update_tab_title(
+                    current_editor, modified
+                )
+            )
+        except (OSError, UnicodeError, ValueError) as e:
+            QMessageBox.warning(self, "Cannot open file", f"{safe_file}\n\n{e}")
+            return
+
+        self.setCurrentWidget(editor)
+
+    def _set_close_icon(self, index: int) -> None:
+        editor = self.widget(index)
+        if not isinstance(editor, CodeEditor):
+            return
+        close_button = QPushButton()
+        close_button.setObjectName("editorTabCloseButton")
+        close_button.setIcon(Icons.cross())
+        close_button.setIconSize(QSize(14, 14))
+        close_button.setFixedSize(18, 18)
+        close_button.setToolTip("Close tab")
+        close_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        close_button.clicked.connect(
+            lambda *_: self._close_editor(editor)
+        )
+        self.tabBar().setTabButton(
+            index, self.tabBar().ButtonPosition.RightSide, close_button
+        )
+
+    def _close_editor(self, editor: "CodeEditor") -> None:
+        index = self.indexOf(editor)
+        if index >= 0:
+            self.close_tab(index)
+
+    def _refresh_close_icons(self) -> None:
+        for index in range(self.count()):
+            self._set_close_icon(index)
+
+    def _on_current_changed(self, index: int) -> None:
+        editor = self.widget(index)
+        if isinstance(editor, CodeEditor) and editor.abs_path is not None:
+            current_file = str(editor.abs_path)
+        elif index < 0:
+            current_file = ""
+        else:
+            current_file = ""
+
+        ConfigManager.set("selected_file", current_file)
+        self._persist_open_tabs(current_file)
+
+    def _persist_open_tabs(self, current_file: str | None = None) -> None:
+        open_files = [
+            str(editor.abs_path)
+            for index in range(self.count())
+            if isinstance((editor := self.widget(index)), CodeEditor)
+            and editor.abs_path is not None
+        ]
+        if current_file is None:
+            editor = self.currentWidget()
+            current_file = (
+                str(editor.abs_path)
+                if isinstance(editor, CodeEditor) and editor.abs_path is not None
+                else ""
+            )
+        ConfigManager.set("last_viewed_files", open_files)
+        ConfigManager.set("last_viewed_file", current_file)
+
+    def _update_tab_title(self, editor: "CodeEditor", modified: bool) -> None:
+        index = self.indexOf(editor)
+        if index >= 0:
+            title = Path(editor.abs_path).name if editor.abs_path else "Untitled"
+            self.setTabText(index, f"{title} *" if modified else title)
+
+    def close_tab(self, index: int) -> None:
+        editor = self.widget(index)
+        if not isinstance(editor, CodeEditor):
+            return
+
+        if editor.document().isModified():
+            answer = QMessageBox.question(
+                self,
+                "Unsaved changes",
+                f"Save changes to '{Path(editor.abs_path).name}' before closing?",
+                QMessageBox.StandardButton.Save
+                | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if answer == QMessageBox.StandardButton.Cancel:
+                return
+            if answer == QMessageBox.StandardButton.Save and not editor.save_changes():
+                return
+
+        self.removeTab(index)
+        self._persist_open_tabs()
+        editor.deleteLater()
+
+
+class CodeEditor(QPlainTextEdit):
+    syntax_status_changed = Signal(object)
+    parser = SCSParser()
+    def __init__(self, path: str | Path | None = None):
+        super().__init__()
+        self.setObjectName("codeEditor")
+        self.abs_path = Path(path).resolve() if path else None
+        self.syntax_error: str | None = None
         self.setViewportMargins(20, 0, 0, 0)
 
         self.line_number_area = LineNumberArea(self)
@@ -108,6 +284,7 @@ class CodeEditor(QPlainTextEdit):
         self.shortcut_zoom_out.activated.connect(self.zoom_out)
 
         self.shorcut_save_changes = QShortcut(QKeySequence("Ctrl+S"), self)
+        self.shorcut_save_changes.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.shorcut_save_changes.activated.connect(self.save_changes)
 
         self.line_highlight = ThemeManager.get_color("line_highlight_color")
@@ -125,12 +302,10 @@ class CodeEditor(QPlainTextEdit):
         self.parse_timer.setInterval(1000)
 
         self.textChanged.connect(self.reset_parse_timer)
-
-
-        self.apply_file(ConfigManager.get("last_viewed_file"))
-        signals.selected_new_file.connect(self.apply_file)
         
         signals.theme_changed.connect(self.on_theme_changed)
+        if self.abs_path is not None:
+            self.load_file(self.abs_path)
 
     def reset_parse_timer(self):
         self.parse_timer.start()
@@ -180,44 +355,37 @@ class CodeEditor(QPlainTextEdit):
         self.line_number_area.setFont(self.font())
         self.update_line_area_width()
     
-    def apply_file(self, file_path: str | Path):
-        if file_path:
-            try:
-                safe_file = safe_path(get_project_root(), str(file_path))
-                with open(safe_file, "r", encoding="utf-8") as f:
-                    text = f.read()
-                    self.setPlainText(text)
-                    print(f"Inserted next file: {text}")
-            except PathTraversalError as e:
-                print(f"Security Error: {e}")
-                self.setPlainText("")
-            except Exception as e:
-                print("Cannot load file")
-                self.setPlainText("")
+    def load_file(self, file_path: str | Path) -> None:
+        safe_file = safe_path(get_project_root(), str(file_path))
+        text = safe_file.read_text(encoding="utf-8")
+        self.abs_path = safe_file
+        self.setPlainText(text)
+        self.document().setModified(False)
+        self.update_line_area_width()
 
-    def save_changes(self):
+    def save_changes(self) -> bool:
         text = self.toPlainText()
-        file_path = ConfigManager.get("selected_file")
+        file_path = self.abs_path
         if not file_path:
-            return
+            return False
         try:
-            safe_file = safe_path(get_project_root(), file_path)
-            with open(safe_file, "w", encoding="utf-8") as f:
-                f.write(text)
-        except PathTraversalError as e:
-            print(f"Security Error: {e}")
-        except Exception as e:
-            print(f"ERROR: {e}")
+            safe_file = safe_path(get_project_root(), str(file_path))
+            safe_file.write_text(text, encoding="utf-8")
+        except (OSError, UnicodeError, ValueError) as e:
+            QMessageBox.critical(self, "Cannot save file", f"{file_path}\n\n{e}")
+            return False
+        self.document().setModified(False)
+        return True
 
     def parse_syntax(self):
         text = self.toPlainText()
         if not text:
-            signals.gaps_resolved.emit()
+            self._set_syntax_error(None)
             self.highlighter.clear_errors()
             return
         try:
             tree = self.parser.parse(text)
-            signals.gaps_resolved.emit()
+            self._set_syntax_error(None)
             self.highlighter.clear_errors()
             self.highlighter.refresh_tokens()
             return tree
@@ -229,7 +397,7 @@ class CodeEditor(QPlainTextEdit):
             error = f"Line {line}, col {column}: unexpected token '{e.token}'"
             if expected:
                 error += f", expected: {', '.join(expected)}"
-            signals.gaps_appeared.emit(error)
+            self._set_syntax_error(error)
             self._highlight_error_position(e)
 
         except UnexpectedCharacters as e:
@@ -238,7 +406,7 @@ class CodeEditor(QPlainTextEdit):
             column = getattr(e, 'column', '?')
             char = getattr(e, 'char', '?')
             error = f"Line {line}, col {column}: invalid character '{char}'"
-            signals.gaps_appeared.emit(error)
+            self._set_syntax_error(error)
             self._highlight_error_position(e)
 
         except UnexpectedEOF as e:
@@ -247,21 +415,25 @@ class CodeEditor(QPlainTextEdit):
             error = f"Unexpected end of input"
             if expected:
                 error += f", expected: {', '.join(expected)}"
-            signals.gaps_appeared.emit(error)
+            self._set_syntax_error(error)
             self._highlight_error_position(e)
 
         except LexError as e:
             # Ошибка токенизатора
-            signals.gaps_appeared.emit(f"Lexer error: {e}")
+            self._set_syntax_error(f"Lexer error: {e}")
 
         except ParseError as e:
             # Общая ошибка парсера (fallback)
-            signals.gaps_appeared.emit(f"Parse error: {e}")
+            self._set_syntax_error(f"Parse error: {e}")
 
         except Exception as e:
             import traceback
             traceback.print_exc()
-            signals.gaps_appeared.emit(f"Internal parser error: {type(e).__name__}")
+            self._set_syntax_error(f"Internal parser error: {type(e).__name__}")
+
+    def _set_syntax_error(self, error: str | None) -> None:
+        self.syntax_error = error
+        self.syntax_status_changed.emit(error)
 
     def _highlight_error_position(self, exception):
         """Set error highlight position from Lark exception."""

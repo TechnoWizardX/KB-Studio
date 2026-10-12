@@ -2,6 +2,7 @@ DEFAULT_CONFIG = {
     "project_dir": "",
     "selected_dir" : "",
     "selected_file" : "",
+    "last_viewed_files" : [],
     "last_viewed_file" : "",
     "theme": "dark",
     "grammar_path": "",
