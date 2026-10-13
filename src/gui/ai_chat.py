@@ -25,16 +25,6 @@ class ChatBot(QFrame):
         self.main_layout = QVBoxLayout()
         self.setLayout(self.main_layout)
         self.messages_box = MessagesBox()
-
-        history_controls = QWidget()
-        history_controls_layout = QHBoxLayout(history_controls)
-        history_controls_layout.setContentsMargins(0, 0, 0, 0)
-        history_controls_layout.addStretch()
-
-        self.clear_history_btn = QPushButton("Clear history")
-        self.clear_history_btn.setToolTip("Delete all saved chat messages")
-        self.clear_history_btn.clicked.connect(self._clear_history)
-        history_controls_layout.addWidget(self.clear_history_btn)
         
         # Send chat box
         self.chat_sender = QFrame()
@@ -92,7 +82,6 @@ class ChatBot(QFrame):
         self.chat_sender_layout.insertWidget(1, self.files_list)
 
         self.main_layout.addWidget(self.messages_box, 2)
-        self.main_layout.addWidget(history_controls)
         self.main_layout.addWidget(self.chat_sender, 1)
 
         try:
@@ -106,7 +95,6 @@ class ChatBot(QFrame):
                 )
         except (OSError, sqlite3.Error) as error:
             self.send_btn.setEnabled(False)
-            self.clear_history_btn.setEnabled(False)
             QMessageBox.critical(
                 self,
                 "Chat history unavailable",
@@ -313,6 +301,10 @@ class ChatBot(QFrame):
             return
         if not prompt:
             prompt = "Please review the attached files."
+        if prompt == "/clear_history":
+            self._clear_history()
+            self.chat_input.clear()
+            return
 
         if not self.ready_for_sent():
             QMessageBox.warning(self, "Request not ready", "Model data incorrect/corrupted")
