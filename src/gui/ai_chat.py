@@ -25,6 +25,16 @@ class ChatBot(QFrame):
         self.main_layout = QVBoxLayout()
         self.setLayout(self.main_layout)
         self.messages_box = MessagesBox()
+
+        history_controls = QWidget()
+        history_controls_layout = QHBoxLayout(history_controls)
+        history_controls_layout.setContentsMargins(0, 0, 0, 0)
+        history_controls_layout.addStretch()
+
+        self.clear_history_btn = QPushButton("Clear history")
+        self.clear_history_btn.setToolTip("Delete all saved chat messages")
+        self.clear_history_btn.clicked.connect(self._clear_history)
+        history_controls_layout.addWidget(self.clear_history_btn)
         
         # Send chat box
         self.chat_sender = QFrame()
@@ -82,6 +92,7 @@ class ChatBot(QFrame):
         self.chat_sender_layout.insertWidget(1, self.files_list)
 
         self.main_layout.addWidget(self.messages_box, 2)
+        self.main_layout.addWidget(history_controls)
         self.main_layout.addWidget(self.chat_sender, 1)
 
         try:
@@ -95,11 +106,44 @@ class ChatBot(QFrame):
                 )
         except (OSError, sqlite3.Error) as error:
             self.send_btn.setEnabled(False)
+            self.clear_history_btn.setEnabled(False)
             QMessageBox.critical(
                 self,
                 "Chat history unavailable",
                 f"Could not open the chat history database:\n{error}",
             )
+
+    def _clear_history(self):
+        if self._active_ai_message is not None:
+            QMessageBox.information(
+                self,
+                "Chat is busy",
+                "Wait for the current response to finish before clearing history.",
+            )
+            return
+        if self.history_manager is None:
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Clear chat history",
+            "Delete all saved messages? This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            self.history_manager.clear()
+        except (OSError, sqlite3.Error) as error:
+            QMessageBox.critical(
+                self,
+                "Chat history error",
+                f"Could not clear chat history:\n{error}",
+            )
+            return
+        self.messages_box.clear_messages()
 
     def _add_file_to_prompt(self):
         """Open a file dialog to select files and add them to the context for the AI prompt."""
@@ -382,7 +426,14 @@ class MessagesBox(QScrollArea):
         self._scroll_to_bottom()
         if author == "ai":
             return message
-    
+
+    def clear_messages(self) -> None:
+        while self.layout.count() > 1:
+            item = self.layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
     def _scroll_to_bottom(self):
         """Scroll to bottom after adding message"""
         QTimer.singleShot(0, lambda: QTimer.singleShot(

@@ -41,6 +41,18 @@ class HistoryManagerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 manager.get_messages(limit=0)
 
+    def test_clear_removes_all_messages(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            manager = HistoryManager(Path(temporary_directory) / "history.sqlite3")
+            manager.add_message("user", "Удали меня")
+            manager.add_message("assistant", "Ответ")
+
+            manager.clear()
+
+            self.assertEqual(manager.get_messages(), [])
+            manager.add_message("user", "База остаётся доступной")
+            self.assertEqual(len(manager.get_messages()), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

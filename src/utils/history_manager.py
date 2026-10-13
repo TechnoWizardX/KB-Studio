@@ -43,6 +43,10 @@ class HistoryManager:
                 (role, content, created_at),
             )
 
+    def clear(self) -> None:
+        with self._connect() as connection, connection:
+            connection.execute("DELETE FROM messages")
+
     def get_messages(self, limit: int | None = None) -> list[dict[str, str]]:
         with self._connect() as connection, connection:
             connection.row_factory = sqlite3.Row
