@@ -224,15 +224,23 @@ class CodeEditor(QPlainTextEdit):
         self.parse_timer = QTimer()
         self.parse_timer.timeout.connect(self.parse_syntax)
         self.parse_timer.setSingleShot(True)
-        self.parse_timer.setInterval(1000)
-        self.textChanged.connect(self.reset_parse_timer)
+        self.parse_timer.setInterval(500)
+        self.textChanged.connect(self.reset_changed_timer)
+
+        self.save_timer = QTimer()
+        self.save_timer.timeout.connect(self.save_changes)
+        self.save_timer.setSingleShot(True)
+        self.save_timer.setInterval(400)
+        self.textChanged.connect(self.reset_changed_timer)
 
         signals.theme_changed.connect(self.on_theme_changed)
         if self.abs_path is not None:
             self.load_file(self.abs_path)
 
-    def reset_parse_timer(self) -> None:
+    def reset_changed_timer(self) -> None:
         self.parse_timer.start()
+        if self.abs_path is not None:
+            self.save_timer.start()
 
     def line_number_area_width(self) -> int:
         digits = 1

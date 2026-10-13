@@ -6,6 +6,7 @@ from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
 from src.core.ai_worker import AiWorker, DEFAULT_SYSTEM_PROMPT
 from src.core.crypto_manager import decrypt, encrypt
+from src.core.signals import signals
 from src.utils.history_manager import HistoryManager
 
 from datetime import datetime
@@ -16,6 +17,8 @@ import sqlite3
 class ChatBot(QFrame):
     def __init__(self):
         super().__init__()
+        self.message_context_count = ConfigManager.get("message_context_count")
+        self.showed_messages_limit = ConfigManager.get("showed_messages_limit")
         self._context_files = []
         self._changing_model = False
         self.history_manager = None
@@ -84,9 +87,12 @@ class ChatBot(QFrame):
         self.main_layout.addWidget(self.messages_box, 2)
         self.main_layout.addWidget(self.chat_sender, 1)
 
+        signals.message_context_count_updated.connect(self._message_context_count_updated)
+        signals.showed_messages_limit_updated.connect(self._showed_messages_limit_updated)
+
         try:
             self.history_manager = HistoryManager()
-            for saved_message in self.history_manager.get_messages(limit=200):
+            for saved_message in self.history_manager.get_messages(limit=self.showed_messages_limit):
                 author = "ai" if saved_message["role"] == "assistant" else "user"
                 self.messages_box.add_message(
                     saved_message["content"],
@@ -100,6 +106,14 @@ class ChatBot(QFrame):
                 "Chat history unavailable",
                 f"Could not open the chat history database:\n{error}",
             )
+
+    def _message_context_count_updated(self, new_count: int):
+        """Update the message context count and save it to the config."""
+        self.message_context_count = new_count
+
+    def _showed_messages_limit_updated(self, new_limit: int):
+        """Update the showed messages limit and save it to the config."""
+        self.showed_messages_limit = new_limit
 
     def _clear_history(self):
         if self._active_ai_message is not None:
@@ -314,7 +328,7 @@ class ChatBot(QFrame):
             return
 
         try:
-            conversation_history = self.history_manager.get_messages(limit=20)
+            conversation_history = self.history_manager.get_messages(limit=self.message_context_count)
             self.history_manager.add_message("user", prompt)
         except (OSError, sqlite3.Error) as error:
             QMessageBox.critical(

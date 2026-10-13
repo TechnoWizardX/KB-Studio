@@ -26,7 +26,9 @@ DEFAULT_CONFIG = {
         "model": "", 
         "base_url" : "",
         "api" : ""
-    }
+    },
+    "message_context_count": 10,
+    "showed_messages_limit" : 100
 }
 
 DEFAULT_THEME_CONFIG = {
