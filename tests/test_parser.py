@@ -1,16 +1,9 @@
-"""Тесты SCs-парсера.
-
-В отличие от прежней версии, грамматика НЕ дублируется здесь, а берётся
-из src/lark_syntax/grammar.lark через SCSParser — иначе тесты проверяют
-не тот парсер, что использует редактор.
-
-Запуск:  python parse_test.py
-"""
+"""Unit tests for the SCs parser used by the editor."""
 import re
-import sys
 from pathlib import Path
 
-from lark.exceptions import UnexpectedToken, UnexpectedCharacters
+from lark.exceptions import UnexpectedInput
+import unittest
 
 from src.lark_syntax.parser import SCSParser
 
@@ -189,91 +182,42 @@ TEST_CASES = {
 }
 
 
-def _edge_connectors() -> list:
-    """Все строковые литералы терминала EDGE_T из src/lark_syntax/grammar.lark."""
-    grammar = Path(__file__).parent / "src" / "lark_syntax" / "grammar.lark"
+def _edge_connectors() -> list[str]:
+    """Return every string literal declared for EDGE_T in grammar.lark."""
+    grammar = Path(__file__).parent.parent / "src" / "lark_syntax" / "grammar.lark"
     text = grammar.read_text(encoding="utf-8")
-    block = re.search(r"EDGE_T:(.*?)\n\nID:", text, re.S)
+    block = re.search(r"^EDGE_T:(.*?)(?=^\S|\Z)", text, re.S | re.M)
     if not block:
-        raise RuntimeError("терминал EDGE_T не найден в grammar.lark")
+        raise RuntimeError("EDGE_T terminal not found in grammar.lark")
     return re.findall(r'"((?:[^"\\]|\\.)*)"', block.group(1))
 
 
-def run_tests() -> int:
-    print("=" * 60)
-    print("   SCs-CODE: TEST SUITE (против grammar.lark)")
-    print("=" * 60)
+class SCSParserTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.parser = SCSParser()
 
-    try:
-        parser = SCSParser()
-        print("Грамматика загружена: src/lark_syntax/grammar.lark (LALR)")
-    except Exception as e:
-        print(f"Ошибка компиляции грамматики: {e}")
-        return 1
+    def test_valid_examples(self):
+        for group_name, cases in TEST_CASES.items():
+            if group_name == "Должно НЕ парситься":
+                continue
+            for case in cases:
+                with self.subTest(group=group_name, code=case):
+                    self.parser.parse(case)
 
-    total_pass = total_rejected = total_fail = 0
+    def test_invalid_examples_are_rejected(self):
+        for code, reason in TEST_CASES["Должно НЕ парситься"]:
+            with self.subTest(code=code, reason=reason):
+                with self.assertRaises(UnexpectedInput, msg=reason):
+                    self.parser.parse(code)
 
-    for group_name, cases in TEST_CASES.items():
-        print(f"\n{'-' * 60}\n  {group_name}\n{'-' * 60}")
-
-        for case in cases:
-            if isinstance(case, tuple):
-                code, reason = case
-                should_fail = True
-            else:
-                code, reason, should_fail = case, "", False
-
-            if not code.strip() and not should_fail:
-                # пустой файл — отдельный кейс, парсится в позитивном списке
-                if code != "":
-                    continue
-
-            try:
-                parser.parse(code)
-                if should_fail:
-                    print(f"  FAIL ожидалась ошибка: {code.strip()[:45]!r}")
-                    print(f"       причина: {reason}")
-                    total_fail += 1
-                else:
-                    print(f"  OK   {code.strip()[:52] or '(пусто)'!r}")
-                    total_pass += 1
-            except (UnexpectedToken, UnexpectedCharacters, Exception) as e:
-                if should_fail:
-                    print(f"  OK   отклонено: {code.strip()[:40]!r}")
-                    print(f"       ({reason})")
-                    total_rejected += 1
-                else:
-                    print(f"  FAIL неожиданная ошибка: {code.strip()[:45]!r}")
-                    print(f"       {str(e).splitlines()[0][:90]}")
-                    total_fail += 1
-
-    # Сплошная проверка таблицы коннекторов: каждый терминал EDGE_T из
-    # grammar.lark обязан разбираться в предложении вида `a <conn> b;;`.
-    print(f"\n{'-' * 60}\n  Вся таблица EDGE_T (сплошная проверка)\n{'-' * 60}")
-    conns = _edge_connectors()
-    conn_fail = 0
-    for c in conns:
-        try:
-            parser.parse(f"a {c} b;;")
-            total_pass += 1
-        except Exception as e:
-            conn_fail += 1
-            total_fail += 1
-            print(f"  FAIL {c!r}: {str(e).splitlines()[0][:70]}")
-    print(f"  Коннекторов в EDGE_T: {len(conns)}, упавших: {conn_fail}")
-    if conn_fail == 0:
-        total_pass += 0  # каждый уже посчитан выше
-        print(f"  OK   все {len(conns)} коннекторов разбираются")
-
-    print(f"\n{'=' * 60}\n   RESULTS\n{'=' * 60}")
-    print(f"  Разобрано:                {total_pass}")
-    print(f"  Корректно отклонено:      {total_rejected}")
-    print(f"  Ошибок:                   {total_fail}")
-    print(f"  Всего:                    {total_pass + total_rejected + total_fail}")
-    print(f"\n  {'ALL TESTS PASSED!' if total_fail == 0 else f'ISSUES: {total_fail}'}")
-    print("=" * 60)
-    return 0 if total_fail == 0 else 1
+    def test_every_declared_edge_connector_parses(self):
+        connectors = _edge_connectors()
+        self.assertTrue(connectors, "grammar.lark must declare EDGE_T connectors")
+        for connector in connectors:
+            with self.subTest(connector=connector):
+                self.parser.parse(f"a {connector} b;;")
 
 
 if __name__ == "__main__":
-    sys.exit(run_tests())
+    unittest.main()

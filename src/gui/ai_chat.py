@@ -6,9 +6,11 @@ from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
 from src.core.ai_worker import AiWorker, DEFAULT_SYSTEM_PROMPT
 from src.core.crypto_manager import decrypt, encrypt
+from src.utils.history_manager import HistoryManager
 
 from datetime import datetime
 from pathlib import Path
+import sqlite3
 
 
 class ChatBot(QFrame):
@@ -16,6 +18,8 @@ class ChatBot(QFrame):
         super().__init__()
         self._context_files = []
         self._changing_model = False
+        self.history_manager = None
+        self._active_ai_message = None
         self.init_ai_connect()
 
         self.main_layout = QVBoxLayout()
@@ -79,6 +83,23 @@ class ChatBot(QFrame):
 
         self.main_layout.addWidget(self.messages_box, 2)
         self.main_layout.addWidget(self.chat_sender, 1)
+
+        try:
+            self.history_manager = HistoryManager()
+            for saved_message in self.history_manager.get_messages(limit=200):
+                author = "ai" if saved_message["role"] == "assistant" else "user"
+                self.messages_box.add_message(
+                    saved_message["content"],
+                    author,
+                    saved_message["created_at"],
+                )
+        except (OSError, sqlite3.Error) as error:
+            self.send_btn.setEnabled(False)
+            QMessageBox.critical(
+                self,
+                "Chat history unavailable",
+                f"Could not open the chat history database:\n{error}",
+            )
 
     def _add_file_to_prompt(self):
         """Open a file dialog to select files and add them to the context for the AI prompt."""
@@ -240,61 +261,98 @@ class ChatBot(QFrame):
     
     def send_request(self):
         """Sends request to the LLM: locally (Ollama) or cloud (with API and Provider)"""
+        if self._active_ai_message is not None:
+            return
         prompt = self.chat_input.toPlainText().strip()
         context_files = list(self._context_files)
         if not prompt and not context_files:
             return
         if not prompt:
             prompt = "Please review the attached files."
+
+        if not self.ready_for_sent():
+            QMessageBox.warning(self, "Request not ready", "Model data incorrect/corrupted")
+            return
+        if self.history_manager is None:
+            QMessageBox.critical(self, "Chat history unavailable", "Chat history is not available.")
+            return
+
+        try:
+            conversation_history = self.history_manager.get_messages(limit=20)
+            self.history_manager.add_message("user", prompt)
+        except (OSError, sqlite3.Error) as error:
+            QMessageBox.critical(
+                self,
+                "Chat history error",
+                f"Could not save the message:\n{error}",
+            )
+            return
+
         self.chat_input.clear()
-        
+
         api = None
         for model in self.models_list:
             if model.get("display_name") == self._display_name:
                 api = model.get("api")
         decrypted_key = decrypt(api) if api else ""
-        
-        if self.ready_for_sent():
-            # Add user message first
-            self.messages_box.add_message(prompt, author="user")
-            # Add AI message placeholder
-            self.last_ai_message = self.messages_box.add_message(text="", author="ai")
-            
-            # Connect worker signals for this request
-            self.worker.text_chunk_received.connect(self.last_ai_message.add_chunk)
-            self.worker.generation_ended.connect(self._on_generation_ended)
-            self.worker.error_occurred.connect(self._on_worker_error)
-            
-            # Emit signal to run request in worker thread
-            self.worker.do_request.emit(
-                self._provider,
-                self._base_url,
-                self._model,
-                decrypted_key,
-                prompt,
-                DEFAULT_SYSTEM_PROMPT,
-                context_files
-            )
-        else:
-            QMessageBox.warning(self, "Request not ready", "Model data incorrect/corrupted")
+
+        self.messages_box.add_message(prompt, author="user")
+        self._active_ai_message = self.messages_box.add_message(text="", author="ai")
+        self.send_btn.setEnabled(False)
+
+        self.worker.text_chunk_received.connect(self._active_ai_message.add_chunk)
+        self.worker.generation_ended.connect(self._on_generation_ended)
+        self.worker.error_occurred.connect(self._on_worker_error)
+
+        self.worker.do_request.emit(
+            self._provider,
+            self._base_url,
+            self._model,
+            decrypted_key,
+            prompt,
+            DEFAULT_SYSTEM_PROMPT,
+            context_files,
+            [
+                {"role": message["role"], "content": message["content"]}
+                for message in conversation_history
+            ],
+        )
     
     def _on_generation_ended(self):
-        """Clean up signal connections when generation ends"""
-        if self.last_ai_message:
-            self.last_ai_message.finish_streaming()
+        """Persist the completed answer and clean up its signal connections."""
+        message = self._active_ai_message
+        self._finish_generation()
+        if message is None or self.history_manager is None or not message.content:
+            return
         try:
-            self.worker.text_chunk_received.disconnect(self.last_ai_message.add_chunk)
+            self.history_manager.add_message("assistant", message.content)
+        except (OSError, sqlite3.Error) as error:
+            QMessageBox.critical(
+                self,
+                "Chat history error",
+                f"Could not save the AI response:\n{error}",
+            )
+
+    def _finish_generation(self):
+        message = self._active_ai_message
+        if message is None:
+            return
+        message.finish_streaming()
+        try:
+            self.worker.text_chunk_received.disconnect(message.add_chunk)
             self.worker.generation_ended.disconnect(self._on_generation_ended)
             self.worker.error_occurred.disconnect(self._on_worker_error)
-        except:
+        except (RuntimeError, TypeError):
             pass
+        self._active_ai_message = None
+        self.send_btn.setEnabled(True)
     
     def _on_worker_error(self, error: str):
         """Handle worker error"""
-        self._on_generation_ended()
-        if self.last_ai_message:
-            current = self.last_ai_message.label.text()
-            self.last_ai_message.label.setText(current + f"\n\n[Error: {error}]")
+        message = self._active_ai_message
+        self._finish_generation()
+        if message:
+            message.label.setText(f"{message.content}\n\n[Error: {error}]")
 
     def eventFilter(self, obj, event):
         if obj is self.chat_input and event.type() == QEvent.Type.KeyPress:
@@ -318,8 +376,8 @@ class MessagesBox(QScrollArea):
         self.setWidget(self.container)
         self.setWidgetResizable(True)
 
-    def add_message(self, text, author) -> "Message | None":
-        message = Message(text, author)
+    def add_message(self, text, author, created_at=None) -> "Message | None":
+        message = Message(text, author, created_at)
         self.layout.insertWidget(self.layout.count() - 1, message)  # before stretch
         self._scroll_to_bottom()
         if author == "ai":
@@ -399,11 +457,13 @@ class ContextFile(QFrame):
         self.main_layout.addWidget(self.remove_btn)
 
 class Message(QFrame):
-    def __init__(self, text, author):
+    def __init__(self, text, author, created_at=None):
         super().__init__()
         self.author = author
+        self.content = text
         self._streaming = author == "ai" and text == ""
-        time = datetime.now().strftime("%H:%M")
+        message_time = datetime.fromisoformat(created_at) if created_at else datetime.now()
+        time = message_time.astimezone().strftime("%H:%M")
 
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -435,23 +495,13 @@ class Message(QFrame):
         """Toggle typing cursor visibility"""
         if not self._streaming:
             return
-        current = self.label.text()
-        # Remove existing cursor if present
-        if current.endswith("▌"):
-            current = current[:-1]
-        # Add cursor if visible
-        if self._cursor_visible:
-            current += "▌"
-        self.label.setText(current)
+        self.label.setText(self.content + ("▌" if self._cursor_visible else ""))
         self._cursor_visible = not self._cursor_visible
 
     def add_chunk(self, chunk):
         """Append chunk to message text - runs in main thread via Qt queued connection"""
-        current = self.label.text()
-        # Remove cursor if present
-        if current.endswith("▌"):
-            current = current[:-1]
-        self.label.setText(current + chunk)
+        self.content += chunk
+        self.label.setText(self.content + ("▌" if self._streaming and self._cursor_visible else ""))
 
     def finish_streaming(self):
         """Called when streaming ends - remove cursor"""
@@ -460,9 +510,7 @@ class Message(QFrame):
             if hasattr(self, '_cursor_timer'):
                 self._cursor_timer.stop()
             # Remove cursor if present
-            current = self.label.text()
-            if current.endswith("▌"):
-                self.label.setText(current[:-1])
+            self.label.setText(self.content)
 
 
 class AddModelDialog(QDialog):
