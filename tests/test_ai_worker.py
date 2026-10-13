@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from src.core.ai_worker import AiWorker, DEFAULT_SYSTEM_PROMPT, OLLAMA_URL
+from src.resources.default_prompts import ABOUT_OSTIS
 
 
 class AiWorkerContextTests(unittest.TestCase):
@@ -62,7 +63,10 @@ class AiWorkerContextTests(unittest.TestCase):
         self.assertEqual(
             messages,
             [
-                {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
+                {
+                    "role": "system",
+                    "content": f"{DEFAULT_SYSTEM_PROMPT}\n\n{ABOUT_OSTIS}",
+                },
                 {"role": "user", "content": "Первый вопрос"},
                 {"role": "assistant", "content": "Первый ответ"},
                 {"role": "user", "content": "Следующий вопрос"},
