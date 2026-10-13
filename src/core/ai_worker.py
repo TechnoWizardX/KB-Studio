@@ -40,7 +40,11 @@ class AiWorker(QObject):
                      model: str = DEFAULT_MODEL, api: str = "", prompt: str = "", 
                      system_prompt: str = DEFAULT_SYSTEM_PROMPT, files: list | None = None):
         if files:
-            prompt = self.add_files_to_prompt(prompt, files)
+            try:
+                prompt = self.add_files_to_prompt(prompt, files)
+            except (OSError, UnicodeError, ValueError) as e:
+                self.error_occurred.emit(str(e))
+                return
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
@@ -87,6 +91,8 @@ class AiWorker(QObject):
             try:
                 file_content = get_context_file_content(file_path)
                 prompt += f"\n\nContent of {Path(file_path).name}:\n{file_content}"
-            except Exception as e:
-                self.error_occurred.emit(f"Failed to read file '{file_path}': {e}")
+            except (OSError, UnicodeError, ValueError) as e:
+                raise ValueError(
+                    f"Failed to read context file '{file_path}': {e}"
+                ) from e
         return prompt

@@ -27,7 +27,7 @@ def get_context_file_content(file_path: str) -> str:
     if not resolved_path.is_file():
         raise ValueError(f"Context path is not a file: '{file_path}'")
 
-    return resolved_path.read_text(encoding="utf-8")
+    return resolved_path.read_text(encoding="utf-8-sig")
 
 def get_file_path(file_path: str) -> str:
     """Get the absolute path of a file, ensuring it's within the project root."""
