@@ -315,7 +315,7 @@ class ChatBot(QFrame):
             return
         if not prompt:
             prompt = "Please review the attached files."
-        if prompt == "/clear_history":
+        if prompt == "/clear-history":
             self._clear_history()
             self.chat_input.clear()
             return
