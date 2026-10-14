@@ -1,11 +1,15 @@
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QSplitter, QVBoxLayout, QMessageBox
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QSplitter, QVBoxLayout, QMessageBox, QHBoxLayout
 from PySide6.QtCore import Qt
 import sys
+
 from src.utils.config_manager import ConfigManager
 from src.utils.theme_manager import ThemeManager
+
 from src.gui.directory_view import DirectoryTreeViewWidget
 from src.gui.code_editor_widget import CodeEditorWidget
 from src.gui.ai_chat import ChatBot
+from src.gui.settings import Settings
+
 from src.core.signals import signals
 
 class MainWindow(QMainWindow):
@@ -20,6 +24,18 @@ class MainWindow(QMainWindow):
         self.main_layout = QVBoxLayout()
         self.main_widget.setLayout(self.main_layout)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.top_bar_layout = QHBoxLayout()
+        self.top_bar_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.settings = Settings(self)
+        self.settings_button = self.settings.call_button
+        self.settings_button.clicked.connect(self.settings.exec)
+
+        self.top_bar_layout.addWidget(self.settings_button)
+        self.top_bar_layout.addStretch()
+
+        self.main_layout.addLayout(self.top_bar_layout)
 
         self.last_project = ConfigManager.get("project_dir")
         self.dir_view = DirectoryTreeViewWidget(root_path=self.last_project)

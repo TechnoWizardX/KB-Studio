@@ -87,6 +87,7 @@ class ChatBot(QFrame):
         self.main_layout.addWidget(self.messages_box, 2)
         self.main_layout.addWidget(self.chat_sender, 1)
 
+        signals.theme_changed.connect(self._refresh_icons)
         signals.message_context_count_updated.connect(self._message_context_count_updated)
         signals.showed_messages_limit_updated.connect(self._showed_messages_limit_updated)
 
@@ -106,6 +107,11 @@ class ChatBot(QFrame):
                 "Chat history unavailable",
                 f"Could not open the chat history database:\n{error}",
             )
+
+    def _refresh_icons(self, _theme: str) -> None:
+        self.send_btn.setIcon(Icons.send())
+        self.delete_model_btn.setIcon(Icons.cross())
+        self.add_file_to_context_menu.setIcon(Icons.file_add())
 
     def _message_context_count_updated(self, new_count: int):
         """Update the message context count and save it to the config."""

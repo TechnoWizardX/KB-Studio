@@ -4,8 +4,10 @@ class Signals(QObject):
     selected_new_project_folder = Signal(str)
 
     selected_new_file = Signal(str)
+    
     message_context_count_updated = Signal(int)
     showed_messages_limit_updated = Signal(int)
+
     create_file_act = Signal()
     create_dir_act = Signal()
 

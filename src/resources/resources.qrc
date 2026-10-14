@@ -6,5 +6,6 @@
     <file>icons/folder_search.svg</file>
     <file>icons/plus.svg</file>
     <file>icons/send.svg</file>
+    <file>icons/settings.svg</file>
   </qresource>
 </RCC>

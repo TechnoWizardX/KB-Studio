@@ -61,3 +61,7 @@ class Icons:
     @classmethod
     def plus(cls) -> QIcon:
         return cls._get("plus", ":/icons/plus.svg")
+
+    @classmethod
+    def settings(cls) -> QIcon:
+        return cls._get("settings", ":/icons/settings.svg")

@@ -74,6 +74,8 @@ class DirectoryTreeViewWidget(QFrame):
         self.project_struct_manage_layout.addWidget(self.mk_file_btn)
         self.mk_file_btn.clicked.connect(self.make_new_file)
 
+        signals.theme_changed.connect(self._refresh_icons)
+
         self.name_edit = QLineEdit()
         self.name_edit_status = False
         self.name_edit.hide()
@@ -87,6 +89,11 @@ class DirectoryTreeViewWidget(QFrame):
         signals.create_dir_act.connect(self.make_new_dir)
         signals.execute_create_file.connect(self.execute_create_file)
         signals.execute_create_dir.connect(self.execute_create_dir)
+
+    def _refresh_icons(self, _theme: str) -> None:
+        self.select_project_dir_btn.setIcon(Icons.folder_search())
+        self.mk_dir_btn.setIcon(Icons.folder_add())
+        self.mk_file_btn.setIcon(Icons.file_add())
 
     def on_tree_context_menu(self, point: QPoint):
         index = self.dir_view.indexAt(point)
