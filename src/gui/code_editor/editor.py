@@ -36,13 +36,16 @@ class CodeEditorWorkspace(QTabWidget):
         self.setTabsClosable(False)
         self.setMovable(True)
         self.setDocumentMode(True)
+
         self.tabBar().setExpanding(False)
         self.tabBar().setUsesScrollButtons(True)
         self.tabBar().setElideMode(Qt.TextElideMode.ElideRight)
         self.tabBar().setDrawBase(False)
+
         self.currentChanged.connect(self._on_current_changed)
         signals.theme_changed.connect(self._refresh_close_icons)
         signals.selected_new_file.connect(self.apply_file)
+
         last_viewed_files = ConfigManager.get("last_viewed_files")
         if not isinstance(last_viewed_files, list):
             last_viewed_files = []
@@ -203,6 +206,7 @@ class CodeEditor(QPlainTextEdit):
         self.abs_path = Path(path).resolve() if path else None
         self.syntax_error: str | None = None
         self.setViewportMargins(20, 0, 0, 0)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
 
         self.line_number_area = LineNumberArea(self)
         self.shortcut_zoom_in = QShortcut(QKeySequence("Ctrl++"), self)
