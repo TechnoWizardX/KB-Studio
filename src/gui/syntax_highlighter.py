@@ -1,3 +1,5 @@
+import re
+
 from PySide6.QtGui import QSyntaxHighlighter, QTextCharFormat, QColor, QFont
 from PySide6.QtCore import Qt
 from src.lark_syntax.parser import SCSParser
@@ -6,7 +8,7 @@ from lark.exceptions import UnexpectedInput
 
 
 class SCSHighlighter(QSyntaxHighlighter):
-    """Syntax highlighter for SCs code - highlights ONLY brackets/delimiters and errors."""
+    """Syntax highlighting for SCs tokens, comments, and parser errors."""
 
     # Only bracket/delimiter tokens with distinct colors per type (dark theme)
     BRACKET_COLORS_DARK = {
@@ -52,22 +54,78 @@ class SCSHighlighter(QSyntaxHighlighter):
 
     # Tokens to highlight (only brackets/delimiters)
     BRACKET_TOKENS = frozenset(BRACKET_COLORS_DARK.keys())
+    SEMANTIC_TOKENS = frozenset({"LINK_CONTENT"})
+    COMMENT_STATE = 1
+    IDENTIFIER_PATTERN = re.compile(r"[A-Za-z0-9_.]+")
+    EDGE_TOKENS = (
+        "<>",
+        ">",
+        "<",
+        "..>",
+        "<..",
+        "->",
+        "<-",
+        "<=>",
+        "=>",
+        "<=",
+        "-|>",
+        "<|-",
+        "-/>",
+        "</-",
+        "~>",
+        "<~",
+        "~|>",
+        "<|~",
+        "~/>",
+        "</~",
+        "=",
+    )
+    EDGE_PATTERN = re.compile(
+        "|".join(
+            re.escape(token)
+            for token in sorted(
+                EDGE_TOKENS + tuple(f"_{token}" for token in EDGE_TOKENS),
+                key=len,
+                reverse=True,
+            )
+        )
+    )
 
     def __init__(self, document, parser: SCSParser):
         super().__init__(document)
         self.parser = parser
         self._formats = {}
+        self._comment_format = QTextCharFormat()
+        self._string_format = QTextCharFormat()
         self._error_format = QTextCharFormat()
         self._error_format.setUnderlineStyle(QTextCharFormat.UnderlineStyle.SpellCheckUnderline)
         self._error_positions = []  # List of (start, end) positions
         self._theme = 'dark'
         self._cached_tokens = []  # Cache tokens from last successful parse
+        self._cached_text: str | None = None
         self._build_formats()
 
     def _build_formats(self):
         """Create QTextCharFormat for each bracket type based on current theme."""
         colors = self.BRACKET_COLORS_DARK if self._theme == 'dark' else self.BRACKET_COLORS_LIGHT
         error_color = '#f14c4c' if self._theme == 'dark' else '#cd3131'
+        semantic_colors = (
+            {
+                "ID": "#ce9178",
+                "ALIAS": "#c586c0",
+                "EDGE_T": "#ff0080",
+                "STRING": "#6a9955",
+                "LINK_CONTENT": "#c678dd",
+            }
+            if self._theme == "dark"
+            else {
+                "ID": "#800000",
+                "ALIAS": "#7f3fbf",
+                "EDGE_T": "#d00070",
+                "STRING": "#008000",
+                "LINK_CONTENT": "#7a378b",
+            }
+        )
         
         self._formats.clear()
         for token_type, color in colors.items():
@@ -75,6 +133,18 @@ class SCSHighlighter(QSyntaxHighlighter):
             fmt.setForeground(QColor(color))
             # Normal weight (not bold) for brackets
             self._formats[token_type] = fmt
+
+        semantic_formats = {
+            token_type: QTextCharFormat()
+            for token_type in ("ID", "ALIAS", "EDGE_T", "STRING", "LINK_CONTENT")
+        }
+        for token_type, fmt in semantic_formats.items():
+            fmt.setForeground(QColor(semantic_colors[token_type]))
+            self._formats[token_type] = fmt
+
+        comment_color = "#858585" if self._theme == "dark" else "#6a737d"
+        self._comment_format.setForeground(QColor(comment_color))
+        self._string_format = semantic_formats["STRING"]
         
         # Update error format with theme-appropriate color
         self._error_format.setUnderlineColor(QColor(error_color))
@@ -100,13 +170,15 @@ class SCSHighlighter(QSyntaxHighlighter):
         self.rehighlight()
 
     def _extract_tokens(self, tree):
-        """Extract only bracket/delimiter tokens from a Lark parse tree."""
+        """Extract bracket delimiters and link content from a Lark parse tree."""
         tokens = []
         
         def walk(node):
             if isinstance(node, Token):
-                # Only include bracket tokens that have position info
-                if node.type in self.BRACKET_TOKENS and hasattr(node, 'start_pos') and node.start_pos is not None:
+                if (
+                    node.type in self.BRACKET_TOKENS | self.SEMANTIC_TOKENS
+                    and node.start_pos is not None
+                ):
                     tokens.append(node)
             elif isinstance(node, Tree):
                 for child in node.children:
@@ -122,14 +194,18 @@ class SCSHighlighter(QSyntaxHighlighter):
             self._cached_tokens = self._extract_tokens(tree)
         except UnexpectedInput:
             # Parse error - keep old tokens, errors will be shown via error positions
-            pass
+            self._cached_text = text
         except Exception:
             # Other errors - clear cache
             self._cached_tokens = []
+            self._cached_text = text
+        else:
+            self._cached_text = text
 
     def highlightBlock(self, text: str):
-        """Highlight a single block (line) of text - only brackets and errors."""
+        """Highlight one line using tokens from the last valid SCs parse."""
         if not text:
+            self.setCurrentBlockState(self.previousBlockState())
             return
 
         # Get full document text
@@ -137,14 +213,16 @@ class SCSHighlighter(QSyntaxHighlighter):
         if not full_text:
             return
 
-        # Update token cache if needed
-        if not self._cached_tokens:
+        # Update the token cache once per document revision.
+        if self._cached_text != full_text:
             self._update_token_cache(full_text)
 
         block_start = self.currentBlock().position()
         block_end = block_start + len(text)
 
-        # Highlight bracket tokens from cache
+        self._highlight_lexical_tokens(text)
+
+        # Highlight bracket tokens and link content from the parse cache.
         for token in self._cached_tokens:
             token_start = token.start_pos
             token_end = token.end_pos
@@ -162,6 +240,8 @@ class SCSHighlighter(QSyntaxHighlighter):
                 if fmt:
                     self.setFormat(start, length, fmt)
 
+        self._highlight_comments_and_strings(text)
+
         # Highlight errors (underline)
         for err_start, err_end in self._error_positions:
             if err_end <= block_start or err_start >= block_end:
@@ -170,6 +250,68 @@ class SCSHighlighter(QSyntaxHighlighter):
             length = min(err_end, block_end) - max(err_start, block_start)
             if length > 0:
                 self.setFormat(start, length, self._error_format)
+
+    def _highlight_lexical_tokens(self, text: str) -> None:
+        for match in self.IDENTIFIER_PATTERN.finditer(text):
+            self.setFormat(
+                match.start(), match.end() - match.start(), self._formats["ID"]
+            )
+        for match in self.EDGE_PATTERN.finditer(text):
+            self.setFormat(
+                match.start(), match.end() - match.start(), self._formats["EDGE_T"]
+            )
+
+    def _highlight_comments_and_strings(self, text: str) -> None:
+        position = 0
+        in_block_comment = self.previousBlockState() == self.COMMENT_STATE
+        self.setCurrentBlockState(0)
+
+        while position < len(text):
+            if in_block_comment:
+                comment_end = text.find("*/", position)
+                if comment_end == -1:
+                    self.setFormat(
+                        position, len(text) - position, self._comment_format
+                    )
+                    self.setCurrentBlockState(self.COMMENT_STATE)
+                    return
+                comment_end += 2
+                self.setFormat(
+                    position, comment_end - position, self._comment_format
+                )
+                position = comment_end
+                in_block_comment = False
+                continue
+
+            if text.startswith("//", position):
+                self.setFormat(
+                    position, len(text) - position, self._comment_format
+                )
+                return
+
+            if text.startswith("/*", position):
+                in_block_comment = True
+                continue
+
+            if text[position] == '"':
+                string_end = position + 1
+                while string_end < len(text):
+                    if text[string_end] == "\\":
+                        string_end += 2
+                        continue
+                    if text[string_end] == '"':
+                        string_end += 1
+                        break
+                    string_end += 1
+                self.setFormat(
+                    position,
+                    min(string_end, len(text)) - position,
+                    self._string_format,
+                )
+                position = string_end
+                continue
+
+            position += 1
 
     def refresh_tokens(self):
         """Force token cache refresh - call after text changes."""

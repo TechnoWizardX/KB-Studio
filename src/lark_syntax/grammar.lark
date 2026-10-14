@@ -41,7 +41,8 @@ set_body: set_item (SEP set_item)* SEP?
 set_item: element attr*
 
 link: LBRACKET link_content? RBRACKET
-link_content: /(?:[^\[\]]|\[[^\[\]]*\])+/
+link_content: LINK_CONTENT
+LINK_CONTENT: /(?:[^\[\]]|\[[^\[\]]*\])+/
 
 sc_structure: LBRACKET_STAR sentence* STAR_RBRACKET
 
