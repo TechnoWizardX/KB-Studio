@@ -234,13 +234,22 @@ class CodeEditor(QPlainTextEdit):
         self.textChanged.connect(self.reset_changed_timer)
 
         signals.theme_changed.connect(self.on_theme_changed)
+        signals.auto_save_changed.connect(self.on_auto_save_changed)
         if self.abs_path is not None:
             self.load_file(self.abs_path)
 
     def reset_changed_timer(self) -> None:
         self.parse_timer.start()
-        if self.abs_path is not None:
+        if self.abs_path is not None and ConfigManager.get("auto_save"):
             self.save_timer.start()
+        else:
+            self.save_timer.stop()
+
+    def on_auto_save_changed(self, enabled: bool) -> None:
+        if enabled and self.abs_path is not None and self.document().isModified():
+            self.save_timer.start()
+        else:
+            self.save_timer.stop()
 
     def line_number_area_width(self) -> int:
         digits = 1

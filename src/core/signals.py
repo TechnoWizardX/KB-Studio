@@ -17,6 +17,7 @@ class Signals(QObject):
     delete_act = Signal()
 
     theme_changed = Signal(str)
+    auto_save_changed = Signal(bool)
 
     error_occured = Signal(str)
 signals = Signals()
