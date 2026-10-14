@@ -282,7 +282,6 @@ SCS_CODE_SYNTAX_AND_LEVELS_PROMPT = """
 ## 0. Scope
 
 SCs-code is the textual representation of SC-code used to describe semantic structures in OSTIS. This reference follows the official `sc-machine` documentation for versions **0.9.0 and newer**.
-
 Source: https://ostis-ai.github.io/sc-machine/scs/scs/
 
 ## 1. Common syntax
@@ -342,7 +341,7 @@ Aliases can refer to links, elements, connectors, constructions, or other aliase
 ## 2. Syntax levels
 
 Higher levels provide more compact representations. Different levels can be combined in one file.
-
+The most popular levels is Level 2 and higher. Though use minimum level 2 for explanation of SCs-code
 ### Level 1 — Explicit triples
 
 A sentence explicitly specifies subject, predicate, and object, separated by `|`:
@@ -640,9 +639,19 @@ ABOUT_OSTIS = """
 * SCs-code — текстовое представление SC-code. Текст состоит из предложений, разделяемых `;;`; документация описывает синтаксис с уровнями представления.
 * На уровне 2 конструкция предложения имеет вид `<элемент> <коннектор> <элемент>;;`; составные коннекторы можно заключать в круглые скобки.
 * SCs поддерживает комментарии `// ...` и `/* ... */`, а также идентификаторы с префиксами видимости и переменности.
+* Самый популярный уровень синтаксиса — уровень 2 и выше. Для объяснения SCs-code используйте минимум уровень 2.
 
 Эта справка суммирует документацию sc-machine >= 0.9.0. Точные правила синтаксиса и типы зависят от версии; если вопрос требует деталей, ориентируйся на ссылки:
 * Общее описание sc-machine и OSTIS: https://ostis-ai.github.io/sc-machine/
 * SCs-code (версия sc-machine >= 0.9.0): https://ostis-ai.github.io/sc-machine/scs/scs/
 * Типы SC-элементов (версия sc-machine >= 0.10.0): https://ostis-ai.github.io/sc-machine/scs/sc_element_types/
 """
+
+ABOUT_PREFIX = """
+# About node prefix
+concept_ : concept/class node
+rrel : relation role node
+nrel : non-role relation node
+_ : variable node
+@ : alias for node, link, or construction
+ """

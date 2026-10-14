@@ -4,7 +4,7 @@ import json
 
 from PySide6.QtCore import QObject, Signal
 from src.utils.file_manager import get_context_file_content
-from src.resources.default_prompts import ABOUT_OSTIS, SCS_CODE_SYNTAX_AND_LEVELS_PROMPT,  SCS_TYPES_PROMPT
+from src.resources.default_prompts import ABOUT_OSTIS, SCS_CODE_SYNTAX_AND_LEVELS_PROMPT,  SCS_TYPES_PROMPT, ABOUT_PREFIX
 DEFAULT_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "openrouter/free"
 DEFAULT_SYSTEM_PROMPT = """
@@ -25,6 +25,7 @@ SC-code и редактированием SCs-файлов. Отвечай яс�
 OLLAMA_URL = "http://localhost:11434/v1"
 
 OSTIS_PROMPT = ( ABOUT_OSTIS + "\n\n" + 
+                 ABOUT_PREFIX + "\n\n" +
                  SCS_CODE_SYNTAX_AND_LEVELS_PROMPT + "\n\n" + 
                  SCS_TYPES_PROMPT)
 

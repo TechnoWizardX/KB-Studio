@@ -18,7 +18,7 @@ class ChatBot(QFrame):
     def __init__(self):
         super().__init__()
         self.message_context_count = ConfigManager.get("message_context_count")
-        self.showed_messages_limit = ConfigManager.get("showed_messages_limit")
+        self.startup_message_count = ConfigManager.get("startup_message_count")
         self._context_files = []
         self._changing_model = False
         self.history_manager = None
@@ -89,11 +89,13 @@ class ChatBot(QFrame):
 
         signals.theme_changed.connect(self._refresh_icons)
         signals.message_context_count_updated.connect(self._message_context_count_updated)
-        signals.showed_messages_limit_updated.connect(self._showed_messages_limit_updated)
+        signals.startup_message_count_updated.connect(self._startup_message_count_updated)
 
         try:
             self.history_manager = HistoryManager()
-            for saved_message in self.history_manager.get_messages(limit=self.showed_messages_limit):
+            for saved_message in self.history_manager.get_messages(
+                limit=self.startup_message_count
+            ):
                 author = "ai" if saved_message["role"] == "assistant" else "user"
                 self.messages_box.add_message(
                     saved_message["content"],
@@ -117,9 +119,8 @@ class ChatBot(QFrame):
         """Update the message context count and save it to the config."""
         self.message_context_count = new_count
 
-    def _showed_messages_limit_updated(self, new_limit: int):
-        """Update the showed messages limit and save it to the config."""
-        self.showed_messages_limit = new_limit
+    def _startup_message_count_updated(self, new_count: int):
+        self.startup_message_count = new_count
 
     def _clear_history(self):
         if self._active_ai_message is not None:

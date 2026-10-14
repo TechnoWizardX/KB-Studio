@@ -45,9 +45,23 @@ class ConfigManager():
             with open(config_file, "r", encoding="utf-8") as f:
                 cls._current_config = json.load(f)
 
+                migrated_message_count = "showed_messages_limit" in cls._current_config
+                legacy_message_count = cls._current_config.pop("showed_messages_limit", None)
+                if "startup_message_count" not in cls._current_config:
+                    if (
+                        isinstance(legacy_message_count, int)
+                        and not isinstance(legacy_message_count, bool)
+                        and legacy_message_count > 0
+                    ):
+                        cls._current_config["startup_message_count"] = (
+                            legacy_message_count
+                        )
+
                 for key, val in cls.DEFAULT_CONFIG.items():
                     if key not in cls._current_config:
                         cls._current_config[key] = val
+                if migrated_message_count:
+                    cls.save()
         except Exception as e:
             print(f"Ошибка чтения конфига, сброс на дефолт: {e}")
             cls._current_config = cls.DEFAULT_CONFIG.copy()

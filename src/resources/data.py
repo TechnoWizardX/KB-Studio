@@ -28,7 +28,7 @@ DEFAULT_CONFIG = {
         "api" : ""
     },
     "message_context_count": 10,
-    "showed_messages_limit" : 100
+    "startup_message_count": 100
 }
 
 DEFAULT_THEME_CONFIG = {

@@ -1,4 +1,5 @@
-from PySide6.QtWidgets import QApplication, QWidget, QDialog, QFrame, QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout, QScrollArea, QCheckBox
+from PySide6.QtWidgets import (QApplication, QWidget, QDialog, QFrame, QLabel, QLineEdit, QPushButton, 
+                               QVBoxLayout, QHBoxLayout, QScrollArea, QCheckBox, QMessageBox)
 from PySide6.QtCore import QSize, Signal
 from src.core.signals import signals
 from src.resources.icons import Icons
@@ -58,12 +59,17 @@ class Settings(QDialog):
         self.settings_layout.addWidget(self.chat_label)
         self.settings_layout.addWidget(self.chat_frame)
 
-        self.max_visible_messages = CountChangeSection("Max visible messages", ConfigManager.get("showed_messages_limit"), signals.showed_messages_limit_updated)
-        self.chat_frame_layout.addWidget(self.max_visible_messages)
+        self.startup_message_count = CountChangeSection(
+            "Messages loaded on startup",
+            "startup_message_count",
+            ConfigManager.get("startup_message_count"),
+            signals.startup_message_count_updated,
+        )
+        self.chat_frame_layout.addWidget(self.startup_message_count)
 
-        self.max_context_messages = CountChangeSection("Max context messages", ConfigManager.get("message_context_count"), signals.message_context_count_updated)
+        self.max_context_messages = CountChangeSection("Max context messages", "message_context_count", ConfigManager.get("message_context_count"), signals.message_context_count_updated)
         self.chat_frame_layout.addWidget(self.max_context_messages)
-        
+
         self.settings_layout.addStretch()
 
     def apply_theme(self, theme: str) -> None:
@@ -81,9 +87,10 @@ class Settings(QDialog):
         signals.auto_save_changed.emit(enabled)
 
 class CountChangeSection(QWidget):
-    def __init__(self, text: str, initial_count: int, signal : Signal, parent=None):
+    def __init__(self, text: str, config_name: str, initial_count: int, signal: Signal, parent=None):
         super().__init__(parent)
         self._text = text
+        self._config_name = config_name
         self._initial_count = initial_count
         self._signal = signal
 
@@ -106,8 +113,12 @@ class CountChangeSection(QWidget):
     def emit_change(self):
         try:
             new_count = int(self._line_edit.text())
+            if new_count < 1:
+                raise ValueError("Count must be greater than zero")
             self._signal.emit(new_count)
-        except ValueError:
+            ConfigManager.set(self._config_name, new_count)
+        except ValueError as e:
+            QMessageBox.warning(self, "Invalid Input", str(e))
             self._line_edit.setText(str(self._initial_count))
     
 class SettingsSection(QWidget):
