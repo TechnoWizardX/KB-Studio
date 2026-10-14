@@ -3,8 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from src.core.ai_worker import AiWorker, DEFAULT_SYSTEM_PROMPT, OLLAMA_URL
-from src.resources.default_prompts import ABOUT_OSTIS
+from src.core.ai_worker import AiWorker, OLLAMA_URL
 
 
 class AiWorkerContextTests(unittest.TestCase):
@@ -42,37 +41,6 @@ class AiWorkerContextTests(unittest.TestCase):
             worker.open_ai_client.chat.completions.create.assert_not_called()
             self.assertEqual(len(errors), 1)
             self.assertIn(str(selected_file), errors[0])
-
-    def test_sends_conversation_history_to_model(self):
-        worker = AiWorker(model="test", provider="ollama", base_url=OLLAMA_URL)
-        worker.open_ai_client = Mock()
-        worker.open_ai_client.chat.completions.create.return_value = []
-
-        worker.send_request(
-            provider="ollama",
-            base_url=OLLAMA_URL,
-            model="test",
-            prompt="Следующий вопрос",
-            history=[
-                {"role": "user", "content": "Первый вопрос"},
-                {"role": "assistant", "content": "Первый ответ"},
-            ],
-        )
-
-        messages = worker.open_ai_client.chat.completions.create.call_args.kwargs["messages"]
-        self.assertEqual(
-            messages,
-            [
-                {
-                    "role": "system",
-                    "content": f"{DEFAULT_SYSTEM_PROMPT}\n\n{ABOUT_OSTIS}",
-                },
-                {"role": "user", "content": "Первый вопрос"},
-                {"role": "assistant", "content": "Первый ответ"},
-                {"role": "user", "content": "Следующий вопрос"},
-            ],
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

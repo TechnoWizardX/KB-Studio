@@ -57,9 +57,18 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "ERROR", error)
 
     def closeEvent(self, event):
-        super().closeEvent(event)
+        if not self.chat_bot.shutdown():
+            QMessageBox.warning(
+                self,
+                "AI request is still running",
+                "Wait for the current AI request to finish, then close the application.",
+            )
+            event.ignore()
+            return
+
         ConfigManager.set("selected_dir", "")
         ConfigManager.set("selected_file", "")
+        super().closeEvent(event)
 
 def init_app():
     app = QApplication(sys.argv)

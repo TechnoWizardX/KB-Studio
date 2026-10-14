@@ -1,4 +1,5 @@
 PySide6>=6.7.0
 lark>=1.1.9
 openai
+cryptography>=42.0.0
 dotenv

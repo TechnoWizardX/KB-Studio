@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import (QWidget, QDialogButtonBox, QFrame, QFormLayout,
+from PySide6.QtWidgets import (QWidget, QDialogButtonBox, QFrame, QFormLayout, QSizePolicy,
                                QPushButton, QLabel, QTextEdit, QComboBox, QScrollArea,
                                QVBoxLayout, QHBoxLayout, QDialog, QMessageBox, QLineEdit, QFileDialog)
 from PySide6.QtCore import QSize, QThread, Qt, QTimer, QEvent, QUrl, Signal
@@ -196,12 +196,28 @@ class ChatBot(QFrame):
         self._base_url = last_model.get("base_url")
         self.models_list = ConfigManager.get("models")
         
-        self.worker = AiWorker(model=self._model, provider=self._provider, base_url=self._base_url)
-
-        self.ai_thread = QThread()
-        self.worker.moveToThread(self.ai_thread)
-        
+        self.ai_thread = QThread(self)
+        self.worker = self._create_worker()
         self.ai_thread.start()
+
+    def _create_worker(self) -> AiWorker:
+        worker = AiWorker(
+            model=self._model,
+            provider=self._provider,
+            base_url=self._base_url,
+        )
+        worker.moveToThread(self.ai_thread)
+        self.ai_thread.finished.connect(worker.deleteLater)
+        return worker
+
+    def shutdown(self) -> bool:
+        if self._active_ai_message is not None:
+            return False
+        if not self.ai_thread.isRunning():
+            return True
+
+        self.ai_thread.quit()
+        return self.ai_thread.wait(5000)
 
     def _delete_model(self):
         """Delete the currently selected model from the list and config."""
@@ -240,8 +256,7 @@ class ChatBot(QFrame):
             )
             if hasattr(self, "worker"):
                 self.worker.deleteLater()
-            self.worker = AiWorker(model="", provider="", base_url="")
-            self.worker.moveToThread(self.ai_thread)
+            self.worker = self._create_worker()
 
         self._changing_model = True
         self.models_combo_box.clear()
@@ -306,8 +321,7 @@ class ChatBot(QFrame):
         """Recreate AI worker with new model configuration"""
         if hasattr(self, 'worker'):
             self.worker.deleteLater()
-        self.worker = AiWorker(model=self._model, provider=self._provider, base_url=self._base_url)
-        self.worker.moveToThread(self.ai_thread)
+        self.worker = self._create_worker()
 
     def ready_for_sent(self) -> bool:
         return self._provider and self._base_url and self._model
@@ -435,7 +449,8 @@ class MessagesBox(QScrollArea):
 
     def add_message(self, text, author, created_at=None) -> "Message | None":
         message = Message(text, author, created_at)
-        self.layout.insertWidget(self.layout.count() - 1, message)  # before stretch
+        alignment = Qt.AlignmentFlag.AlignLeft if author == "ai" else Qt.AlignmentFlag.AlignRight
+        self.layout.insertWidget(self.layout.count() - 1, message, alignment)  # before stretch
         self._scroll_to_bottom()
         if author == "ai":
             return message
@@ -523,6 +538,7 @@ class ContextFile(QFrame):
 class Message(QFrame):
     def __init__(self, text, author, created_at=None):
         super().__init__()
+        
         self.author = author
         self.content = text
         self._streaming = author == "ai" and text == ""
