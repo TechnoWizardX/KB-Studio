@@ -8,7 +8,14 @@ from lark.exceptions import (
     UnexpectedToken,
 )
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
+from PySide6.QtGui import (
+    QColor,
+    QKeyEvent,
+    QKeySequence,
+    QPainter,
+    QShortcut,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
@@ -199,6 +206,10 @@ class CodeEditorWorkspace(QTabWidget):
 class CodeEditor(QPlainTextEdit):
     syntax_status_changed = Signal(object)
     parser = SCSParser()
+    bracket_pairs = {"(": ")", "[": "]", "{": "}", "<": ">"}
+    closing_brackets = {
+        closing: opening for opening, closing in bracket_pairs.items()
+    }
 
     def __init__(self, path: str | Path | None = None):
         super().__init__()
@@ -241,6 +252,102 @@ class CodeEditor(QPlainTextEdit):
         signals.auto_save_changed.connect(self.on_auto_save_changed)
         if self.abs_path is not None:
             self.load_file(self.abs_path)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        cursor = self.textCursor()
+        text = event.text()
+
+        modifiers = event.modifiers()
+        shortcut_modifiers = (
+            Qt.KeyboardModifier.ControlModifier
+            | Qt.KeyboardModifier.AltModifier
+            | Qt.KeyboardModifier.MetaModifier
+        )
+        if (
+            not self.isReadOnly()
+            and text in self.bracket_pairs
+            and not modifiers & shortcut_modifiers
+        ):
+            closing = self.bracket_pairs[text]
+            selected_text = cursor.selectedText()
+            if selected_text:
+                selected_text = selected_text.replace("\u2029", "\n")
+                cursor.insertText(f"{text}{selected_text}{closing}")
+                cursor.setPosition(cursor.position() - 1)
+            else:
+                cursor.insertText(f"{text}{closing}")
+                cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter)
+            self.setTextCursor(cursor)
+            return
+
+        if (
+            not self.isReadOnly()
+            and text == "*"
+            and not modifiers & shortcut_modifiers
+            and not cursor.hasSelection()
+        ):
+            position = cursor.position()
+            content = self.toPlainText()
+            if (
+                position > 0
+                and position < len(content)
+                and content[position - 1] == "("
+                and content[position] == ")"
+            ):
+                cursor.setPosition(position - 1)
+                cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
+                cursor.insertText("(**)")
+                cursor.setPosition(position + 1)
+                self.setTextCursor(cursor)
+                return
+
+        if (
+            not self.isReadOnly()
+            and (text in self.closing_brackets or text == "*")
+            and not modifiers & shortcut_modifiers
+            and not cursor.hasSelection()
+        ):
+            content = self.toPlainText()
+            if cursor.position() < len(content):
+                next_character = content[cursor.position()]
+                if next_character == text or (
+                    text == "*"
+                    and content[cursor.position() : cursor.position() + 2] == "*)"
+                ):
+                    cursor.movePosition(QTextCursor.MoveOperation.NextCharacter)
+                    self.setTextCursor(cursor)
+                    return
+
+        if (
+            not self.isReadOnly()
+            and event.key() == Qt.Key.Key_Backspace
+            and not modifiers & shortcut_modifiers
+            and not cursor.hasSelection()
+        ):
+            position = cursor.position()
+            content = self.toPlainText()
+            if (
+                content[position - 2 : position] == "(*"
+                and content[position : position + 2] == "*)"
+            ):
+                cursor.setPosition(position - 2)
+                cursor.setPosition(position + 2, QTextCursor.MoveMode.KeepAnchor)
+                cursor.removeSelectedText()
+                self.setTextCursor(cursor)
+                return
+            if position > 0 and position < len(content):
+                previous_character = content[position - 1]
+                next_character = content[position]
+                if self.bracket_pairs.get(previous_character) == next_character:
+                    cursor.setPosition(position - 1)
+                    cursor.setPosition(
+                        position + 1, QTextCursor.MoveMode.KeepAnchor
+                    )
+                    cursor.removeSelectedText()
+                    self.setTextCursor(cursor)
+                    return
+
+        super().keyPressEvent(event)
 
     def reset_changed_timer(self) -> None:
         self.parse_timer.start()
