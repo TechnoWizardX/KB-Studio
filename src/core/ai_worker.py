@@ -1,6 +1,7 @@
 from openai import OpenAI
 from pathlib import Path
 import json
+from threading import Event, Lock
 
 from PySide6.QtCore import QObject, Signal
 from src.utils.file_manager import get_context_file_content
@@ -42,8 +43,29 @@ class AiWorker(QObject):
         self._provider = provider
         self._base_url = base_url
         self.open_ai_client = None
+        self._cancel_requested = Event()
+        self._stream_lock = Lock()
+        self._active_stream = None
         # Connect signal to slot (will run in worker thread)
         self.do_request.connect(self.send_request)
+
+    def prepare_request(self):
+        """Reset cancellation state before queuing a new request."""
+        with self._stream_lock:
+            self._active_stream = None
+            self._cancel_requested.clear()
+
+    def cancel_request(self):
+        """Close the active response stream, if it has already been created."""
+        self._cancel_requested.set()
+        with self._stream_lock:
+            stream = self._active_stream
+        if stream is not None:
+            try:
+                stream.close()
+            except Exception:
+                self._cancel_requested.clear()
+                raise
         
     def send_request(self, provider: str = "openai", base_url: str = DEFAULT_URL, 
                      model: str = DEFAULT_MODEL, api: str = "", prompt: str = "", 
@@ -88,13 +110,28 @@ class AiWorker(QObject):
                 messages=messages,
                 stream=True
             )
+            with self._stream_lock:
+                self._active_stream = stream
+                cancel_requested = self._cancel_requested.is_set()
+            if cancel_requested:
+                stream.close()
+
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content is not None:
                     text_chunk = chunk.choices[0].delta.content
                     self.text_chunk_received.emit(text_chunk)
+            if self._cancel_requested.is_set():
+                self.generation_ended.emit()
+                return
             self.generation_ended.emit()
         except Exception as e:
-            self.error_occurred.emit(f"AI request failed: {e}")
+            if self._cancel_requested.is_set():
+                self.generation_ended.emit()
+            else:
+                self.error_occurred.emit(f"AI request failed: {e}")
+        finally:
+            with self._stream_lock:
+                self._active_stream = None
 
     def add_files_to_prompt(self, prompt: str, files: list) -> str:
         """Append the content of the files to the prompt."""

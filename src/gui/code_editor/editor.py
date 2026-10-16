@@ -263,11 +263,7 @@ class CodeEditor(QPlainTextEdit):
             | Qt.KeyboardModifier.AltModifier
             | Qt.KeyboardModifier.MetaModifier
         )
-        if (
-            not self.isReadOnly()
-            and text in self.bracket_pairs
-            and not modifiers & shortcut_modifiers
-        ):
+        if not self.isReadOnly() and text in self.bracket_pairs and not modifiers & shortcut_modifiers:
             closing = self.bracket_pairs[text]
             selected_text = cursor.selectedText()
             if selected_text:
@@ -280,20 +276,12 @@ class CodeEditor(QPlainTextEdit):
             self.setTextCursor(cursor)
             return
 
-        if (
-            not self.isReadOnly()
-            and text == "*"
-            and not modifiers & shortcut_modifiers
-            and not cursor.hasSelection()
-        ):
+        if not self.isReadOnly() and text == "*" and not modifiers & shortcut_modifiers and not cursor.hasSelection():
             position = cursor.position()
             content = self.toPlainText()
-            if (
-                position > 0
-                and position < len(content)
-                and content[position - 1] == "("
-                and content[position] == ")"
-            ):
+            if (position > 0 and position < len(content)
+                and content[position - 1] == "(" and content[position] == ")"
+                ):
                 cursor.setPosition(position - 1)
                 cursor.setPosition(position + 1, QTextCursor.MoveMode.KeepAnchor)
                 cursor.insertText("(**)")
@@ -326,10 +314,7 @@ class CodeEditor(QPlainTextEdit):
         ):
             position = cursor.position()
             content = self.toPlainText()
-            if (
-                content[position - 2 : position] == "(*"
-                and content[position : position + 2] == "*)"
-            ):
+            if content[position - 2 : position] == "(*" and content[position : position + 2] == "*)":
                 cursor.setPosition(position - 2)
                 cursor.setPosition(position + 2, QTextCursor.MoveMode.KeepAnchor)
                 cursor.removeSelectedText()

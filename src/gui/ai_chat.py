@@ -53,7 +53,7 @@ class ChatBot(QFrame):
         self.send_btn.setIconSize(QSize(30, 30))
         self.send_btn.setFixedSize(QSize(30, 30))
         self.sender_bottom_layout.addWidget(self.send_btn)
-        self.send_btn.clicked.connect(self.send_request)
+        self.send_btn.clicked.connect(self._send_or_cancel_request)
 
         self.models_combo_box = QComboBox()
         self.sender_bottom_layout.addWidget(self.models_combo_box)
@@ -111,9 +111,31 @@ class ChatBot(QFrame):
             )
 
     def _refresh_icons(self, _theme: str) -> None:
-        self.send_btn.setIcon(Icons.send())
+        self._update_send_button()
         self.delete_model_btn.setIcon(Icons.cross())
         self.add_file_to_context_menu.setIcon(Icons.file_add())
+
+    def _update_send_button(self):
+        is_generating = self._active_ai_message is not None
+        self.send_btn.setIcon(Icons.cross() if is_generating else Icons.send())
+        self.send_btn.setToolTip("Cancel request" if is_generating else "Send request")
+
+    def _send_or_cancel_request(self):
+        if self._active_ai_message is not None:
+            self.send_btn.setEnabled(False)
+            self.send_btn.setToolTip("Cancelling request...")
+            try:
+                self.worker.cancel_request()
+            except Exception as error:
+                self.send_btn.setEnabled(True)
+                self.send_btn.setToolTip("Cancel request")
+                QMessageBox.warning(
+                    self,
+                    "Cancellation failed",
+                    f"Could not cancel the AI request:\n{error}",
+                )
+            return
+        self.send_request()
 
     def _message_context_count_updated(self, new_count: int):
         """Update the message context count and save it to the config."""
@@ -369,12 +391,14 @@ class ChatBot(QFrame):
 
         self.messages_box.add_message(prompt, author="user")
         self._active_ai_message = self.messages_box.add_message(text="", author="ai")
-        self.send_btn.setEnabled(False)
+        self._update_send_button()
+        self.send_btn.setEnabled(True)
 
         self.worker.text_chunk_received.connect(self._active_ai_message.add_chunk)
         self.worker.generation_ended.connect(self._on_generation_ended)
         self.worker.error_occurred.connect(self._on_worker_error)
 
+        self.worker.prepare_request()
         self.worker.do_request.emit(
             self._provider,
             self._base_url,
@@ -416,6 +440,7 @@ class ChatBot(QFrame):
         except (RuntimeError, TypeError):
             pass
         self._active_ai_message = None
+        self._update_send_button()
         self.send_btn.setEnabled(True)
     
     def _on_worker_error(self, error: str):

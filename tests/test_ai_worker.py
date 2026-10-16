@@ -42,5 +42,49 @@ class AiWorkerContextTests(unittest.TestCase):
             self.assertEqual(len(errors), 1)
             self.assertIn(str(selected_file), errors[0])
 
+    def test_cancel_request_closes_stream_and_finishes_without_error(self):
+        class MockStream:
+            def __init__(self):
+                self.closed = False
+
+            def __iter__(self):
+                yield Mock(
+                    choices=[Mock(delta=Mock(content="partial response"))]
+                )
+                if not self.closed:
+                    yield Mock(choices=[Mock(delta=Mock(content="should not appear"))])
+
+            def close(self):
+                self.closed = True
+
+        worker = AiWorker(model="test", provider="ollama", base_url=OLLAMA_URL)
+        worker._model = "test"
+        worker._provider = "ollama"
+        worker._base_url = OLLAMA_URL
+        stream = MockStream()
+        worker.open_ai_client = Mock()
+        worker.open_ai_client.chat.completions.create.return_value = stream
+        errors = []
+        completed = []
+        received_chunks = []
+        worker.error_occurred.connect(errors.append)
+        worker.generation_ended.connect(lambda: completed.append(True))
+        worker.text_chunk_received.connect(
+            lambda _chunk: (received_chunks.append(_chunk), worker.cancel_request())
+        )
+
+        worker.prepare_request()
+        worker.send_request(
+            provider="ollama",
+            base_url=OLLAMA_URL,
+            model="test",
+            prompt="test",
+        )
+
+        self.assertTrue(stream.closed)
+        self.assertEqual(received_chunks, ["partial response"])
+        self.assertEqual(completed, [True])
+        self.assertEqual(errors, [])
+
 if __name__ == "__main__":
     unittest.main()
