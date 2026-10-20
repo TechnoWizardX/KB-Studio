@@ -314,6 +314,158 @@ class GraphSceneTests(unittest.TestCase):
         self.assertEqual((arcs[-1].get("e_x"), arcs[-1].get("e_y")), ("0.0", "0.0"))
         editor.close()
 
+    def test_gwf_loads_scg2_spelled_node_and_pair_types(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/perm/general" idtf="concept_question"
+                id="n1" x="80" y="140"/>
+          <node type="node/const/perm/group" idtf="concept_answer"
+                id="n2" x="300" y="80"/>
+          <node type="node/const/perm/relation" idtf="nrel_answer"
+                id="n3" x="300" y="260"/>
+          <pair type="pair/const/pos/perm/orient/membership" id="p1"
+                id_b="n1" id_e="n2"
+                b_x="80" b_y="140" e_x="300" e_y="80"
+                dotBBalance="0" dotEBalance="0"/>
+          <pair type="pair/const/-/perm/orient" id="p2"
+                id_b="n3" id_e="n2"
+                b_x="300" b_y="260" e_x="300" e_y="80"
+                dotBBalance="0" dotEBalance="0"/>
+          <pair type="pair/const/-/perm/noorien" id="p3"
+                id_b="n2" id_e="n3"
+                b_x="300" b_y="80" e_x="300" e_y="260"
+                dotBBalance="0" dotEBalance="0"/>
+        </staticSector></GWF>"""
+
+        self.scene.load_gwf(source)
+
+        self.assertEqual(
+            {node.identifier for node in self.scene.nodes.values()},
+            {"concept_question", "concept_answer", "nrel_answer"},
+        )
+        self.assertEqual(len(self.scene.edges), 3)
+        self.assertEqual(len(self.scene.gwf_sector_extras), 0)
+        edges = {edge.gwf_id: edge for edge in self.scene.edges}
+        self.assertEqual(
+            edges["p1"].gwf_type, "pair/const/pos/perm/orient/membership"
+        )
+        self.assertEqual(edges["p1"].edge_type, "=>")
+        self.assertEqual(edges["p2"].gwf_type, "pair/const/-/perm/orient")
+        self.assertEqual(edges["p2"].edge_type, "=>")
+        self.assertEqual(edges["p3"].gwf_type, "pair/const/-/perm/noorien")
+        self.assertEqual(edges["p3"].edge_type, "<=>")
+
+        exported = ET.fromstring(self.scene.to_gwf())
+        sector = exported.find("staticSector")
+        types = [
+            (item.get("id"), item.get("type"))
+            for item in sector.findall("pair")
+        ]
+        self.assertEqual(
+            types,
+            [
+                ("p1", "pair/const/pos/perm/orient/membership"),
+                ("p2", "pair/const/-/perm/orient"),
+                ("p3", "pair/const/-/perm/noorien"),
+            ],
+        )
+        node_types = [
+            (item.get("id"), item.get("type"))
+            for item in sector.findall("node")
+        ]
+        self.assertEqual(
+            node_types,
+            [
+                ("n1", "node/const/perm/general"),
+                ("n2", "node/const/perm/group"),
+                ("n3", "node/const/perm/relation"),
+            ],
+        )
+
+    def test_scg2_group_and_relation_nodes_drawn_as_squares(self):
+        general = self.scene.add_node(
+            "general_node", QPointF(40, 40), gwf_type="node/const/perm/general"
+        )
+        group = self.scene.add_node(
+            "group_node", QPointF(140, 40), gwf_type="node/const/perm/group"
+        )
+        relation = self.scene.add_node(
+            "relation_node",
+            QPointF(240, 40),
+            gwf_type="node/const/perm/relation",
+        )
+
+        corner = QPointF(11, 11)
+        self.assertFalse(
+            general._glyph_shape().contains(corner),
+            "general node glyph must be a circle",
+        )
+        self.assertTrue(
+            group._glyph_shape().contains(corner),
+            "group node glyph must be a square",
+        )
+        self.assertTrue(
+            relation._glyph_shape().contains(corner),
+            "relation node glyph must be a square",
+        )
+
+    def test_membership_pair_draws_an_orientation_arrow(self):
+        source_id = self.scene.add_node("source", QPointF(60, 60))
+        target_id = self.scene.add_node("target", QPointF(340, 60))
+
+        membership = self.scene.connect_nodes(
+            source_id,
+            target_id,
+            "=>",
+            gwf_type="pair/const/pos/perm/orient/membership",
+            gwf_tag="pair",
+        )
+        oriented_pair = self.scene.connect_nodes(
+            target_id,
+            source_id,
+            "=>",
+            gwf_type="pair/const/-/perm/orient",
+            gwf_tag="pair",
+        )
+        nooriented_pair = self.scene.connect_nodes(
+            source_id,
+            target_id,
+            "<=>",
+            gwf_type="pair/const/-/perm/noorien",
+            gwf_tag="pair",
+        )
+
+        self.assertTrue(membership._is_oriented_type())
+        self.assertTrue(oriented_pair._is_oriented_type())
+        self.assertFalse(nooriented_pair._is_oriented_type())
+
+    def test_scg2_types_are_selectable_and_change_is_undoable(self):
+        editor = GraphEditorWidget()
+        node = editor.scene.add_node("changeable", QPointF(40, 40))
+        index = editor.node_type_combo.findData("node/const/perm/group")
+        self.assertGreaterEqual(index, 0)
+
+        editor.node_type_combo.setCurrentIndex(index)
+        editor._set_node_type(node, "node/const/perm/group")
+        self.assertEqual(node.gwf_type, "node/const/perm/group")
+        editor.undo_stack.undo()
+        self.assertEqual(node.gwf_type, "node/const/general_node")
+
+        membership_tuple = (
+            "pair/const/pos/perm/orient/membership",
+            "pair",
+            "=>",
+        )
+        membership_index = next(
+            (
+                index
+                for index in range(editor.edge_type_combo.count())
+                if editor.edge_type_combo.itemData(index) == membership_tuple
+            ),
+            -1,
+        )
+        self.assertGreaterEqual(membership_index, 0)
+        editor.close()
+
     def test_gwf_round_trip_loads_connector_references_in_dependency_order(self):
         source = """<GWF version="2.0"><staticSector>
           <node type="node/const/general_node" idtf="source" id="n1" x="80" y="140"/>

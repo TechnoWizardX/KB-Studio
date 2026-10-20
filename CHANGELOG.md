@@ -25,6 +25,12 @@
   arrangement for the neighbours of the selected node.
 - Added toolbar icons (Lucide SVG assets embedded through the application
   resource bundle) with tooltips for every graph editor action.
+- The graph editor understands SCg 2.0 spelled GWF types: nodes
+  (`node/const/perm/general`, `.../group`, `.../relation`, and any other
+  `node/<side>/<permanence>/<structure>` form) and connectors
+  (`pair/...orient/.../membership`, `pair/const/-/perm/noorien`, and similar
+  arc/pair spellings). Such files open with all relations drawn, and saving
+  keeps object types and the original element order.
 
 ### Changed
 

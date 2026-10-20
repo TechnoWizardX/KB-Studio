@@ -134,7 +134,19 @@ def serialize_gwf(scene: GraphScene) -> str:
     for item in scene.aux_objects:
         sector.append(item.to_gwf_element())
 
-    for edge in scene.edges:
+    edges: list = list(scene.edges)
+    if any(
+        getattr(edge, "gwf_document_order", None) is not None
+        for edge in edges
+    ):
+        edges.sort(
+            key=lambda edge: (
+                edge.gwf_document_order
+                if getattr(edge, "gwf_document_order", None) is not None
+                else math.inf
+            )
+        )
+    for edge in edges:
         element = (
             deepcopy(edge.gwf_element)
             if edge.gwf_element is not None

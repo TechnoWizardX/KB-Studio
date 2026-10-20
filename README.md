@@ -32,6 +32,10 @@ deleting. The toolbar arrangers lay the graph out as a grid, vertical line,
 horizontal line, or circle around the neighbours of the selected node. All
 editing actions support undo and redo (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y). The
 graph editor also provides node search, zoom, fit-to-graph, and PNG export.
+It loads full SCg 2.0 `.gwf` documents (spelled node and connector types such
+as `node/const/perm/general` or `pair/const/-/perm/orient/membership`,
+membership arrows, dot balances, and waypoints) and writes them back without
+losing types or element order.
 Toolbar actions use theme-aware icons from the embedded Lucide icon set
 (ISC license, see `src/resources/icons/`). Unsupported GWF elements are
 preserved as unmodified document elements.

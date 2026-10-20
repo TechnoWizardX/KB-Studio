@@ -24,6 +24,21 @@ SIMPLE_RELATION = re.compile(
 )
 SIMPLE_NODE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*;;\s*(?://.*)?$")
 
+GWF_STRUCTURE_NODES = (
+    # SCg 2.0 (OSTIS standard) spelled node types, e.g.
+    # "node/const/perm/general" as written by KBE and ostis tools.
+    ("SCg general node", "node/const/perm/general"),
+    ("SCg group node", "node/const/perm/group"),
+    ("SCg relation node", "node/const/perm/relation"),
+)
+
+GWF_MEMBERSHIP_CONNECTORS = (
+    # Connectors as they appear in real-world .gwf documents.
+    ("SCg membership pair", "pair/const/pos/perm/orient/membership", "pair", "=>"),
+    ("SCg oriented pair", "pair/const/-/perm/orient", "pair", "=>"),
+    ("SCg unoriented pair", "pair/const/-/perm/noorien", "pair", "<=>"),
+)
+
 NODE_TYPES = (
     ("Undefined constant", "node/const/not_define"),
     ("Constant general node", "node/const/general_node"),
@@ -57,7 +72,7 @@ NODE_TYPES = (
     ("Meta relation node", "node/meta/relation"),
     ("Meta atom node", "node/meta/atom"),
     ("Meta group node", "node/meta/group"),
-)
+) + GWF_STRUCTURE_NODES
 
 CONNECTOR_TYPES = (
     ("Oriented relation", "arc/-/-", "arc", "->"),
@@ -87,23 +102,45 @@ CONNECTOR_TYPES = (
     ("Constant oriented pair", "pair/const/orient", "pair", "=>"),
     ("Variable oriented pair", "pair/var/orient", "pair", "?=>"),
     ("Meta oriented pair", "pair/meta/orient", "pair", "?=>"),
-)
+) + GWF_MEMBERSHIP_CONNECTORS
+
+
+_NODE_STRUCTURE_ALIASES = {
+    "not_define": "not_define",
+    "general": "general",
+    "general_node": "general",
+    "predmet": "abstract",
+    "abstract": "abstract",
+    "material": "material",
+    "nopredmet": "struct",
+    "struct": "struct",
+    "symmetry": "tuple",
+    "asymmetry": "tuple",
+    "attribute": "role",
+    "role": "role",
+    "relop": "relation",
+    "relation": "relation",
+    "group": "group",
+    "atom": "not_define",
+}
 
 
 def node_type_parts(gwf_type: str) -> tuple[str, str]:
     parts = gwf_type.split("/")
-    if len(parts) < 3 or parts[0] != "node":
+    if len(parts) < 2 or parts[0] != "node":
         return "const", "not_define"
-    permanence, structure = parts[1:3]
-    structure = {
-        "not_define": "not_define",
-        "general_node": "general",
-        "predmet": "abstract",
-        "nopredmet": "struct",
-        "symmetry": "tuple",
-        "asymmetry": "tuple",
-        "attribute": "role",
-    }.get(structure, structure)
+    permanence = parts[1]
+    # Skip period segment(s) ("perm", "temp") used by SCg 2.0 spelled types
+    # such as "node/const/perm/general".
+    structure_segments = [
+        segment
+        for segment in parts[2:]
+        if segment not in {"perm", "temp"}
+    ]
+    structure = (
+        structure_segments[-1] if structure_segments else "general"
+    )
+    structure = _NODE_STRUCTURE_ALIASES.get(structure, structure)
     if permanence == "meta":
         permanence = "const" if structure == "not_define" else "var"
     if permanence not in {"const", "var"}:
@@ -111,8 +148,67 @@ def node_type_parts(gwf_type: str) -> tuple[str, str]:
     return permanence, structure
 
 
+def connector_parts(tag: str, gwf_type: str) -> tuple[str, bool] | None:
+    """Разбирает gwf-тип коннектора.
+
+    Возвращает ("level_prefix", oriented), где level_prefix — "" для
+    константных, "_" для переменных и "?" для мета-коннекторов, или None,
+    если тип не распознан. Понимает и краткие kbe-формы
+    ("pair/const/orient"), и полные SCg 2.0 записи
+    ("pair/const/pos/perm/orient/membership", "pair/const/-/perm/noorien").
+    """
+    if tag not in {"arc", "pair"}:
+        return None
+    parts = gwf_type.split("/")
+    if not parts or parts[0] != tag:
+        return None
+    permanence = parts[1] if len(parts) > 1 else ""
+    if permanence in {"const", "var", "meta", "-"}:
+        prefix = {"const": "", "var": "_", "meta": "?", "-": ""}[permanence]
+        rest = parts[2:]
+    elif len(parts) == 1:
+        return "", False if tag == "pair" else True
+    elif permanence in {"noorient", "orient", "synonym"}:
+        return "", tag == "arc" or permanence == "orient"
+    else:
+        return None
+    if not rest:
+        return prefix, tag == "arc"
+    polarity = rest[0] if rest[0] in {"pos", "neg", "fuz", "-"} else None
+    if polarity is not None:
+        rest = rest[1:]
+    if tag == "arc" and not rest:
+        return prefix, True
+    period = rest[0] if rest and rest[0] in {"perm", "temp"} else None
+    if period is not None:
+        rest = rest[1:]
+    if tag == "arc" and not rest:
+        return prefix, True
+    if tag == "arc":
+        return prefix, rest[0] != "noorient" if rest else True
+    # pair: последний сегмент задаёт направленность.
+    orientation = rest[-1] if rest else "orient"
+    oriented = orientation in {"orient", "noorien", "membership"}
+    if not oriented and orientation not in {"noorient", "synonym"}:
+        return None
+    return prefix, oriented
+
+
 def relation_for_gwf(tag: str, gwf_type: str) -> str:
-    return _GWF_RELATIONS.get((tag, gwf_type), "->")
+    token = _GWF_RELATIONS.get((tag, gwf_type))
+    if token is not None:
+        return token
+    parsed = connector_parts(tag, gwf_type)
+    if parsed is None:
+        return "->"
+    prefix, oriented = parsed
+    if tag == "arc":
+        return "->"
+    base = "=>" if oriented else "<=>"
+    candidate = prefix + base
+    if candidate in EDGE_TYPES:
+        return candidate
+    return base
 
 
 _GWF_RELATIONS = {

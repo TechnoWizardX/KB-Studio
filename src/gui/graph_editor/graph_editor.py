@@ -61,6 +61,7 @@ from src.gui.graph_editor.graph_types import (
     SIMPLE_NODE as _SIMPLE_NODE,
     SIMPLE_RELATION as _SIMPLE_RELATION,
     node_type_parts as _node_type_parts,
+    connector_parts as _connector_parts,
     relation_for_gwf as _relation_for_gwf,
 )
 from src.gui.graph_editor.gwf_codec import (
@@ -188,6 +189,8 @@ class GraphNode(QGraphicsItem):
         rect = self._glyph_rect()
         if structure == "not_define":
             path.addEllipse(rect.adjusted(8.4, 8.4, -8.4, -8.4))
+        elif structure in {"group", "relation"}:
+            path.addRect(rect)
         elif permanence == "const":
             path.addEllipse(rect)
         else:
@@ -222,12 +225,18 @@ class GraphNode(QGraphicsItem):
         pen = QPen(color, 2)
         if "/var/" in self.gwf_type or "/meta/" in self.gwf_type:
             pen.setStyle(Qt.PenStyle.DashLine)
+        elif "/temp" in self.gwf_type or "/temp/" in self.gwf_type:
+            pen.setStyle(Qt.PenStyle.DotLine)
         painter.setPen(pen)
         painter.setBrush(brush)
         glyph = self._glyph_rect()
         if structure == "not_define":
             glyph = glyph.adjusted(8.4, 8.4, -8.4, -8.4)
-        if structure == "not_define" or permanence == "const":
+        if structure == "not_define":
+            painter.drawEllipse(glyph)
+        elif structure in {"group", "relation"}:
+            painter.drawRect(glyph)
+        elif permanence == "const":
             painter.drawEllipse(glyph)
         else:
             painter.drawRect(glyph)
@@ -568,6 +577,13 @@ class GraphEdge(QGraphicsPathItem):
         stroker.setWidth(12)
         return stroker.createStroke(self.path())
 
+    def _is_oriented_type(self) -> bool:
+        return (
+            self.gwf_tag == "arc"
+            or self.gwf_type.endswith("/orient")
+            or "/orient/" in self.gwf_type
+        )
+
     def paint(self, painter: QPainter, _option, _widget=None) -> None:
         line = self.path()
         if line.isEmpty():
@@ -584,7 +600,7 @@ class GraphEdge(QGraphicsPathItem):
             pen.setStyle(Qt.PenStyle.DotLine)
         painter.setPen(pen)
         painter.drawPath(line)
-        oriented = self.gwf_tag == "arc" or self.gwf_type.endswith("/orient")
+        oriented = self._is_oriented_type()
         arrow_start = line.pointAtPercent(0.98)
         dx = end.x() - arrow_start.x()
         dy = end.y() - arrow_start.y()
@@ -782,9 +798,10 @@ class GraphScene(QGraphicsScene):
             raise ValueError("Both graph objects must belong to this graph.")
         if edge_type not in _EDGE_TYPES:
             raise ValueError(f"Unsupported SCs edge token: '{edge_type}'.")
-        if gwf_tag not in {"arc", "pair"} or gwf_type not in {
-            item[1] for item in _CONNECTOR_TYPES
-        }:
+        if gwf_tag not in {"arc", "pair"} or not (
+            gwf_type in {item[1] for item in _CONNECTOR_TYPES}
+            or _connector_parts(gwf_tag, gwf_type) is not None
+        ):
             raise ValueError(f"Unsupported SCg connector type: '{gwf_type}'.")
         if gwf_id and gwf_id in self._existing_gwf_ids():
             raise ValueError(f"A GWF object with id '{gwf_id}' already exists.")
@@ -1202,17 +1219,22 @@ class GraphScene(QGraphicsScene):
                 deepcopy(child) for child in root if child is not sector
             ]
             self.gwf_sector_attributes = dict(sector.attrib)
+            edges_in_document_order: dict[str, int] = {}
+            document_edge_index = 0
+            for connector in sector:
+                if connector.tag in {"arc", "pair"} and connector.get("id"):
+                    edges_in_document_order[
+                        connector.get("id", "")
+                    ] = document_edge_index
+                    document_edge_index += 1
             known_tags = {"node", "arc", "pair", "bus", "contour"}
-            supported_connector_types = {
-                connector_type for _, connector_type, _, _ in _CONNECTOR_TYPES
-            }
             self.gwf_sector_extras = [
                 deepcopy(child)
                 for child in sector
                 if child.tag not in known_tags
                 or child.tag in {"arc", "pair"}
                 and (
-                    child.get("type") not in supported_connector_types
+                    _connector_parts(child.tag, child.get("type", "")) is None
                     or child.get("id_b") == child.get("id_e")
                 )
                 or child.tag == "bus"
@@ -1250,7 +1272,7 @@ class GraphScene(QGraphicsScene):
                 element
                 for tag in ("arc", "pair")
                 for element in sector.findall(tag)
-                if element.get("type") in supported_connector_types
+                if _connector_parts(tag, element.get("type", "")) is not None
                 and element.get("id_b") != element.get("id_e")
             ]
             while pending_connectors:
@@ -1280,6 +1302,9 @@ class GraphScene(QGraphicsScene):
                             )
                             for point in element.findall("./points/point")
                         ],
+                    )
+                    connector.gwf_document_order = edges_in_document_order.get(
+                        connector.gwf_id
                     )
                     element_ids[connector.gwf_id] = connector
                     loaded_connector = True
