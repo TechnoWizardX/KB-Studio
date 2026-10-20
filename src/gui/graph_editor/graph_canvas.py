@@ -40,6 +40,7 @@ class GraphCanvasView(QGraphicsView):
         create_connector: Callable[[object, object, QPointF, QPointF], None],
         create_bus: Callable[[object, QPointF], None],
         create_contour: Callable[[list[QPointF]], None],
+        commit_move: Callable[[dict], None],
         delete_selection: Callable[[], None],
         parent: QWidget | None = None,
     ):
@@ -50,12 +51,14 @@ class GraphCanvasView(QGraphicsView):
         self.create_connector = create_connector
         self.create_bus = create_bus
         self.create_contour = create_contour
+        self.commit_move = commit_move
         self.delete_selection = delete_selection
         self.tool = self.SELECT
         self._start_node = None
         self._start_point: QPointF | None = None
         self._preview: QGraphicsItem | None = None
         self._contour_points: list[QPointF] = []
+        self._drag_positions: dict | None = None
         self._space_pressed = False
         self._pan_button: Qt.MouseButton | None = None
         self._last_pan_position: QPointF | None = None
@@ -99,6 +102,7 @@ class GraphCanvasView(QGraphicsView):
         super().wheelEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        self._drag_positions = None
         if event.button() == Qt.MouseButton.MiddleButton or (
             event.button() == Qt.MouseButton.LeftButton and self._space_pressed
         ):
@@ -107,6 +111,13 @@ class GraphCanvasView(QGraphicsView):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
             return
+
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_positions = {
+                item: QPointF(item.pos())
+                for item in self.scene().items()
+                if item.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+            }
 
         if event.button() != Qt.MouseButton.LeftButton or self.tool == self.SELECT:
             super().mousePressEvent(event)
@@ -174,10 +185,14 @@ class GraphCanvasView(QGraphicsView):
             self._update_cursor()
             event.accept()
             return
+        drag_positions = self._drag_positions
+        self._drag_positions = None
         if event.button() != Qt.MouseButton.LeftButton:
             super().mouseReleaseEvent(event)
             return
         if self.tool not in {self.CONNECTOR, self.BUS} or self._start_node is None:
+            if drag_positions is not None:
+                self.commit_move(drag_positions)
             super().mouseReleaseEvent(event)
             return
 
@@ -211,6 +226,8 @@ class GraphCanvasView(QGraphicsView):
                 self.tool_error.emit("Drag from a node to place the bus endpoint.")
             else:
                 self.create_bus(start, scene_position)
+        if drag_positions is not None:
+            self.commit_move(drag_positions)
         event.accept()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:

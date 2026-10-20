@@ -10,10 +10,13 @@ from PySide6.QtGui import (
     QBrush,
     QColor,
     QImage,
+    QKeySequence,
     QPainter,
     QPainterPath,
     QPainterPathStroker,
     QPen,
+    QShortcut,
+    QUndoStack,
 )
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -34,6 +37,17 @@ from PySide6.QtWidgets import (
 
 from src.core.signals import signals
 from src.gui.graph_editor.graph_canvas import GraphCanvasView
+from src.gui.graph_editor.graph_commands import (
+    CommandConnectorTypeChange,
+    CommandCreateBus,
+    CommandCreateContour,
+    CommandCreateConnector,
+    CommandCreateNode,
+    CommandDeleteSelection,
+    CommandMoveObjects,
+    CommandNodeTypeChange,
+    CommandRenameNode,
+)
 from src.gui.graph_editor.graph_types import (
     CONNECTOR_TYPES as _CONNECTOR_TYPES,
     EDGE_TYPES as _EDGE_TYPES,
@@ -677,8 +691,10 @@ class GraphScene(QGraphicsScene):
         self.model_changed.emit()
         return bus
 
-    def remove_selected(self) -> None:
-        selected = set(self.selectedItems())
+    def _collect_removal(
+        self, selected
+    ) -> tuple[set[GraphNode], set[GraphEdge], set[GraphAuxObject]]:
+        selected = set(selected)
         removed_nodes = {item for item in selected if isinstance(item, GraphNode)}
         removed_edges = {item for item in selected if isinstance(item, GraphEdge)}
         removed_aux = {
@@ -700,16 +716,30 @@ class GraphScene(QGraphicsScene):
         removed_aux.update(
             item for item in self.aux_objects if item.owner in removed_nodes
         )
+        return removed_nodes, removed_edges, removed_aux
+
+    def remove_selected(self) -> None:
+        removed_nodes, removed_edges, removed_aux = self._collect_removal(
+            self.selectedItems()
+        )
+        self._remove_objects(removed_nodes, removed_edges, removed_aux)
+
+    def _remove_objects(
+        self,
+        removed_nodes: set[GraphNode],
+        removed_edges: set[GraphEdge],
+        removed_aux: set[GraphAuxObject],
+    ) -> None:
         if not removed_nodes and not removed_edges and not removed_aux:
             return
-        for edge in removed_edges:
-            if edge in self.edges:
+        for edge in list(self.edges):
+            if edge in removed_edges:
                 self.edges.remove(edge)
-            self.removeItem(edge)
+                self.removeItem(edge)
         for node in removed_nodes:
             self.nodes.pop(node.identifier, None)
             self.removeItem(node)
-        removed_ids = {item.gwf_id for item in removed_objects}
+        removed_ids = {item.gwf_id for item in (*removed_nodes, *removed_edges)}
         self.gwf_sector_extras = [
             child
             for child in self.gwf_sector_extras
@@ -721,6 +751,115 @@ class GraphScene(QGraphicsScene):
             if item in self.aux_objects:
                 self.aux_objects.remove(item)
             self.removeItem(item)
+        self._update_scene_rect()
+        if not self._loading:
+            self.model_changed.emit()
+
+    def _restore_objects(
+        self,
+        removed_nodes: list[GraphNode],
+        removed_edges: list[GraphEdge],
+        removed_aux: list[GraphAuxObject],
+    ) -> None:
+        self._loading = True
+        try:
+            for node in removed_nodes:
+                if node.scene() is not self:
+                    self.addItem(node)
+                    self.nodes[node.identifier] = node
+            pending = list(removed_edges)
+            while pending:
+                remaining: list[GraphEdge] = []
+                restored_any = False
+                for edge in pending:
+                    if (
+                        edge.source.scene() is self
+                        and edge.target.scene() is self
+                    ):
+                        self.addItem(edge)
+                        self.edges.append(edge)
+                        edge.update_path()
+                        restored_any = True
+                    else:
+                        remaining.append(edge)
+                if not restored_any:
+                    break
+                pending = remaining
+            for item in removed_aux:
+                if item.scene() is not self:
+                    self.addItem(item)
+                    self.aux_objects.append(item)
+        finally:
+            self._loading = False
+        self._update_scene_rect()
+        self.model_changed.emit()
+
+    def _insert_node_instance(
+        self, node: GraphNode, position: QPointF | None = None
+    ) -> None:
+        if node.scene() is self:
+            return
+        if node.identifier in self.nodes:
+            raise ValueError(f"A node named '{node.identifier}' already exists.")
+        self.addItem(node)
+        self.nodes[node.identifier] = node
+        if position is not None and node.pos() != position:
+            node.setPos(position)
+        self._update_scene_rect()
+        if not self._loading:
+            self.model_changed.emit()
+
+    def _remove_node_instance(self, node: GraphNode) -> None:
+        if node.scene() is not self:
+            return
+        self.nodes.pop(node.identifier, None)
+        self.removeItem(node)
+        self._update_scene_rect()
+        if not self._loading:
+            self.model_changed.emit()
+
+    def _insert_edge_instance(self, edge: GraphEdge) -> None:
+        if edge.scene() is self:
+            return
+        for endpoint in (edge.source, edge.target):
+            if not isinstance(endpoint, (GraphNode, GraphEdge)) or (
+                endpoint.scene() is not self
+            ):
+                raise ValueError("Both graph objects must belong to this graph.")
+        self.addItem(edge)
+        self.edges.append(edge)
+        edge.update_path()
+        self._update_scene_rect()
+        if not self._loading:
+            self.model_changed.emit()
+
+    def _remove_edge_instance(self, edge: GraphEdge) -> None:
+        if edge.scene() is not self:
+            return
+        if edge in self.edges:
+            self.edges.remove(edge)
+        self.removeItem(edge)
+        self._update_scene_rect()
+        if not self._loading:
+            self.model_changed.emit()
+
+    def _insert_aux_instance(self, item: GraphAuxObject) -> None:
+        if item.scene() is self:
+            return
+        if item.owner is not None and item.owner.scene() is not self:
+            raise ValueError("The bus owner must belong to this graph.")
+        self.addItem(item)
+        self.aux_objects.append(item)
+        self._update_scene_rect()
+        if not self._loading:
+            self.model_changed.emit()
+
+    def _remove_aux_instance(self, item: GraphAuxObject) -> None:
+        if item.scene() is not self:
+            return
+        if item in self.aux_objects:
+            self.aux_objects.remove(item)
+        self.removeItem(item)
         self._update_scene_rect()
         if not self._loading:
             self.model_changed.emit()
@@ -1027,6 +1166,22 @@ class GraphEditorWidget(QFrame):
         self.remove_button.clicked.connect(self.remove_selected)
         toolbar.addWidget(self.remove_button)
 
+        self.undo_stack = QUndoStack(self)
+        self.undo_button = QPushButton("Undo")
+        self.undo_button.clicked.connect(self.undo_stack.undo)
+        self.undo_button.setEnabled(False)
+        self.redo_button = QPushButton("Redo")
+        self.redo_button.clicked.connect(self.undo_stack.redo)
+        self.redo_button.setEnabled(False)
+        self.undo_stack.canUndoChanged.connect(self.undo_button.setEnabled)
+        self.undo_stack.canRedoChanged.connect(self.redo_button.setEnabled)
+        tools_toolbar.addWidget(self.undo_button)
+        tools_toolbar.addWidget(self.redo_button)
+        undo_shortcut = QShortcut(QKeySequence.StandardKey.Undo, self)
+        undo_shortcut.activated.connect(self.undo_stack.undo)
+        redo_shortcut = QShortcut(QKeySequence.StandardKey.Redo, self)
+        redo_shortcut.activated.connect(self.undo_stack.redo)
+
         self.zoom_in_button = QPushButton("Zoom +")
         self.zoom_in_button.clicked.connect(lambda: self.view.zoom_in())
         tools_toolbar.addWidget(self.zoom_in_button)
@@ -1056,6 +1211,7 @@ class GraphEditorWidget(QFrame):
             self._create_connector,
             self._create_bus,
             self._create_contour,
+            self._commit_move,
             self.remove_selected,
         )
         self.view.tool_error.connect(self._show_tool_error)
@@ -1126,6 +1282,7 @@ class GraphEditorWidget(QFrame):
             return
         self.file_path = safe_file
         self._mark_modified(False)
+        self.undo_stack.clear()
         self.status_label.setText(f"Opened {safe_file.name}.")
 
     def set_active(self, active: bool) -> None:
@@ -1137,6 +1294,7 @@ class GraphEditorWidget(QFrame):
         self.scene.load_scs("")
         self.file_path = None
         self._mark_modified(True)
+        self.undo_stack.clear()
         self.status_label.setText("New graph — save it as a .gwf file.")
 
     def _create_node_at(self, position: QPointF) -> None:
@@ -1144,10 +1302,13 @@ class GraphEditorWidget(QFrame):
         while f"node_{index}" in self.scene.nodes:
             index += 1
         try:
-            self.scene.add_node(
-                f"node_{index}",
-                position,
-                gwf_type=self.node_type_combo.currentData(),
+            self.undo_stack.push(
+                CommandCreateNode(
+                    self.scene,
+                    f"node_{index}",
+                    position,
+                    self.node_type_combo.currentData(),
+                )
             )
         except ValueError as error:
             self._show_tool_error(str(error))
@@ -1168,14 +1329,17 @@ class GraphEditorWidget(QFrame):
             return
         gwf_type, gwf_tag, token = self.edge_type_combo.currentData()
         try:
-            self.scene.connect_nodes(
-                source,
-                target,
-                token,
-                gwf_type=gwf_type,
-                gwf_tag=gwf_tag,
-                source_anchor=source_anchor,
-                target_anchor=target_anchor,
+            self.undo_stack.push(
+                CommandCreateConnector(
+                    self.scene,
+                    source,
+                    target,
+                    token,
+                    gwf_type=gwf_type,
+                    gwf_tag=gwf_tag,
+                    source_anchor=source_anchor,
+                    target_anchor=target_anchor,
+                )
             )
             self._show_tool("connector")
         except ValueError as error:
@@ -1186,15 +1350,22 @@ class GraphEditorWidget(QFrame):
             self._show_tool_error("A bus must start on a node.")
             return
         try:
-            self.scene.add_bus(owner, endpoint)
+            self.undo_stack.push(CommandCreateBus(self.scene, owner, endpoint))
         except ValueError as error:
             self._show_tool_error(str(error))
 
     def _create_contour(self, points: list[QPointF]) -> None:
         try:
-            self.scene.add_contour(points)
+            self.undo_stack.push(
+                CommandCreateContour(self.scene, points)
+            )
         except ValueError as error:
             self._show_tool_error(str(error))
+
+    def _commit_move(self, old_positions: dict) -> None:
+        command = CommandMoveObjects(self.scene, old_positions)
+        if not command.is_empty():
+            self.undo_stack.push(command)
 
     def _show_tool_error(self, message: str) -> None:
         self.status_label.setText(message)
@@ -1249,8 +1420,13 @@ class GraphEditorWidget(QFrame):
         ]
         if len(nodes) != 1:
             return
+        gwf_type = self.node_type_combo.currentData()
+        if nodes[0].gwf_type == gwf_type:
+            return
         try:
-            self.scene.set_node_type(nodes[0], self.node_type_combo.currentData())
+            self.undo_stack.push(
+                CommandNodeTypeChange(self.scene, nodes[0], gwf_type)
+            )
         except ValueError as error:
             self._show_tool_error(str(error))
 
@@ -1261,12 +1437,17 @@ class GraphEditorWidget(QFrame):
         if len(edges) != 1:
             return
         gwf_type, gwf_tag, edge_type = self.edge_type_combo.currentData()
+        if (edges[0].gwf_type, edges[0].gwf_tag, edges[0].edge_type) == (
+            gwf_type,
+            gwf_tag,
+            edge_type,
+        ):
+            return
         try:
-            self.scene.set_connector_type(
-                edges[0],
-                gwf_type,
-                gwf_tag,
-                edge_type,
+            self.undo_stack.push(
+                CommandConnectorTypeChange(
+                    self.scene, edges[0], gwf_type, gwf_tag, edge_type
+                )
             )
         except ValueError as error:
             self._show_tool_error(str(error))
@@ -1341,12 +1522,19 @@ class GraphEditorWidget(QFrame):
             )
             return
         try:
-            self.scene.rename_node(nodes[0], self.rename_edit.text().strip())
+            self.undo_stack.push(
+                CommandRenameNode(
+                    self.scene, nodes[0], self.rename_edit.text().strip()
+                )
+            )
         except ValueError as error:
             QMessageBox.warning(self, "Invalid node name", str(error))
 
     def remove_selected(self) -> None:
-        self.scene.remove_selected()
+        command = CommandDeleteSelection(self.scene, self.scene.selectedItems())
+        if command.is_empty():
+            return
+        self.undo_stack.push(command)
 
     def save(self) -> None:
         if self.file_path is None:

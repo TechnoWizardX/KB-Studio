@@ -2,15 +2,28 @@ import os
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
-from PySide6.QtGui import QImage, QPainter
+from PySide6.QtGui import QImage, QUndoStack
+from PySide6.QtGui import QPainter
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QComboBox, QMessageBox
 
+from src.gui.graph_editor.graph_commands import (
+    CommandConnectorTypeChange,
+    CommandCreateBus,
+    CommandCreateContour,
+    CommandCreateConnector,
+    CommandCreateNode,
+    CommandDeleteSelection,
+    CommandMoveObjects,
+    CommandNodeTypeChange,
+    CommandRenameNode,
+)
 from src.gui.graph_editor.graph_editor import (
     _CONNECTOR_TYPES,
     _EDGE_TYPES,
@@ -634,6 +647,236 @@ class GraphSceneTests(unittest.TestCase):
 
         self.assertEqual(self.scene.nodes["node_1"].gwf_idtf, "узел")
         self.assertIn('idtf="узел"', self.scene.to_gwf())
+
+
+class GraphUndoUndoTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.scene = GraphScene()
+        self.stack = QUndoStack()
+
+    def test_create_node_undo_redo_keeps_identity(self):
+        self.stack.push(
+            CommandCreateNode(
+                self.scene, "alpha", QPointF(10, 20), "node/const/general_node"
+            )
+        )
+        node = self.scene.nodes["alpha"]
+        gwf_id = node.gwf_id
+
+        self.stack.undo()
+
+        self.assertNotIn("alpha", self.scene.nodes)
+        self.assertEqual(self.scene.items(), [])
+
+        self.stack.redo()
+
+        self.assertIs(self.scene.nodes["alpha"], node)
+        self.assertEqual(node.gwf_id, gwf_id)
+        self.assertEqual(node.scenePos(), QPointF(10, 20))
+        self.assertEqual(node.pos(), QPointF(10, 20))
+
+    def test_rename_command_undo_restores_identifier(self):
+        node = self.scene.add_node("alpha")
+        self.scene.add_node("beta")
+        self.stack.push(CommandRenameNode(self.scene, node, "gamma"))
+        self.assertEqual(self.scene.nodes["gamma"], node)
+
+        self.stack.undo()
+
+        self.assertEqual(self.scene.nodes["alpha"], node)
+
+    def test_node_type_change_command_undo(self):
+        node = self.scene.add_node("alpha")
+        self.stack.push(CommandNodeTypeChange(self.scene, node, "node/var/atom"))
+        self.assertEqual(node.gwf_type, "node/var/atom")
+
+        self.stack.undo()
+
+        self.assertEqual(node.gwf_type, "node/const/general_node")
+
+    def test_connector_type_change_command_undo(self):
+        source = self.scene.add_node("source")
+        target = self.scene.add_node("target")
+        edge = self.scene.connect_nodes(source, target, "->")
+        self.stack.push(
+            CommandConnectorTypeChange(self.scene, edge, "pair/const/orient", "pair", "=>")
+        )
+        self.assertEqual(edge.gwf_tag, "pair")
+
+        self.stack.undo()
+
+        self.assertEqual((edge.gwf_type, edge.gwf_tag, edge.edge_type), ("arc/-/-", "arc", "->"))
+
+    def test_delete_selection_undo_restores_edges_and_bindings(self):
+        source = self.scene.add_node("source", QPointF(100, 120))
+        left = self.scene.add_node("left", QPointF(360, 80))
+        right = self.scene.add_node("right", QPointF(360, 240))
+        relation = self.scene.connect_nodes(left, right, "->")
+        attribute = self.scene.connect_nodes(
+            source, relation, "->", target_anchor=relation.path().pointAtPercent(0.5)
+        )
+        command = CommandDeleteSelection(self.scene, [relation])
+        self.stack.push(command)
+        self.assertEqual(self.scene.edges, [])
+        self.assertEqual(set(self.scene.nodes.values()), {source, left, right})
+
+        self.stack.undo()
+
+        self.assertEqual(self.scene.edges, [relation, attribute])
+        self.assertLess(self.scene.edges.index(relation), self.scene.edges.index(attribute))
+        self.assertIs(attribute.source, source)
+        self.assertIs(attribute.target, relation)
+        root = ET.fromstring(self.scene.to_gwf())
+        arcs = {arc.get("id"): arc for arc in root.findall("staticSector/arc")}
+        self.assertEqual(arcs[attribute.gwf_id].get("id_e"), relation.gwf_id)
+
+    def test_create_bus_and_contour_undo(self):
+        owner = self.scene.add_node("owner", QPointF(100, 100))
+        self.stack.push(CommandCreateBus(self.scene, owner, QPointF(240, 180)))
+        self.stack.push(
+            CommandCreateContour(
+                self.scene,
+                [QPointF(60, 60), QPointF(280, 60), QPointF(280, 220)],
+            )
+        )
+        bus, contour = self.scene.aux_objects
+        self.stack.undo()
+        self.assertEqual(self.scene.aux_objects, [bus])
+        self.stack.undo()
+        self.assertEqual(self.scene.aux_objects, [])
+        self.stack.redo()
+        self.assertEqual(self.scene.aux_objects, [bus])
+        self.stack.redo()
+        self.assertEqual([item.kind for item in self.scene.aux_objects], ["bus", "contour"])
+        self.assertEqual(self.scene.aux_objects[0].gwf_id, bus.gwf_id)
+
+    def test_move_objects_command_undo_restores_positions(self):
+        source = self.scene.add_node("source", QPointF(0, 0))
+        target = self.scene.add_node("target", QPointF(200, 0))
+        old_positions = {source: QPointF(source.pos()), target: QPointF(target.pos())}
+        source.setPos(50, 60)
+        target.setPos(240, 30)
+        self.stack.push(CommandMoveObjects(self.scene, old_positions))
+
+        self.stack.undo()
+
+        self.assertEqual(source.pos(), QPointF(0, 0))
+        self.assertEqual(target.pos(), QPointF(200, 0))
+
+        self.stack.redo()
+
+        self.assertEqual(source.pos(), QPointF(50, 60))
+        self.assertEqual(target.pos(), QPointF(240, 30))
+
+    def test_dragging_a_node_is_recorded_and_undoable(self):
+        editor = GraphEditorWidget()
+        editor.resize(900, 600)
+        editor.show()
+        source = editor.scene.add_node("source", QPointF(100, 100))
+        target = editor.scene.add_node("target", QPointF(350, 100))
+        editor.scene.connect_nodes(source, target, "->")
+        self.app.processEvents()
+        original_source = QPointF(source.pos())
+        start = editor.view.mapFromScene(source.mapToScene(source.boundingRect().center()))
+        finish = start + QPoint(70, 55)
+        QTest.mousePress(editor.view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(editor.view.viewport(), finish, 100)
+        QTest.mouseRelease(editor.view.viewport(), Qt.MouseButton.LeftButton, pos=finish)
+        self.app.processEvents()
+        self.assertTrue(editor.undo_stack.canUndo())
+        self.assertTrue(editor.undo_button.isEnabled())
+
+        editor.undo_stack.undo()
+
+        self.assertEqual(source.pos(), original_source)
+        self.assertFalse(editor.undo_stack.canUndo())
+        self.assertTrue(editor.undo_stack.canRedo())
+        editor.close()
+
+    def test_widget_creation_and_selection_sync_do_not_pollute_undo_stack(self):
+        editor = GraphEditorWidget()
+        editor._create_node_at(QPointF(100, 100))
+        self.assertEqual(editor.undo_stack.count(), 1)
+        node = editor.scene.nodes["node_1"]
+
+        node.setSelected(True)
+        self.app.processEvents()
+
+        self.assertEqual(editor.undo_stack.count(), 1)
+
+        index = editor.node_type_combo.findData("node/var/atom")
+        editor.node_type_combo.setCurrentIndex(index)
+        self.assertEqual(editor.undo_stack.count(), 2)
+        self.assertEqual(node.gwf_type, "node/var/atom")
+        editor.undo_stack.setIndex(0)
+        self.assertEqual(node.gwf_type, "node/const/general_node")
+        editor.close()
+
+    def test_widget_delete_uses_undo_stack(self):
+        editor = GraphEditorWidget()
+        source = editor.scene.add_node("source", QPointF(100, 100))
+        target = editor.scene.add_node("target", QPointF(350, 100))
+        editor.scene.connect_nodes(source, target, "->")
+        source.setSelected(True)
+        editor.remove_selected()
+
+        self.assertEqual(editor.scene.nodes, {"target": target})
+        self.assertEqual(editor.scene.edges, [])
+
+        editor.undo_stack.undo()
+
+        self.assertIn("source", editor.scene.nodes)
+        self.assertEqual(editor.scene.edges, editor.scene.edges)
+        self.assertEqual(len(editor.scene.edges), 1)
+        self.assertIs(editor.scene.edges[0].source, source)
+        editor.close()
+
+    def test_opening_a_file_clears_the_undo_stack(self):
+        editor = GraphEditorWidget()
+        editor._create_node_at(QPointF(50, 50))
+        self.assertTrue(editor.undo_stack.canUndo())
+        with tempfile.TemporaryDirectory() as directory:
+            graph_path = os.path.join(directory, "graph.gwf")
+            with open(graph_path, "w", encoding="utf-8") as handle:
+                handle.write(
+                    '<GWF version="2.0"><staticSector>'
+                    '<node type="node/const/general_node" idtf="loaded" id="n1" x="10" y="10"/>'
+                    "</staticSector></GWF>"
+                )
+            with patch(
+                "src.gui.graph_editor.graph_editor.get_project_root",
+                return_value=Path(directory),
+            ), patch.object(
+                QMessageBox, "warning", return_value=QMessageBox.StandardButton.Discard
+            ):
+                editor.apply_file(graph_path)
+
+        self.assertFalse(editor.undo_stack.canUndo())
+        self.assertFalse(editor.undo_stack.canRedo())
+        self.assertIn("loaded", editor.scene.nodes)
+        editor.close()
+
+    def test_main_window_switches_to_graph_editor_for_gwf_files(self):
+        try:
+            from src.gui.main_window import MainWindow
+        except ModuleNotFoundError as error:
+            self.skipTest(f"main_window dependency missing: {error}")
+
+        window = MainWindow.__new__(MainWindow)
+        window.editor_selector = QComboBox()
+        window.editor_selector.addItem("SCs text editor")
+        window.editor_selector.addItem("SCg graph editor")
+        window.editor_selector.setCurrentIndex(0)
+
+        window._on_file_selected("/project/diagram.gwf")
+
+        self.assertEqual(window.editor_selector.currentIndex(), 1)
+        window._on_file_selected("/project/code.scs")
+        self.assertEqual(window.editor_selector.currentIndex(), 1)
 
 
 if __name__ == "__main__":

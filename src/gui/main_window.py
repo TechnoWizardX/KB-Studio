@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 import sys
+from pathlib import Path
 
 from src.utils.config_manager import ConfigManager
 from src.utils.theme_manager import ThemeManager
@@ -49,7 +50,7 @@ class MainWindow(QMainWindow):
         self.editor_selector.addItem("SCg graph editor")
         self.editor_selector.setToolTip("Select editor")
         self.editor_selector.currentIndexChanged.connect(self._select_editor)
-        # self.top_bar_layout.addWidget(self.editor_selector)
+        self.top_bar_layout.addWidget(self.editor_selector)
         self.top_bar_layout.addWidget(self.settings_button)
         self.top_bar_layout.addStretch()
 
@@ -75,6 +76,11 @@ class MainWindow(QMainWindow):
         self.main_splitter.setSizes([300, 500, 200])
 
         signals.error_occured.connect(self.show_error)
+        signals.selected_new_file.connect(self._on_file_selected)
+
+    def _on_file_selected(self, file_path: str) -> None:
+        if Path(str(file_path)).suffix.lower() == ".gwf":
+            self.editor_selector.setCurrentIndex(1)
 
     def _select_editor(self, index: int) -> None:
         self.editor_stack.setCurrentIndex(index)
