@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 
@@ -66,6 +67,59 @@ from src.gui.graph_editor.gwf_codec import (
 from src.utils.security import get_project_root, safe_path
 
 
+class GraphNodeLabel(QGraphicsTextItem):
+    committed = Signal(str)
+    cancelled = Signal()
+
+    def __init__(self, text: str, parent: QGraphicsItem):
+        super().__init__(text, parent)
+        self.original_text = text
+        self._editing = False
+
+    def start_editing(self) -> None:
+        if self._editing:
+            return
+        self.original_text = self.toPlainText()
+        self._editing = True
+        self.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextEditorInteraction
+        )
+        cursor = self.textCursor()
+        cursor.select(Qt.TextCursorSelectionType.Document)
+        self.setTextCursor(cursor)
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._stop_editing()
+            self.committed.emit(self.toPlainText().strip())
+            event.accept()
+            return
+        if event.key() == Qt.Key.Key_Escape:
+            self._stop_editing()
+            self.cancelled.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def focusOutEvent(self, event) -> None:
+        super().focusOutEvent(event)
+        if self._editing:
+            self._stop_editing()
+            self.committed.emit(self.toPlainText().strip())
+
+    def restore_text(self, text: str) -> None:
+        self.setPlainText(text)
+
+    def _stop_editing(self) -> None:
+        self._editing = False
+        self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        cursor = self.textCursor()
+        cursor.clearSelection()
+        self.setTextCursor(cursor)
+        self.clearFocus()
+
+
 class GraphNode(QGraphicsItem):
     ICON_SIZE = 24
     LABEL_GAP = 8
@@ -84,15 +138,21 @@ class GraphNode(QGraphicsItem):
         self.gwf_type = gwf_type
         self.gwf_idtf = gwf_idtf
         self.gwf_element = gwf_element
-        self.label = QGraphicsTextItem(gwf_idtf or identifier, self)
+        self.label = GraphNodeLabel(gwf_idtf or identifier, self)
         self.label.setDefaultTextColor(QColor("#d4d4d4"))
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self.label.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.label.document().documentLayout().documentSizeChanged.connect(
+            self._position_label
+        )
+        self.label.committed.connect(self._on_label_committed)
+        self.label.cancelled.connect(self._on_label_cancelled)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
         self.setZValue(1)
         self._position_label()
+        self.rename_requester: Callable[..., None] | None = None
 
     def boundingRect(self):
         glyph_bounds = self._glyph_rect().adjusted(-2, -2, 2, 2)
@@ -106,7 +166,8 @@ class GraphNode(QGraphicsItem):
     def _label_rect(self) -> QRectF:
         return self.label.boundingRect().translated(self.label.pos())
 
-    def _position_label(self) -> None:
+    def _position_label(self, *_document_size) -> None:
+        self.prepareGeometryChange()
         text_rect = self.label.boundingRect()
         self.label.setPos(
             self.ICON_SIZE / 2 + self.LABEL_GAP,
@@ -231,6 +292,25 @@ class GraphNode(QGraphicsItem):
             if isinstance(scene, GraphScene):
                 scene.node_moved(self)
         return result
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.label.start_editing()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def _on_label_committed(self, text: str) -> None:
+        if text == self.identifier:
+            self.label.restore_text(self.identifier)
+            return
+        if self.rename_requester is None:
+            self.label.restore_text(self.identifier)
+            return
+        self.rename_requester(self, text)
+
+    def _on_label_cancelled(self) -> None:
+        self.label.restore_text(self.identifier)
 
 
 class GraphEdge(QGraphicsPathItem):
@@ -485,6 +565,7 @@ class GraphAuxObject(QGraphicsPathItem):
 
 class GraphScene(QGraphicsScene):
     model_changed = Signal()
+    rename_requested = Signal(object, str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -526,6 +607,7 @@ class GraphScene(QGraphicsScene):
             identifier if gwf_idtf is None else gwf_idtf,
             gwf_element,
         )
+        node.rename_requester = self.rename_requested.emit
         self.addItem(node)
         self.nodes[identifier] = node
         if position is None:
@@ -1249,6 +1331,7 @@ class GraphEditorWidget(QFrame):
 
         self.scene.model_changed.connect(self._mark_modified)
         self.scene.selectionChanged.connect(self._sync_type_selectors)
+        self.scene.rename_requested.connect(self._on_rename_requested)
         self.node_type_combo.currentIndexChanged.connect(self._apply_selected_node_type)
         self.edge_type_combo.currentIndexChanged.connect(
             self._apply_selected_connector_type
@@ -1369,6 +1452,19 @@ class GraphEditorWidget(QFrame):
 
     def _show_tool_error(self, message: str) -> None:
         self.status_label.setText(message)
+
+    def _on_rename_requested(self, node: GraphNode, identifier: str) -> None:
+        if not _IDENTIFIER.fullmatch(identifier):
+            node.label.restore_text(node.identifier)
+            self._show_tool_error("Node names must be valid SCs identifiers.")
+            return
+        if identifier != node.identifier and identifier in self.scene.nodes:
+            node.label.restore_text(node.identifier)
+            self._show_tool_error(
+                f"A node named '{identifier}' already exists."
+            )
+            return
+        self.undo_stack.push(CommandRenameNode(self.scene, node, identifier))
 
     def _show_tool(self, tool: str) -> None:
         self.status_label.setText(

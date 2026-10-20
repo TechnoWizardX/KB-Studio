@@ -649,7 +649,7 @@ class GraphSceneTests(unittest.TestCase):
         self.assertIn('idtf="узел"', self.scene.to_gwf())
 
 
-class GraphUndoUndoTests(unittest.TestCase):
+class GraphEditorUndoTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
@@ -858,6 +858,47 @@ class GraphUndoUndoTests(unittest.TestCase):
         self.assertFalse(editor.undo_stack.canUndo())
         self.assertFalse(editor.undo_stack.canRedo())
         self.assertIn("loaded", editor.scene.nodes)
+        editor.close()
+
+    def test_inplace_label_rename_goes_through_undo_stack(self):
+        editor = GraphEditorWidget()
+        node = editor.scene.add_node("alpha")
+        self.app.processEvents()
+
+        node._on_label_committed("beta")
+
+        self.assertEqual(node.identifier, "beta")
+        self.assertIn("beta", editor.scene.nodes)
+        self.assertEqual(editor.undo_stack.count(), 1)
+
+        editor.undo_stack.undo()
+
+        self.assertEqual(node.identifier, "alpha")
+        self.assertEqual(node.gwf_idtf, "alpha")
+        self.assertEqual(node.label.toPlainText(), "alpha")
+        editor.close()
+
+    def test_inplace_duplicate_rename_is_rejected_and_reverted(self):
+        editor = GraphEditorWidget()
+        editor.scene.add_node("alpha")
+        other = editor.scene.add_node("gamma")
+        count = editor.undo_stack.count()
+
+        other._on_label_committed("alpha")
+
+        self.assertIn("gamma", editor.scene.nodes)
+        self.assertEqual(other.label.toPlainText(), "gamma")
+        self.assertEqual(editor.undo_stack.count(), count)
+        editor.close()
+
+    def test_inplace_rename_keeps_name_unchanged_without_command(self):
+        editor = GraphEditorWidget()
+        node = editor.scene.add_node("alpha")
+        count = editor.undo_stack.count()
+
+        node._on_label_committed("alpha")
+
+        self.assertEqual(editor.undo_stack.count(), count)
         editor.close()
 
     def test_main_window_switches_to_graph_editor_for_gwf_files(self):
