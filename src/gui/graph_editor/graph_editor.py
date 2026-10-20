@@ -6,7 +6,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QGraphicsTextItem,
     QHBoxLayout,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -48,6 +49,7 @@ from src.gui.graph_editor.graph_commands import (
     CommandMoveObjects,
     CommandNodeTypeChange,
     CommandRenameNode,
+    CommandSwapConnectorOrientation,
     CommandWaypointsChange,
 )
 from src.gui.graph_editor.graph_types import (
@@ -826,6 +828,24 @@ class GraphScene(QGraphicsScene):
         if not self._loading:
             self.model_changed.emit()
 
+    def swap_connector(self, edge: GraphEdge) -> None:
+        if edge not in self.edges or edge.scene() is not self:
+            raise ValueError("The connector must belong to this graph.")
+        (
+            edge.source,
+            edge.target,
+        ) = (
+            edge.target,
+            edge.source,
+        )
+        edge.begin_dot, edge.end_dot = edge.end_dot, edge.begin_dot
+        edge.waypoints = list(reversed(edge.waypoints))
+        edge.update_path()
+        self._refresh_connected_edges(edge, set())
+        self._update_scene_rect()
+        if not self._loading:
+            self.model_changed.emit()
+
     def rename_node(self, node: GraphNode, identifier: str) -> None:
         if node.scene() is not self or node.identifier not in self.nodes:
             raise ValueError("The node must belong to this graph.")
@@ -1417,6 +1437,16 @@ class GraphEditorWidget(QFrame):
         self.fit_button.clicked.connect(self.fit_graph)
         tools_toolbar.addWidget(self.fit_button)
 
+        for arrangement, label in (
+            (self._arrange_grid, "Grid"),
+            (self._arrange_vertical, "Vertical"),
+            (self._arrange_horizontal, "Horizontal"),
+            (self._arrange_tuple, "Tuple"),
+        ):
+            arrange_button = QPushButton(label)
+            arrange_button.clicked.connect(arrangement)
+            tools_toolbar.addWidget(arrange_button)
+
         self.export_button = QPushButton("Export PNG")
         self.export_button.clicked.connect(self.export_image)
         tools_toolbar.addWidget(self.export_button)
@@ -1435,6 +1465,7 @@ class GraphEditorWidget(QFrame):
             self._create_bus,
             self._create_contour,
             self._commit_move,
+            self._show_context_menu,
             self.remove_selected,
         )
         self.view.tool_error.connect(self._show_tool_error)
@@ -1592,6 +1623,104 @@ class GraphEditorWidget(QFrame):
         if not command.is_empty():
             self.undo_stack.push(command)
 
+    def _apply_positions(self, positions: dict) -> None:
+        old_positions = {
+            node: QPointF(node.pos())
+            for node, target in positions.items()
+            if node.scene() is self.scene and node.pos() != target
+        }
+        for node, target in positions.items():
+            node.setPos(target)
+        self._commit_move(old_positions)
+
+    def _arrange_grid(self) -> None:
+        nodes = sorted(
+            self.scene.nodes.values(),
+            key=lambda node: (node.pos().y(), node.pos().x()),
+        )
+        if len(nodes) < 2:
+            return
+        columns = math.ceil(math.sqrt(len(nodes)))
+        anchor_x = min(node.pos().x() for node in nodes)
+        anchor_y = min(node.pos().y() for node in nodes)
+        positions = {
+            node: QPointF(
+                anchor_x + (index % columns) * 150,
+                anchor_y + (index // columns) * 120,
+            )
+            for index, node in enumerate(nodes)
+        }
+        self._apply_positions(positions)
+
+    def _arrange_vertical(self) -> None:
+        nodes = sorted(
+            self.scene.nodes.values(), key=lambda node: node.pos().y()
+        )
+        if len(nodes) < 2:
+            return
+        anchor_x = sum(node.pos().x() for node in nodes) / len(nodes)
+        anchor_y = min(node.pos().y() for node in nodes)
+        positions = {
+            node: QPointF(anchor_x, anchor_y + index * 130)
+            for index, node in enumerate(nodes)
+        }
+        self._apply_positions(positions)
+
+    def _arrange_horizontal(self) -> None:
+        nodes = sorted(
+            self.scene.nodes.values(), key=lambda node: node.pos().x()
+        )
+        if len(nodes) < 2:
+            return
+        anchor_y = sum(node.pos().y() for node in nodes) / len(nodes)
+        anchor_x = min(node.pos().x() for node in nodes)
+        positions = {
+            node: QPointF(anchor_x + index * 170, anchor_y)
+            for index, node in enumerate(nodes)
+        }
+        self._apply_positions(positions)
+
+    def _arrange_tuple(self) -> None:
+        roots = [
+            item
+            for item in self.scene.selectedItems()
+            if isinstance(item, GraphNode)
+        ]
+        if len(roots) != 1:
+            self._show_tool_error(
+                "Select exactly one node to arrange its neighbours."
+            )
+            return
+        root = roots[0]
+        neighbours: list[GraphNode] = []
+        for edge in self.scene.edges:
+            if edge.source is root and isinstance(edge.target, GraphNode):
+                if edge.target not in neighbours:
+                    neighbours.append(edge.target)
+            elif edge.target is root and isinstance(edge.source, GraphNode):
+                if edge.source not in neighbours:
+                    neighbours.append(edge.source)
+        neighbours = [item for item in neighbours if item is not root]
+        if not neighbours:
+            self._show_tool_error("The selected node has no neighbours.")
+            return
+        center = root.scenePos()
+        radius = 170.0
+        positions = {
+            neighbour: QPointF(
+                center.x() + radius * math.cos(
+                    -math.pi / 2
+                    + 2 * math.pi * index / len(neighbours)
+                ),
+                center.y() + radius * math.sin(
+                    -math.pi / 2
+                    + 2 * math.pi * index / len(neighbours)
+                ),
+            )
+            for index, neighbour in enumerate(neighbours)
+        }
+        self._apply_positions(positions)
+
     def _show_tool_error(self, message: str) -> None:
         self.status_label.setText(message)
 
@@ -1663,12 +1792,14 @@ class GraphEditorWidget(QFrame):
         ]
         if len(nodes) != 1:
             return
-        gwf_type = self.node_type_combo.currentData()
-        if nodes[0].gwf_type == gwf_type:
+        self._set_node_type(nodes[0], self.node_type_combo.currentData())
+
+    def _set_node_type(self, node: GraphNode, gwf_type: str) -> None:
+        if node.gwf_type == gwf_type:
             return
         try:
             self.undo_stack.push(
-                CommandNodeTypeChange(self.scene, nodes[0], gwf_type)
+                CommandNodeTypeChange(self.scene, node, gwf_type)
             )
         except ValueError as error:
             self._show_tool_error(str(error))
@@ -1680,7 +1811,12 @@ class GraphEditorWidget(QFrame):
         if len(edges) != 1:
             return
         gwf_type, gwf_tag, edge_type = self.edge_type_combo.currentData()
-        if (edges[0].gwf_type, edges[0].gwf_tag, edges[0].edge_type) == (
+        self._set_connector_type(edges[0], gwf_type, gwf_tag, edge_type)
+
+    def _set_connector_type(
+        self, edge: GraphEdge, gwf_type: str, gwf_tag: str, edge_type: str
+    ) -> None:
+        if (edge.gwf_type, edge.gwf_tag, edge.edge_type) == (
             gwf_type,
             gwf_tag,
             edge_type,
@@ -1689,8 +1825,68 @@ class GraphEditorWidget(QFrame):
         try:
             self.undo_stack.push(
                 CommandConnectorTypeChange(
-                    self.scene, edges[0], gwf_type, gwf_tag, edge_type
+                    self.scene, edge, gwf_type, gwf_tag, edge_type
                 )
+            )
+        except ValueError as error:
+            self._show_tool_error(str(error))
+
+    def _show_context_menu(self, scene_pos: QPointF, item, global_pos) -> None:
+        menu = QMenu(self)
+        if item is None:
+            add_action = menu.addAction("Add node here")
+            chosen = menu.exec(global_pos)
+            if chosen is add_action:
+                self._create_node_at(scene_pos)
+            return
+
+        if not item.isSelected():
+            self.scene.clearSelection()
+            item.setSelected(True)
+
+        rename_action = None
+        type_menu = None
+        if isinstance(item, GraphNode):
+            rename_action = menu.addAction("Rename")
+            type_menu = menu.addMenu("Node type")
+            for label, gwf_type in _NODE_TYPES:
+                type_action = type_menu.addAction(label)
+                type_action.triggered.connect(
+                    lambda checked=False,
+                    node=item,
+                    node_type=gwf_type: self._set_node_type(node, node_type)
+                )
+        elif isinstance(item, GraphEdge):
+            if item.gwf_tag == "pair":
+                menu.addAction("Reverse direction").triggered.connect(
+                    lambda checked=False: self._swap_connector(item)
+                )
+            type_menu = menu.addMenu("Connector type")
+            for label, gwf_type, gwf_tag, edge_type in _CONNECTOR_TYPES:
+                type_action = type_menu.addAction(label)
+                type_action.triggered.connect(
+                    lambda checked=False,
+                    connector=item,
+                    connector_type=gwf_type,
+                    connector_tag=gwf_tag,
+                    connector_token=edge_type: self._set_connector_type(
+                        connector, connector_type, connector_tag, connector_token
+                    )
+                )
+        delete_action = menu.addAction("Delete")
+        chosen = menu.exec(global_pos)
+        if chosen is not None and chosen is delete_action:
+            self.remove_selected()
+        elif rename_action is not None and chosen is rename_action:
+            QTimer.singleShot(0, item.label.start_editing)
+
+    def _swap_connector(self, edge: GraphEdge) -> None:
+        if edge.gwf_tag != "pair":
+            self._show_tool_error("Only pairs can swap their direction.")
+            return
+        try:
+            self.undo_stack.push(
+                CommandSwapConnectorOrientation(self.scene, edge)
             )
         except ValueError as error:
             self._show_tool_error(str(error))

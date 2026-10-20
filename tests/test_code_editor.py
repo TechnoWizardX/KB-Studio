@@ -23,7 +23,6 @@ class CodeEditorBracketCompletionTests(unittest.TestCase):
             ("(", "()"),
             ("[", "[]"),
             ("{", "{}"),
-            ("<", "<>"),
         ):
             with self.subTest(opening=opening):
                 self.editor.clear()

@@ -1,3 +1,4 @@
+import math
 import os
 import tempfile
 import unittest
@@ -23,6 +24,7 @@ from src.gui.graph_editor.graph_commands import (
     CommandMoveObjects,
     CommandNodeTypeChange,
     CommandRenameNode,
+    CommandSwapConnectorOrientation,
     CommandWaypointsChange,
 )
 from src.gui.graph_editor.graph_editor import (
@@ -960,6 +962,158 @@ class GraphEditorUndoTests(unittest.TestCase):
 
         self.assertEqual(edge._waypoint_insert_index(QPointF(250, 100)), 1)
         self.assertEqual(edge._waypoint_insert_index(QPointF(100, 100)), 0)
+
+    def test_swap_connector_orientation_reverses_route_and_dots(self):
+        source = self.scene.add_node("source", QPointF(0, 0))
+        target = self.scene.add_node("target", QPointF(300, 0))
+        edge = self.scene.connect_nodes(
+            source,
+            target,
+            "=>",
+            gwf_type="pair/orient",
+            gwf_tag="pair",
+            target_anchor=QPointF(300, 0),
+        )
+        attribute = self.scene.connect_nodes(
+            self.scene.add_node("attr", QPointF(100, 200)),
+            edge,
+            "->",
+            target_anchor=edge.path().pointAtPercent(0.5),
+        )
+        edge.waypoints = [QPointF(100, 50), QPointF(200, 150)]
+        edge.update_path()
+
+        self.stack.push(CommandSwapConnectorOrientation(self.scene, edge))
+
+        self.assertIs(edge.source, target)
+        self.assertIs(edge.target, source)
+        self.assertEqual(len(edge.waypoints), 2)
+        self.assertAlmostEqual(edge.waypoints[1].x(), 100, delta=0.01)
+
+        exported = ET.fromstring(self.scene.to_gwf())
+        pair = next(
+            pair
+            for pair in exported.findall("staticSector/pair")
+            if pair.get("id") == edge.gwf_id
+        )
+        self.assertEqual(pair.get("id_b"), target.gwf_id)
+        self.assertEqual(pair.get("id_e"), source.gwf_id)
+
+        self.stack.undo()
+
+        self.assertIs(edge.source, source)
+        self.assertEqual([point.x() for point in edge.waypoints], [100.0, 200.0])
+
+    def test_swap_connector_rejects_arcs_and_unknown_edges(self):
+        node = self.scene.add_node("node")
+        removed = self.scene.add_node("gone")
+        arc = self.scene.connect_nodes(node, removed, "->")
+        removed.setSelected(True)
+        self.scene.remove_selected()
+        with self.assertRaises(ValueError):
+            self.scene.swap_connector(arc)
+
+    def test_arrange_grid_uses_sorted_layout_and_is_undoable(self):
+        editor = GraphEditorWidget()
+        node_c = editor.scene.add_node("node_c", QPointF(500, 900))
+        node_a = editor.scene.add_node("node_a", QPointF(100, 100))
+        node_b = editor.scene.add_node("node_b", QPointF(700, 400))
+        grid_anchor = QPointF(min(node_a.pos().x(), node_b.pos().x(), node_c.pos().x()),
+                              min(node_a.pos().y(), node_b.pos().y(), node_c.pos().y()))
+
+        editor._arrange_grid()
+
+        columns = math.ceil(math.sqrt(3))
+        sorted_nodes = sorted(
+            editor.scene.nodes.values(),
+            key=lambda node: (node.pos().y(), node.pos().x()),
+        )
+        self.assertEqual(sorted_nodes[0].pos(), grid_anchor)
+        self.assertEqual(
+            sorted_nodes[0].identifier, "node_a"
+        )
+        self.assertEqual(
+            editor.scene.nodes["node_b"].pos(),
+            QPointF(grid_anchor.x() + 150, grid_anchor.y()),
+        )
+        self.assertEqual(
+            editor.scene.nodes["node_c"].pos(),
+            QPointF(grid_anchor.x(), grid_anchor.y() + 120),
+        )
+        self.assertTrue(editor.undo_stack.canUndo())
+
+        editor.undo_stack.undo()
+
+        self.assertEqual(node_a.pos().x(), 100)
+        self.assertEqual(node_c.pos().y(), 900)
+        editor.close()
+
+    def test_arrange_vertical_and_horizontal_lines(self):
+        editor = GraphEditorWidget()
+        editor.scene.add_node("a", QPointF(700, 100))
+        editor.scene.add_node("b", QPointF(100, 500))
+
+        editor._arrange_vertical()
+
+        positions = [node.pos() for node in editor.scene.nodes.values()]
+        self.assertEqual(len({pos.x() for pos in positions}), 1)
+        self.assertEqual(
+            [node.pos().y() for node in editor.scene.nodes.values()],
+            sorted(node.pos().y() for node in editor.scene.nodes.values()),
+        )
+
+        editor.undo_stack.undo()
+        editor._arrange_horizontal()
+
+        positions = [node.pos() for node in editor.scene.nodes.values()]
+        self.assertEqual(len({pos.y() for pos in positions}), 1)
+        editor.close()
+
+    def test_arrange_tuple_spreads_neighbours_on_circle(self):
+        editor = GraphEditorWidget()
+        root = editor.scene.add_node("root", QPointF(400, 300))
+        first = editor.scene.add_node("first", QPointF(100, 100))
+        second = editor.scene.add_node("second", QPointF(600, 100))
+        editor.scene.connect_nodes(root, first, "->")
+        editor.scene.connect_nodes(root, second, "->")
+        root.setSelected(True)
+
+        editor._arrange_tuple()
+
+        for neighbour in (first, second):
+            delta = neighbour.scenePos() - root.scenePos()
+            self.assertAlmostEqual(
+                math.hypot(delta.x(), delta.y()), 170.0, delta=0.5
+            )
+        self.assertEqual(root.pos().x(), 400)
+        self.assertTrue(editor.undo_stack.canUndo())
+
+        editor.undo_stack.undo()
+
+        self.assertEqual(first.pos(), QPointF(100, 100))
+        editor.close()
+
+    def test_widget_set_node_and_connector_types_route_through_stack(self):
+        editor = GraphEditorWidget()
+        source = editor.scene.add_node("source")
+        target = editor.scene.add_node("target")
+        edge = editor.scene.connect_nodes(source, target, "->")
+        count = editor.undo_stack.count()
+
+        editor._set_node_type(source, "node/var/atom")
+        self.assertEqual(editor.undo_stack.count(), count + 1)
+        self.assertEqual(source.gwf_type, "node/var/atom")
+
+        editor._set_connector_type(edge, "pair/const/orient", "pair", "=>")
+        self.assertEqual(editor.undo_stack.count(), count + 2)
+        self.assertEqual(edge.gwf_tag, "pair")
+
+        editor._swap_connector(edge)
+        self.assertIs(edge.target, source)
+
+        editor.undo_stack.undo()
+        self.assertIs(edge.target, target)
+        editor.close()
 
     def test_main_window_switches_to_graph_editor_for_gwf_files(self):
         try:

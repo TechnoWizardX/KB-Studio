@@ -24,9 +24,15 @@ a node or connector to another node or connector, buses by dragging from an
 owner node, and contours by placing vertices (finish with Enter or a
 double-click). Middle-mouse drag pans the canvas; hold Space and drag with the
 left mouse button for the same action. Select objects to move, change their
-SCg types, rename nodes, or delete them. The graph editor also provides node
-search, zoom, fit-to-graph, and PNG export. Unsupported GWF elements are
-preserved as unmodified document elements.
+SCg types, rename nodes, or delete them. Double-click a node to rename it in
+place; double-click a connector to add or remove route waypoints and drag a
+waypoint square to reshape the route. Right-click opens the context menu for
+creating nodes, renaming, changing types, reversing pair direction, and
+deleting. The toolbar arrangers lay the graph out as a grid, vertical line,
+horizontal line, or circle around the neighbours of the selected node. All
+editing actions support undo and redo (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y). The
+graph editor also provides node search, zoom, fit-to-graph, and PNG export.
+Unsupported GWF elements are preserved as unmodified document elements.
 
 ## Build on Linux
 

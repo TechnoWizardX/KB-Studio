@@ -153,6 +153,25 @@ class CommandDeleteSelection(_GraphCommand):
         )
 
 
+class CommandSwapConnectorOrientation(_GraphCommand):
+    def __init__(self, scene: GraphScene, edge):
+        super().__init__(scene, "Swap connector direction")
+        self.edge = edge
+        self.old_source = edge.source
+        self.old_target = edge.target
+        self.old_begin_dot = edge.begin_dot
+        self.old_end_dot = edge.end_dot
+        self.old_waypoints = [QPointF(point) for point in edge.waypoints]
+
+    def redo(self) -> None:
+        if self.edge.source is self.old_source:
+            self.scene.swap_connector(self.edge)
+
+    def undo(self) -> None:
+        if self.edge.source is not self.old_source:
+            self.scene.swap_connector(self.edge)
+
+
 class CommandWaypointsChange(_GraphCommand):
     def __init__(
         self,

@@ -41,6 +41,7 @@ class GraphCanvasView(QGraphicsView):
         create_bus: Callable[[object, QPointF], None],
         create_contour: Callable[[list[QPointF]], None],
         commit_move: Callable[[dict], None],
+        build_context_menu: Callable[[QPointF, QGraphicsItem | None, object], None],
         delete_selection: Callable[[], None],
         parent: QWidget | None = None,
     ):
@@ -52,6 +53,7 @@ class GraphCanvasView(QGraphicsView):
         self.create_bus = create_bus
         self.create_contour = create_contour
         self.commit_move = commit_move
+        self.build_context_menu = build_context_menu
         self.delete_selection = delete_selection
         self.tool = self.SELECT
         self._start_node = None
@@ -230,6 +232,14 @@ class GraphCanvasView(QGraphicsView):
             self.commit_move(drag_positions)
         event.accept()
 
+    def contextMenuEvent(self, event) -> None:
+        item = self._graph_object_at(event.pos().toPoint())
+        self.build_context_menu(
+            self.mapToScene(event.pos()),
+            item,
+            event.globalPos(),
+        )
+
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if self.tool == self.CONTOUR and event.button() == Qt.MouseButton.LeftButton:
             point = self.mapToScene(event.position().toPoint())
@@ -241,7 +251,27 @@ class GraphCanvasView(QGraphicsView):
             self._finish_contour()
             event.accept()
             return
-        super().mouseDoubleClickEvent(event)
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mouseDoubleClickEvent(event)
+            return
+        if self.tool in {self.CONNECTOR, self.BUS}:
+            scene_position = self.mapToScene(event.position().toPoint())
+            item = self._graph_object_at(
+                event.position().toPoint(),
+                include_connectors=self.tool == self.CONNECTOR,
+            )
+            is_valid_start = (
+                isinstance(item, (self.node_class, self.connector_class))
+                if self.tool == self.CONNECTOR
+                else isinstance(item, self.node_class)
+            )
+            if is_valid_start:
+                self._start_node = item
+                self._start_point = scene_position
+                self._create_preview(scene_position, scene_position)
+            event.accept()
+            return
+        event.accept()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Space:
