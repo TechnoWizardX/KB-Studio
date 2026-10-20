@@ -77,6 +77,15 @@ class CodeEditorWorkspace(QTabWidget):
                     self.setCurrentIndex(index)
                     break
 
+        signals.selected_new_project_folder.connect(self.clear_workspace)
+
+    def clear_workspace(self, new_dir):
+        ConfigManager.set("last_viewed_file", "")
+        ConfigManager.set("last_viewed_files", [])
+        # Properly close all tabs to delete editors and stop their timers
+        while self.count() > 0:
+            self.close_tab(0)
+
     def apply_file(self, file_path: str | Path) -> None:
         if not file_path:
             return

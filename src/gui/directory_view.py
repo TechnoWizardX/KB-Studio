@@ -135,11 +135,12 @@ class DirectoryTreeViewWidget(QFrame):
         )
         if new_folder:
             print(f"New project paths: {new_folder}. Registring new Project Tree...")
+            # Clear internal state before emitting signal
+            ConfigManager.set("selected_dir", "")
+            ConfigManager.set("selected_file", "")
             signals.selected_new_project_folder.emit(new_folder)
             self.project_path = new_folder
             ConfigManager.set("project_dir", new_folder)
-            ConfigManager.set("selected_dir", "")
-            ConfigManager.set("selected_file", "")
             self.project_dir_label.setText(new_folder)
         else:
             print("Choose declined")
@@ -259,9 +260,11 @@ class DirectoryTreeView(QTreeView):
 
     def update_project_dir(self, new_path):
         self.tree_model.setRootPath(new_path)
-        self.setModel(self.tree_model)
         self.setRootIndex(self.tree_model.index(new_path))
         self.root_path = new_path
+        # Clear selection to avoid stale indices
+        self.clearSelection()
+        self.setCurrentIndex(self.model().index(new_path))
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_F2:
