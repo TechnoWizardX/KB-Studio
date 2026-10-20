@@ -11,6 +11,23 @@ assistant can answer questions about OSTIS and SCs-code and can use files
 explicitly attached by the user as request context. AI providers and models
 are configured in the application.
 
+The editor selector in the top bar switches between the SCs text editor and a
+PySide6 SCg graph editor. The graph editor supports typed constant, variable,
+and meta nodes; typed directed and undirected connectors attached to node
+borders or other connectors (SCg relation attributes); and editable buses and
+contours. It opens and writes GWF 1.6/2.0 while preserving unedited GWF metadata
+and route points. Graphical `.scs` import is not enabled yet; use the SCs text
+editor to view and edit `.scs` files.
+
+Use the canvas tools to create nodes by clicking, connectors by dragging from
+a node or connector to another node or connector, buses by dragging from an
+owner node, and contours by placing vertices (finish with Enter or a
+double-click). Middle-mouse drag pans the canvas; hold Space and drag with the
+left mouse button for the same action. Select objects to move, change their
+SCg types, rename nodes, or delete them. The graph editor also provides node
+search, zoom, fit-to-graph, and PNG export. Unsupported GWF elements are
+preserved as unmodified document elements.
+
 ## Build on Linux
 
 Build the application on the target operating system and architecture. The

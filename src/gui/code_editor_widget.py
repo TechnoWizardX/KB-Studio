@@ -33,6 +33,9 @@ class CodeEditorWidget(QFrame):
     def apply_file(self, file_path: str | Path) -> None:
         self.code_editor_workspace.apply_file(file_path)
 
+    def set_active(self, active: bool) -> None:
+        self.code_editor_workspace.set_active(active)
+
     def _show_current_editor_diagnostics(self, index: int) -> None:
         editor = self.code_editor_workspace.widget(index)
         error = editor.syntax_error if isinstance(editor, CodeEditor) else None

@@ -467,22 +467,22 @@ class MessagesBox(QScrollArea):
     def __init__(self):
         super().__init__() 
         self.container = QWidget()
-        self.layout = QVBoxLayout(self.container)
-        self.layout.addStretch()
+        self.main_layout = QVBoxLayout(self.container)
+        self.main_layout.addStretch(3)
         self.setWidget(self.container)
         self.setWidgetResizable(True)
 
     def add_message(self, text, author, created_at=None) -> "Message | None":
         message = Message(text, author, created_at)
         alignment = Qt.AlignmentFlag.AlignLeft if author == "ai" else Qt.AlignmentFlag.AlignRight
-        self.layout.insertWidget(self.layout.count() - 1, message, alignment)  # before stretch
+        self.main_layout.insertWidget(self.main_layout.count() - 1, message, alignment)  # before stretch
         self._scroll_to_bottom()
         if author == "ai":
             return message
 
     def clear_messages(self) -> None:
-        while self.layout.count() > 1:
-            item = self.layout.takeAt(0)
+        while self.main_layout.count() > 1:
+            item = self.main_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
@@ -506,11 +506,11 @@ class FileBox(QScrollArea):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setMaximumHeight(100)
         self.container = QWidget()
-        self.layout = QVBoxLayout(self.container)
-        self.layout.setContentsMargins(4, 4, 4, 4)
-        self.layout.setSpacing(4)
+        self.main_layout = QVBoxLayout(self.container)
+        self.main_layout.setContentsMargins(4, 4, 4, 4)
+        self.main_layout.setSpacing(4)
         self._files: dict[str, ContextFile] = {}
-        self.layout.addStretch()
+        self.main_layout.addStretch()
         self.setWidget(self.container)
         self.setWidgetResizable(True)
 
@@ -520,7 +520,7 @@ class FileBox(QScrollArea):
         context_file = ContextFile(path)
         context_file.remove_requested.connect(self._remove_file)
         self._files[path] = context_file
-        self.layout.insertWidget(self.layout.count() - 1, context_file)
+        self.main_layout.insertWidget(self.main_layout.count() - 1, context_file)
 
     def clear_files(self) -> None:
         for path in tuple(self._files):
@@ -530,7 +530,7 @@ class FileBox(QScrollArea):
         context_file = self._files.pop(path, None)
         if context_file is None:
             return
-        self.layout.removeWidget(context_file)
+        self.main_layout.removeWidget(context_file)
         context_file.deleteLater()
         if notify:
             self.file_removed.emit(path)

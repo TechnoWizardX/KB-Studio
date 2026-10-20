@@ -1,0 +1,640 @@
+import os
+import tempfile
+import unittest
+import xml.etree.ElementTree as ET
+from unittest.mock import patch
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
+from PySide6.QtGui import QImage, QPainter
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication
+
+from src.gui.graph_editor.graph_editor import (
+    _CONNECTOR_TYPES,
+    _EDGE_TYPES,
+    _relation_for_gwf,
+    GraphEditorWidget,
+    GraphScene,
+)
+from src.lark_syntax.parser import SCSParser
+
+
+class GraphSceneTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.scene = GraphScene()
+
+    def test_simple_relations_round_trip_and_keep_unsupported_statements(self):
+        source = (
+            "// preserve comments\n"
+            "node_a -> node_b;;\n"
+            "node_b;;\n"
+            "node_c => nrel_main_idtf: [label];;\n"
+        )
+
+        self.scene.load_scs(source)
+
+        self.assertEqual(set(self.scene.nodes), {"node_a", "node_b"})
+        self.assertEqual(len(self.scene.edges), 1)
+        output = self.scene.to_scs()
+        self.assertIn("// preserve comments\n", output)
+        self.assertIn("node_c => nrel_main_idtf: [label];;\n", output)
+        SCSParser().parse(output)
+
+    def test_added_and_renamed_nodes_serialize_as_valid_scs(self):
+        left = self.scene.add_node("left")
+        right = self.scene.add_node("right")
+        self.scene.connect_nodes(left, right, "=>")
+        self.scene.rename_node(left, "source")
+
+        output = self.scene.to_scs()
+
+        self.assertEqual(output, "source => right;;\n")
+        SCSParser().parse(output)
+
+    def test_unsupported_edge_types_and_duplicate_names_are_rejected(self):
+        node = self.scene.add_node("existing")
+
+        with self.assertRaises(ValueError):
+            self.scene.add_node("existing")
+        with self.assertRaises(ValueError):
+            self.scene.connect_nodes(node, self.scene.add_node("other"), "invalid")
+        with self.assertRaises(ValueError):
+            self.scene.rename_node(node, "not valid")
+
+    def test_connectors_can_use_other_connectors_as_endpoints(self):
+        source = self.scene.add_node("source")
+        target = self.scene.add_node("target")
+        self.scene.connect_nodes(source, target, "->")
+        connector = self.scene.edges[0]
+
+        attribute = self.scene.connect_nodes(source, connector, "->")
+        self.assertIs(attribute.source, source)
+        self.assertIs(attribute.target, connector)
+        self.assertEqual(len(self.scene.edges), 2)
+
+    def test_removing_a_node_also_removes_its_relations(self):
+        left = self.scene.add_node("left")
+        right = self.scene.add_node("right")
+        self.scene.connect_nodes(left, right, "->")
+        left.setSelected(True)
+
+        self.scene.remove_selected()
+
+        self.assertEqual(self.scene.nodes, {"right": right})
+        self.assertEqual(self.scene.edges, [])
+        self.assertEqual(self.scene.to_scs(), "right;;\n")
+
+    def test_removing_a_node_removes_all_dependent_attribute_arcs(self):
+        source = self.scene.add_node("source")
+        left = self.scene.add_node("left")
+        right = self.scene.add_node("right")
+        relation = self.scene.connect_nodes(left, right, "->")
+        attribute = self.scene.connect_nodes(source, relation, "->")
+        relation.setSelected(True)
+
+        self.scene.remove_selected()
+
+        self.assertEqual(self.scene.edges, [])
+        self.assertNotIn(relation, self.scene.items())
+        self.assertNotIn(attribute, self.scene.items())
+
+    def test_graph_editor_widget_initializes_and_can_start_a_new_graph(self):
+        editor = GraphEditorWidget()
+
+        editor.new_graph()
+
+        self.assertTrue(editor.is_modified)
+        self.assertIsNone(editor.file_path)
+        self.assertTrue(editor.save_button.isEnabled())
+
+    def test_inactive_graph_editor_does_not_open_text_editor_selections(self):
+        editor = GraphEditorWidget()
+        editor.set_active(False)
+
+        editor.apply_file("/not/a/project/text.scs")
+
+        self.assertIsNone(editor.file_path)
+        self.assertEqual(editor.scene.nodes, {})
+
+    def test_graph_editor_ignores_scs_files_until_graphical_scs_is_supported(self):
+        editor = GraphEditorWidget()
+
+        editor.apply_file("/not/a/project/text.scs")
+
+        self.assertIsNone(editor.file_path)
+        self.assertEqual(editor.scene.nodes, {})
+
+    def test_middle_mouse_drag_pans_the_graph_view(self):
+        editor = GraphEditorWidget()
+        editor.resize(800, 500)
+        editor.show()
+        self.app.processEvents()
+        before = editor.view.horizontalScrollBar().value()
+        start = QPoint(350, 250)
+        finish = QPoint(420, 300)
+
+        QTest.mousePress(
+            editor.view.viewport(), Qt.MouseButton.MiddleButton, pos=start
+        )
+        QTest.mouseMove(editor.view.viewport(), finish, 100)
+        QTest.mouseRelease(
+            editor.view.viewport(), Qt.MouseButton.MiddleButton, pos=finish
+        )
+
+        self.assertNotEqual(editor.view.horizontalScrollBar().value(), before)
+        editor.close()
+
+    def test_graphical_drag_moves_a_node_and_updates_connected_edge(self):
+        editor = GraphEditorWidget()
+        editor.resize(900, 600)
+        editor.show()
+        source = editor.scene.add_node("source", QPoint(100, 100))
+        target = editor.scene.add_node("target", QPoint(350, 100))
+        editor.scene.connect_nodes(source, target, "->")
+        self.app.processEvents()
+        original_source = source.pos()
+        original_path = editor.scene.edges[0].path()
+        start = editor.view.mapFromScene(source.mapToScene(source.boundingRect().center()))
+        finish = start + QPoint(70, 55)
+
+        QTest.mousePress(
+            editor.view.viewport(), Qt.MouseButton.LeftButton, pos=start
+        )
+        QTest.mouseMove(editor.view.viewport(), finish, 100)
+        QTest.mouseRelease(
+            editor.view.viewport(), Qt.MouseButton.LeftButton, pos=finish
+        )
+        self.app.processEvents()
+
+        self.assertNotEqual(source.pos(), original_source)
+        self.assertNotEqual(editor.scene.edges[0].path(), original_path)
+        editor.close()
+
+    def test_canvas_node_tool_creates_a_node_at_the_clicked_position(self):
+        editor = GraphEditorWidget()
+        editor.resize(900, 600)
+        editor.show()
+        self.app.processEvents()
+        editor.view.set_tool(editor.view.NODE)
+        scene_point = QPointF(500, 400)
+        click = editor.view.mapFromScene(scene_point)
+
+        QTest.mouseClick(editor.view.viewport(), Qt.MouseButton.LeftButton, pos=click)
+        self.app.processEvents()
+
+        self.assertEqual(len(editor.scene.nodes), 1)
+        node = next(iter(editor.scene.nodes.values()))
+        self.assertAlmostEqual(node.pos().x(), 500, delta=2)
+        self.assertAlmostEqual(node.pos().y(), 400, delta=2)
+        self.assertEqual(node.gwf_type, "node/const/general_node")
+        editor.close()
+
+    def test_graph_search_selects_and_centers_matching_node(self):
+        editor = GraphEditorWidget()
+        editor.resize(900, 600)
+        editor.show()
+        node = editor.scene.add_node("SearchTarget", QPoint(900, 250))
+        editor.search_edit.setText("searchtarget")
+
+        editor.find_node()
+
+        self.assertTrue(node.isSelected())
+        self.assertAlmostEqual(
+            editor.view.mapToScene(editor.view.viewport().rect().center()).x(),
+            node.sceneBoundingRect().center().x(),
+            delta=2,
+        )
+        editor.close()
+
+    def test_zoom_controls_and_png_export(self):
+        editor = GraphEditorWidget()
+        editor.scene.add_node("visible")
+        original_scale = editor.view.transform().m11()
+        editor.view.zoom_in()
+        self.assertGreater(editor.view.transform().m11(), original_scale)
+        editor.view.zoom_out()
+        self.assertAlmostEqual(editor.view.transform().m11(), original_scale)
+
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = os.path.join(directory, "graph.png")
+            with patch(
+                "src.gui.graph_editor.graph_editor.QFileDialog.getSaveFileName",
+                return_value=(output_path, "PNG images (*.png)"),
+            ):
+                editor.export_image()
+            self.assertTrue(os.path.isfile(output_path))
+            self.assertGreater(os.path.getsize(output_path), 0)
+        editor.close()
+
+    def test_canvas_connector_tool_can_target_an_existing_connector(self):
+        editor = GraphEditorWidget()
+        editor.resize(900, 600)
+        editor.show()
+        source = editor.scene.add_node("source", QPoint(100, 100))
+        target = editor.scene.add_node("target", QPoint(350, 100))
+        self.app.processEvents()
+        editor.view.set_tool(editor.view.CONNECTOR)
+
+        start = editor.view.mapFromScene(source.mapToScene(QPointF(0, 0)))
+        finish = editor.view.mapFromScene(target.mapToScene(QPointF(0, 0)))
+        QTest.mousePress(editor.view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(editor.view.viewport(), finish, 100)
+        QTest.mouseRelease(
+            editor.view.viewport(), Qt.MouseButton.LeftButton, pos=finish
+        )
+        self.app.processEvents()
+        self.assertEqual(len(editor.scene.edges), 1)
+
+        edge_middle = editor.scene.edges[0].path().pointAtPercent(0.5)
+        edge_position = editor.view.mapFromScene(edge_middle)
+        QTest.mousePress(editor.view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(editor.view.viewport(), edge_position, 100)
+        QTest.mouseRelease(
+            editor.view.viewport(), Qt.MouseButton.LeftButton, pos=edge_position
+        )
+        self.app.processEvents()
+
+        self.assertEqual(len(editor.scene.edges), 2)
+        self.assertIs(editor.scene.edges[1].target, editor.scene.edges[0])
+        editor.close()
+
+    def test_canvas_connector_tool_can_create_an_attribute_arc(self):
+        editor = GraphEditorWidget()
+        editor.resize(1000, 600)
+        editor.show()
+        source = editor.scene.add_node("source", QPoint(100, 120))
+        left = editor.scene.add_node("left", QPoint(360, 80))
+        right = editor.scene.add_node("right", QPoint(360, 240))
+        relation = editor.scene.connect_nodes(left, right, "->")
+        self.app.processEvents()
+        editor.view.set_tool(editor.view.CONNECTOR)
+
+        start = editor.view.mapFromScene(source.scenePos())
+        end = editor.view.mapFromScene(relation.path().pointAtPercent(0.5))
+        QTest.mousePress(editor.view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(editor.view.viewport(), end, 100)
+        QTest.mouseRelease(
+            editor.view.viewport(), Qt.MouseButton.LeftButton, pos=end
+        )
+        self.app.processEvents()
+
+        self.assertEqual(len(editor.scene.edges), 2)
+        attribute = editor.scene.edges[-1]
+        self.assertIs(attribute.source, source)
+        self.assertIs(attribute.target, relation)
+        self.assertAlmostEqual(attribute.end_dot, 0.5, delta=0.05)
+
+        exported = ET.fromstring(editor.scene.to_gwf())
+        arcs = exported.findall("staticSector/arc")
+        self.assertEqual(arcs[-1].get("id_e"), relation.gwf_id)
+        self.assertEqual(arcs[-1].get("id_b"), source.gwf_id)
+        self.assertAlmostEqual(float(arcs[-1].get("dotEBalance")), attribute.end_dot)
+        self.assertEqual((arcs[-1].get("e_x"), arcs[-1].get("e_y")), ("0.0", "0.0"))
+        editor.close()
+
+    def test_gwf_round_trip_loads_connector_references_in_dependency_order(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/general_node" idtf="source" id="n1" x="80" y="140"/>
+          <node type="node/const/general_node" idtf="left" id="n2" x="260" y="80"/>
+          <node type="node/const/general_node" idtf="right" id="n3" x="260" y="220"/>
+          <arc type="arc/const/pos" id="attribute" id_b="n1" id_e="relation"
+               dotBBalance="0" dotEBalance="0.6"/>
+          <arc type="arc/const/pos" id="relation" id_b="n2" id_e="n3"/>
+        </staticSector></GWF>"""
+
+        self.scene.load_gwf(source)
+
+        self.assertEqual(len(self.scene.edges), 2)
+        relation, attribute = self.scene.edges
+        self.assertEqual(relation.gwf_id, "relation")
+        self.assertEqual(attribute.gwf_id, "attribute")
+        self.assertIs(attribute.target, relation)
+        exported = ET.fromstring(self.scene.to_gwf())
+        arcs = {
+            item.get("id"): item
+            for item in exported.findall("staticSector/arc")
+        }
+        self.assertEqual(arcs["attribute"].get("id_e"), "relation")
+        self.assertEqual(arcs["attribute"].get("dotEBalance"), "0.6")
+        self.assertEqual(arcs["relation"].get("id_e"), "n3")
+
+    def test_node_label_has_full_bounded_geometry(self):
+        node = self.scene.add_node("a_very_long_node_identifier")
+        label_rect = node.label.boundingRect().translated(node.label.pos())
+
+        self.assertTrue(node.boundingRect().contains(label_rect))
+        self.assertAlmostEqual(label_rect.center().y(), 0, delta=0.1)
+
+    def test_node_label_is_rendered_inside_its_full_text_bounds(self):
+        self.scene.setBackgroundBrush(Qt.BrushStyle.NoBrush)
+        node = self.scene.add_node(
+            "visible_long_graph_node_label",
+            QPointF(60, 50),
+        )
+        image = QImage(500, 120, QImage.Format.Format_ARGB32)
+        image.fill(0)
+        painter = QPainter(image)
+        self.scene.render(
+            painter,
+            QRectF(0, 0, 500, 120),
+            QRectF(0, 0, 500, 120),
+        )
+        painter.end()
+        label_rect = node.label.boundingRect().translated(node.label.pos())
+        label_rect.translate(60, 50)
+        rendered_text_pixels = sum(
+            1
+            for y in range(max(0, int(label_rect.top())), min(120, int(label_rect.bottom()) + 1))
+            for x in range(max(0, int(label_rect.left())), min(500, int(label_rect.right()) + 1))
+            if image.pixelColor(x, y).alpha() > 0
+            and image.pixelColor(x, y).red() > 150
+        )
+
+        self.assertGreater(rendered_text_pixels, 0)
+
+    def test_canvas_bus_and_contour_tools_create_gwf_objects(self):
+        editor = GraphEditorWidget()
+        editor.resize(900, 600)
+        editor.show()
+        owner = editor.scene.add_node("owner", QPoint(100, 100))
+        self.app.processEvents()
+        editor.view.set_tool(editor.view.BUS)
+        start = editor.view.mapFromScene(owner.mapToScene(QPointF(0, 0)))
+        finish = editor.view.mapFromScene(QPointF(250, 240))
+        QTest.mousePress(editor.view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(editor.view.viewport(), finish, 100)
+        QTest.mouseRelease(
+            editor.view.viewport(), Qt.MouseButton.LeftButton, pos=finish
+        )
+        self.app.processEvents()
+        self.assertEqual([item.kind for item in editor.scene.aux_objects], ["bus"])
+
+        editor.view.set_tool(editor.view.CONTOUR)
+        for point in (QPointF(400, 300), QPointF(500, 300), QPointF(450, 380)):
+            QTest.mouseClick(
+                editor.view.viewport(),
+                Qt.MouseButton.LeftButton,
+                pos=editor.view.mapFromScene(point),
+            )
+        editor.view.setFocus()
+        QTest.keyClick(editor.view, Qt.Key.Key_Return)
+        self.app.processEvents()
+
+        self.assertEqual(
+            [item.kind for item in editor.scene.aux_objects], ["bus", "contour"]
+        )
+        editor.close()
+
+    def test_gwf_load_edit_export_preserves_types_and_unknown_elements(self):
+        source = """<?xml version="1.0" encoding="UTF-8"?>
+<GWF version="1.6">
+  <staticSector>
+    <node type="node/const/general_node" idtf="source" shapeColor="5"
+          id="n1" parent="0" x="120" y="140" haveBus="false">
+      <content type="0" mime_type="content/base" file_name=""/>
+    </node>
+    <node type="node/var/general_node" idtf="target" id="n2" parent="0"
+          x="360" y="140" haveBus="false">
+      <content type="0" mime_type="content/base" file_name=""/>
+    </node>
+    <arc type="arc/var/pos" idtf="" id="e1" parent="0" id_b="n1" id_e="n2"
+         b_x="256" b_y="150" e_x="360" e_y="150" dotBBalance="0" dotEBalance="0">
+      <points><point x="300" y="190"/></points>
+    </arc>
+    <bus id="unmodified"/>
+  </staticSector>
+  <metadata value="preserved"/>
+</GWF>
+"""
+
+        self.scene.load_gwf(source)
+        self.scene.nodes["source"].setPos(180, 210)
+        exported = ET.fromstring(self.scene.to_gwf())
+        sector = exported.find("staticSector")
+        nodes = {node.get("id"): node for node in sector.findall("node")}
+        arc = sector.find("arc")
+
+        self.assertEqual(exported.find("metadata").get("value"), "preserved")
+        self.assertEqual(sector.find("bus").get("id"), "unmodified")
+        self.assertEqual(nodes["n1"].get("type"), "node/const/general_node")
+        self.assertEqual(nodes["n1"].get("shapeColor"), "5")
+        self.assertEqual(nodes["n1"].get("x"), "180.0")
+        self.assertEqual(arc.get("type"), "arc/var/pos")
+        self.assertEqual((arc.get("id_b"), arc.get("id_e")), ("n1", "n2"))
+        self.assertEqual((arc.get("b_x"), arc.get("b_y")), ("180.0", "210.0"))
+        self.assertEqual((arc.get("e_x"), arc.get("e_y")), ("360.0", "140.0"))
+        self.assertIsNotNone(arc.find("points"))
+        self.assertAlmostEqual(float(arc.find("points/point").get("x")), 300)
+
+    def test_node_glyph_and_connector_are_anchored_at_visible_node_borders(self):
+        source = self.scene.add_node("source", QPoint(100, 100))
+        target = self.scene.add_node("target", QPoint(300, 100))
+        self.scene.set_node_type(source, "node/const/general_node")
+        self.scene.set_node_type(target, "node/const/general_node")
+        self.scene.connect_nodes(source, target, "->")
+        edge = self.scene.edges[0]
+        path_start = edge.path().pointAtPercent(0)
+        path_end = edge.path().pointAtPercent(1)
+
+        self.assertAlmostEqual(path_start.x(), 112, delta=1)
+        self.assertAlmostEqual(path_end.x(), 288, delta=1)
+        self.assertTrue(source.shape().contains(QPointF(0, 0)))
+        self.assertTrue(source.boundingRect().contains(source.shape().boundingRect()))
+
+    def test_node_type_can_be_changed_to_const_var_meta_and_special_structures(self):
+        node = self.scene.add_node("typed")
+        for gwf_type in (
+            "node/const/general_node",
+            "node/var/attribute",
+            "node/meta/group",
+        ):
+            self.scene.set_node_type(node, gwf_type)
+            self.assertEqual(node.gwf_type, gwf_type)
+            self.assertFalse(node.shape().isEmpty())
+
+        self.assertEqual(self.scene.to_gwf().count('type="node/meta/group"'), 1)
+
+        self.scene.set_node_type(node, "node/var/not_define")
+        self.assertTrue(node.shape().contains(QPointF(0, 0)))
+        self.assertFalse(node.shape().contains(QPointF(4, 4)))
+
+    def test_connector_type_selector_only_offers_parseable_scs_tokens(self):
+        parser = SCSParser()
+        for _, _, _, token in _CONNECTOR_TYPES:
+            with self.subTest(token=token):
+                self.assertIn(token, _EDGE_TYPES)
+                parser.parse(f"source {token} target;;")
+        self.assertEqual(
+            _relation_for_gwf("arc", "arc/const/neg"),
+            "-|>",
+        )
+        self.assertEqual(
+            _relation_for_gwf("arc", "arc/var/neg"),
+            "_-|>",
+        )
+        self.assertEqual(
+            _relation_for_gwf("arc", "arc/const/pos/temp"),
+            "..>",
+        )
+        self.assertFalse(any("rail" in gwf_type for _, gwf_type, _, _ in _CONNECTOR_TYPES))
+
+    def test_new_bus_and_contour_are_serialized_as_editable_gwf_objects(self):
+        owner = self.scene.add_node(
+            "owner",
+            QPoint(100, 100),
+            gwf_type="node/const/general_node",
+        )
+        bus = self.scene.add_bus(owner, QPointF(240, 180))
+        bus.setPos(30, 40)
+        old_bus_path = bus.mapToScene(bus.path())
+        bus_end_before_move = old_bus_path.pointAtPercent(1)
+        contour = self.scene.add_contour(
+            [
+                QPointF(60, 60),
+                QPointF(280, 60),
+                QPointF(280, 220),
+                QPointF(60, 220),
+            ]
+        )
+        owner.setPos(110, 115)
+        contour.setPos(20, 25)
+        updated_bus_path = bus.mapToScene(bus.path())
+        expected_bus_start = owner.connection_point(bus_end_before_move)
+        self.assertAlmostEqual(
+            updated_bus_path.pointAtPercent(0).x(),
+            expected_bus_start.x(),
+            delta=0.001,
+        )
+        self.assertAlmostEqual(
+            updated_bus_path.pointAtPercent(1).x(),
+            bus_end_before_move.x(),
+            delta=0.001,
+        )
+
+        root = ET.fromstring(self.scene.to_gwf())
+        sector = root.find("staticSector")
+
+        self.assertEqual(root.get("version"), "2.0")
+        self.assertEqual(sector.find("bus").get("owner"), owner.gwf_id)
+        expected_bus_start = owner.connection_point(bus_end_before_move)
+        self.assertAlmostEqual(
+            float(sector.find("bus").get("b_x")),
+            expected_bus_start.x(),
+            delta=0.001,
+        )
+        self.assertAlmostEqual(
+            float(sector.find("bus").get("b_y")),
+            expected_bus_start.y(),
+            delta=0.001,
+        )
+        self.assertAlmostEqual(
+            float(sector.find("bus").get("e_x")),
+            bus_end_before_move.x(),
+            delta=0.001,
+        )
+        self.assertEqual(len(sector.find("contour/points")), 4)
+
+
+    def test_gwf_rejects_invalid_xml_and_unknown_versions(self):
+        for source in (
+            "<GWF version='1.6'><staticSector>",
+            "<GWF version='9.0'><staticSector/></GWF>",
+        ):
+            with self.subTest(source=source):
+                with self.assertRaises(ValueError):
+                    self.scene.load_gwf(source)
+
+    def test_gwf_load_is_transactional_and_preserves_unsupported_connectors(self):
+        original = self.scene.add_node("original")
+        malformed = """<GWF version="2.0"><staticSector>
+          <node type="node/const/not_define" id="n1" x="nan" y="0"/>
+        </staticSector></GWF>"""
+        with self.assertRaisesRegex(ValueError, "Invalid x coordinate"):
+            self.scene.load_gwf(malformed)
+        self.assertIs(self.scene.nodes["original"], original)
+        invalid_balance = """<GWF version="2.0"><staticSector>
+          <node type="node/const/general_node" id="n1" x="0" y="0"/>
+          <node type="node/const/general_node" id="n2" x="100" y="0"/>
+          <arc type="arc/const/pos" id="a1" id_b="n1" id_e="n2"
+               dotEBalance="nan"/>
+        </staticSector></GWF>"""
+        with self.assertRaisesRegex(ValueError, "Invalid dotEBalance"):
+            self.scene.load_gwf(invalid_balance)
+        self.assertIs(self.scene.nodes["original"], original)
+
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/general_node" idtf="left" id="n1" x="0" y="0"/>
+          <node type="node/const/general_node" idtf="right" id="n2" x="100" y="0"/>
+          <arc type="arc/future/unknown" id="KBStudioEdge1" id_b="n1" id_e="n2"/>
+        </staticSector></GWF>"""
+        self.scene.load_gwf(source)
+        self.scene.connect_nodes(self.scene.nodes["left"], self.scene.nodes["right"], "->")
+
+        self.assertEqual(len(self.scene.edges), 1)
+        self.assertEqual(
+            self.scene._existing_gwf_ids(),
+            {"n1", "n2", "KBStudioEdge1", "KBStudioEdge2"},
+        )
+        exported = ET.fromstring(self.scene.to_gwf())
+        arcs = exported.findall("staticSector/arc")
+        preserved = next(arc for arc in arcs if arc.get("type") == "arc/future/unknown")
+        editable = next(arc for arc in arcs if arc.get("type") == "arc/-/-")
+        self.assertEqual(preserved.get("id"), "KBStudioEdge1")
+        self.assertEqual(editable.get("id"), "KBStudioEdge2")
+
+    def test_gwf_preserves_self_referential_connectors_as_opaque_objects(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/general_node" idtf="node" id="n1" x="20" y="30"/>
+          <arc type="arc/const/pos" id="a1" id_b="n1" id_e="n1"/>
+        </staticSector></GWF>"""
+
+        self.scene.load_gwf(source)
+
+        self.assertEqual(self.scene.edges, [])
+        exported = ET.fromstring(self.scene.to_gwf())
+        arc = exported.find("staticSector/arc")
+        self.assertIsNotNone(arc)
+        self.assertEqual((arc.get("id_b"), arc.get("id_e")), ("n1", "n1"))
+
+    def test_loading_a_new_gwf_replaces_previous_auxiliary_objects(self):
+        first = """<GWF version="2.0"><staticSector>
+          <node type="node/const/general_node" idtf="owner" id="n1" x="0" y="0"/>
+          <bus id="b1" owner="n1" b_x="10" b_y="10" e_x="80" e_y="80"/>
+        </staticSector></GWF>"""
+        second = """<GWF version="2.0"><staticSector>
+          <node type="node/const/general_node" idtf="other" id="n2" x="0" y="0"/>
+        </staticSector></GWF>"""
+
+        self.scene.load_gwf(first)
+        self.assertEqual(len(self.scene.aux_objects), 1)
+        self.scene.load_gwf(second)
+
+        self.assertEqual(self.scene.aux_objects, [])
+        self.assertNotIn("<bus", self.scene.to_gwf())
+
+    def test_gwf_reads_legacy_windows_1251_xml_declaration(self):
+        source = """<?xml version="1.0" encoding="windows-1251"?>
+<GWF version="1.6">
+  <staticSector>
+    <node type="node/const/not_define" idtf="узел" id="n1" parent="0"
+          x="10" y="20" haveBus="false">
+      <content type="0" mime_type="content/base" file_name=""/>
+    </node>
+  </staticSector>
+</GWF>
+""".encode("cp1251")
+
+        self.scene.load_gwf(source)
+
+        self.assertEqual(self.scene.nodes["node_1"].gwf_idtf, "узел")
+        self.assertIn('idtf="узел"', self.scene.to_gwf())
+
+
+if __name__ == "__main__":
+    unittest.main()

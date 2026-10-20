@@ -43,6 +43,7 @@ class CodeEditorWorkspace(QTabWidget):
         self.setTabsClosable(False)
         self.setMovable(True)
         self.setDocumentMode(True)
+        self.is_active = True
 
         self.tabBar().setExpanding(False)
         self.tabBar().setUsesScrollButtons(True)
@@ -51,7 +52,7 @@ class CodeEditorWorkspace(QTabWidget):
 
         self.currentChanged.connect(self._on_current_changed)
         signals.theme_changed.connect(self._refresh_close_icons)
-        signals.selected_new_file.connect(self.apply_file)
+        signals.selected_new_file.connect(self._open_selected_file)
 
         last_viewed_files = ConfigManager.get("last_viewed_files")
         if not isinstance(last_viewed_files, list):
@@ -116,6 +117,13 @@ class CodeEditorWorkspace(QTabWidget):
             return
 
         self.setCurrentWidget(editor)
+
+    def _open_selected_file(self, file_path: str | Path) -> None:
+        if self.is_active:
+            self.apply_file(file_path)
+
+    def set_active(self, active: bool) -> None:
+        self.is_active = active
 
     def _set_close_icon(self, index: int) -> None:
         editor = self.widget(index)
@@ -206,7 +214,7 @@ class CodeEditorWorkspace(QTabWidget):
 class CodeEditor(QPlainTextEdit):
     syntax_status_changed = Signal(object)
     parser = SCSParser()
-    bracket_pairs = {"(": ")", "[": "]", "{": "}", "<": ">"}
+    bracket_pairs = {"(": ")", "[": "]", "{": "}"}
     closing_brackets = {
         closing: opening for opening, closing in bracket_pairs.items()
     }
