@@ -52,7 +52,7 @@ class MainWindow(QMainWindow):
         self.main_splitter.setSizes([300, 500, 200])
 
         signals.error_occured.connect(self.show_error)
-
+    
     def show_error(self, error):
         QMessageBox.critical(self, "ERROR", error)
 
