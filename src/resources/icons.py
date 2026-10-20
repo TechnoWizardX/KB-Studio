@@ -65,3 +65,83 @@ class Icons:
     @classmethod
     def settings(cls) -> QIcon:
         return cls._get("settings", ":/icons/settings.svg")
+
+    @classmethod
+    def new_graph(cls) -> QIcon:
+        return cls._get("new_graph", ":/icons/new_graph.svg")
+
+    @classmethod
+    def save(cls) -> QIcon:
+        return cls._get("save", ":/icons/save.svg")
+
+    @classmethod
+    def undo(cls) -> QIcon:
+        return cls._get("undo", ":/icons/undo.svg")
+
+    @classmethod
+    def redo(cls) -> QIcon:
+        return cls._get("redo", ":/icons/redo.svg")
+
+    @classmethod
+    def zoom_in(cls) -> QIcon:
+        return cls._get("zoom_in", ":/icons/zoom_in.svg")
+
+    @classmethod
+    def zoom_out(cls) -> QIcon:
+        return cls._get("zoom_out", ":/icons/zoom_out.svg")
+
+    @classmethod
+    def fit(cls) -> QIcon:
+        return cls._get("fit", ":/icons/fit.svg")
+
+    @classmethod
+    def export_image(cls) -> QIcon:
+        return cls._get("export_image", ":/icons/export_image.svg")
+
+    @classmethod
+    def find(cls) -> QIcon:
+        return cls._get("find", ":/icons/find.svg")
+
+    @classmethod
+    def rename(cls) -> QIcon:
+        return cls._get("rename", ":/icons/rename.svg")
+
+    @classmethod
+    def delete(cls) -> QIcon:
+        return cls._get("delete", ":/icons/delete.svg")
+
+    @classmethod
+    def tool_select(cls) -> QIcon:
+        return cls._get("tool_select", ":/icons/tool_select.svg")
+
+    @classmethod
+    def tool_node(cls) -> QIcon:
+        return cls._get("tool_node", ":/icons/tool_node.svg")
+
+    @classmethod
+    def tool_connector(cls) -> QIcon:
+        return cls._get("tool_connector", ":/icons/tool_connector.svg")
+
+    @classmethod
+    def tool_bus(cls) -> QIcon:
+        return cls._get("tool_bus", ":/icons/tool_bus.svg")
+
+    @classmethod
+    def tool_contour(cls) -> QIcon:
+        return cls._get("tool_contour", ":/icons/tool_contour.svg")
+
+    @classmethod
+    def arrange_grid(cls) -> QIcon:
+        return cls._get("arrange_grid", ":/icons/arrange_grid.svg")
+
+    @classmethod
+    def arrange_vertical(cls) -> QIcon:
+        return cls._get("arrange_vertical", ":/icons/arrange_vertical.svg")
+
+    @classmethod
+    def arrange_horizontal(cls) -> QIcon:
+        return cls._get("arrange_horizontal", ":/icons/arrange_horizontal.svg")
+
+    @classmethod
+    def arrange_tuple(cls) -> QIcon:
+        return cls._get("arrange_tuple", ":/icons/arrange_tuple.svg")

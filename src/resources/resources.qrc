@@ -1,11 +1,31 @@
 <!DOCTYPE RCC><RCC version="1.0">
   <qresource prefix="/">
+    <file>icons/arrange_grid.svg</file>
+    <file>icons/arrange_horizontal.svg</file>
+    <file>icons/arrange_tuple.svg</file>
+    <file>icons/arrange_vertical.svg</file>
     <file>icons/cross.svg</file>
+    <file>icons/delete.svg</file>
+    <file>icons/export_image.svg</file>
     <file>icons/file_add.svg</file>
+    <file>icons/find.svg</file>
+    <file>icons/fit.svg</file>
     <file>icons/folder_add.svg</file>
     <file>icons/folder_search.svg</file>
+    <file>icons/new_graph.svg</file>
     <file>icons/plus.svg</file>
+    <file>icons/redo.svg</file>
+    <file>icons/rename.svg</file>
+    <file>icons/save.svg</file>
     <file>icons/send.svg</file>
     <file>icons/settings.svg</file>
+    <file>icons/tool_bus.svg</file>
+    <file>icons/tool_connector.svg</file>
+    <file>icons/tool_contour.svg</file>
+    <file>icons/tool_node.svg</file>
+    <file>icons/tool_select.svg</file>
+    <file>icons/undo.svg</file>
+    <file>icons/zoom_in.svg</file>
+    <file>icons/zoom_out.svg</file>
   </qresource>
 </RCC>

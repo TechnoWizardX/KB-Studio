@@ -6,7 +6,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -32,12 +32,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QMessageBox,
-    QPushButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from src.core.signals import signals
+from src.resources.icons import Icons
 from src.gui.graph_editor.graph_canvas import GraphCanvasView
 from src.gui.graph_editor.graph_commands import (
     CommandConnectorTypeChange,
@@ -1368,9 +1369,22 @@ class GraphEditorWidget(QFrame):
         layout.addLayout(toolbar)
         layout.addLayout(tools_toolbar)
 
-        self.new_button = QPushButton("New graph")
-        self.new_button.clicked.connect(self.new_graph)
-        toolbar.addWidget(self.new_button)
+        def add_button(bar, icon_kind, tooltip, slot=None, checkable=False):
+            button = QToolButton(self)
+            button.setIcon(icon_kind)
+            button.setIconSize(QSize(20, 20))
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            button.setToolTip(tooltip)
+            button.setStatusTip(tooltip)
+            button.setCheckable(checkable)
+            if slot is not None:
+                button.clicked.connect(slot)
+            bar.addWidget(button)
+            return button
+
+        self.new_button = add_button(
+            toolbar, Icons.new_graph(), "New graph", self.new_graph
+        )
 
         self.node_type_combo = QComboBox()
         self.node_type_combo.setMaximumWidth(190)
@@ -1379,12 +1393,16 @@ class GraphEditorWidget(QFrame):
         default_node_type = self.node_type_combo.findData("node/const/general_node")
         if default_node_type >= 0:
             self.node_type_combo.setCurrentIndex(default_node_type)
+        self.node_type_combo.setToolTip("Type of new nodes or the selected node")
         toolbar.addWidget(self.node_type_combo)
 
         self.edge_type_combo = QComboBox()
         self.edge_type_combo.setMaximumWidth(210)
         for label, gwf_type, gwf_tag, scs_token in _CONNECTOR_TYPES:
             self.edge_type_combo.addItem(label, (gwf_type, gwf_tag, scs_token))
+        self.edge_type_combo.setToolTip(
+            "Type of new connectors or the selected connector"
+        )
         toolbar.addWidget(self.edge_type_combo)
 
         self.rename_edit = QLineEdit()
@@ -1392,68 +1410,70 @@ class GraphEditorWidget(QFrame):
         self.rename_edit.returnPressed.connect(self.rename_selected)
         toolbar.addWidget(self.rename_edit)
 
-        self.rename_button = QPushButton("Rename")
-        self.rename_button.clicked.connect(self.rename_selected)
-        toolbar.addWidget(self.rename_button)
+        self.rename_button = add_button(
+            toolbar, Icons.rename(), "Rename selected node", self.rename_selected
+        )
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Find node")
         self.search_edit.returnPressed.connect(self.find_node)
         toolbar.addWidget(self.search_edit)
 
-        self.find_button = QPushButton("Find")
-        self.find_button.clicked.connect(self.find_node)
-        toolbar.addWidget(self.find_button)
+        self.find_button = add_button(
+            toolbar, Icons.find(), "Find node", self.find_node
+        )
 
-        self.remove_button = QPushButton("Delete")
-        self.remove_button.clicked.connect(self.remove_selected)
-        toolbar.addWidget(self.remove_button)
+        self.remove_button = add_button(
+            toolbar, Icons.delete(), "Delete selection (Del)", self.remove_selected
+        )
+
+        self.save_button = add_button(
+            toolbar, Icons.save(), "Save graph", self.save
+        )
+        toolbar.addStretch()
 
         self.undo_stack = QUndoStack(self)
-        self.undo_button = QPushButton("Undo")
-        self.undo_button.clicked.connect(self.undo_stack.undo)
+        self.undo_button = add_button(
+            tools_toolbar, Icons.undo(), "Undo (Ctrl+Z)", self.undo_stack.undo
+        )
         self.undo_button.setEnabled(False)
-        self.redo_button = QPushButton("Redo")
-        self.redo_button.clicked.connect(self.undo_stack.redo)
+        self.redo_button = add_button(
+            tools_toolbar, Icons.redo(), "Redo (Ctrl+Shift+Z)", self.undo_stack.redo
+        )
         self.redo_button.setEnabled(False)
         self.undo_stack.canUndoChanged.connect(self.undo_button.setEnabled)
         self.undo_stack.canRedoChanged.connect(self.redo_button.setEnabled)
-        tools_toolbar.addWidget(self.undo_button)
-        tools_toolbar.addWidget(self.redo_button)
         undo_shortcut = QShortcut(QKeySequence.StandardKey.Undo, self)
         undo_shortcut.activated.connect(self.undo_stack.undo)
         redo_shortcut = QShortcut(QKeySequence.StandardKey.Redo, self)
         redo_shortcut.activated.connect(self.undo_stack.redo)
 
-        self.zoom_in_button = QPushButton("Zoom +")
-        self.zoom_in_button.clicked.connect(lambda: self.view.zoom_in())
-        tools_toolbar.addWidget(self.zoom_in_button)
+        self.zoom_in_button = add_button(
+            tools_toolbar, Icons.zoom_in(), "Zoom in", lambda: self.view.zoom_in()
+        )
 
-        self.zoom_out_button = QPushButton("Zoom -")
-        self.zoom_out_button.clicked.connect(lambda: self.view.zoom_out())
-        tools_toolbar.addWidget(self.zoom_out_button)
+        self.zoom_out_button = add_button(
+            tools_toolbar, Icons.zoom_out(), "Zoom out", lambda: self.view.zoom_out()
+        )
 
-        self.fit_button = QPushButton("Fit")
-        self.fit_button.clicked.connect(self.fit_graph)
-        tools_toolbar.addWidget(self.fit_button)
+        self.fit_button = add_button(
+            tools_toolbar, Icons.fit(), "Fit graph to view", self.fit_graph
+        )
 
-        for arrangement, label in (
-            (self._arrange_grid, "Grid"),
-            (self._arrange_vertical, "Vertical"),
-            (self._arrange_horizontal, "Horizontal"),
-            (self._arrange_tuple, "Tuple"),
+        for arrangement, icon_kind, label in (
+            (self._arrange_grid, Icons.arrange_grid(), "Arrange as grid"),
+            (self._arrange_vertical, Icons.arrange_vertical(), "Arrange in a vertical line"),
+            (self._arrange_horizontal, Icons.arrange_horizontal(), "Arrange in a horizontal line"),
+            (self._arrange_tuple, Icons.arrange_tuple(), "Arrange neighbours around the selected node"),
         ):
-            arrange_button = QPushButton(label)
-            arrange_button.clicked.connect(arrangement)
-            tools_toolbar.addWidget(arrange_button)
+            add_button(tools_toolbar, icon_kind, label, arrangement)
 
-        self.export_button = QPushButton("Export PNG")
-        self.export_button.clicked.connect(self.export_image)
-        tools_toolbar.addWidget(self.export_button)
-
-        self.save_button = QPushButton("Save")
-        self.save_button.clicked.connect(self.save)
-        toolbar.addWidget(self.save_button)
+        self.export_button = add_button(
+            tools_toolbar,
+            Icons.export_image(),
+            "Export graph to PNG",
+            self.export_image,
+        )
 
         self.scene = GraphScene(self)
         self.view = GraphCanvasView(
@@ -1474,24 +1494,23 @@ class GraphEditorWidget(QFrame):
 
         self.tool_group = QButtonGroup(self)
         self.tool_group.setExclusive(True)
-        self.tool_buttons: dict[str, QPushButton] = {}
-        for tool, label in (
-            (GraphCanvasView.SELECT, "Select (1)"),
-            (GraphCanvasView.CONNECTOR, "Arc (2)"),
-            (GraphCanvasView.BUS, "Bus (3)"),
-            (GraphCanvasView.CONTOUR, "Contour (4)"),
-            (GraphCanvasView.NODE, "Node (5)"),
+        self.tool_buttons: dict[str, QToolButton] = {}
+        for tool, icon_kind, label in (
+            (GraphCanvasView.SELECT, Icons.tool_select(), "Select and move (1)"),
+            (GraphCanvasView.CONNECTOR, Icons.tool_connector(), "Create connectors (2)"),
+            (GraphCanvasView.BUS, Icons.tool_bus(), "Create buses (3)"),
+            (GraphCanvasView.CONTOUR, Icons.tool_contour(), "Create contours (4)"),
+            (GraphCanvasView.NODE, Icons.tool_node(), "Create nodes (5)"),
         ):
-            button = QPushButton(label)
-            button.setCheckable(True)
-            button.setToolTip(f"Choose {tool} tool")
+            button = add_button(
+                tools_toolbar, icon_kind, label, checkable=True
+            )
             button.clicked.connect(
                 lambda checked, selected_tool=tool: self.view.set_tool(selected_tool)
                 if checked
                 else None
             )
             self.tool_group.addButton(button)
-            tools_toolbar.addWidget(button)
             self.tool_buttons[tool] = button
         self.tool_buttons[GraphCanvasView.SELECT].setChecked(True)
         self.view.tool_changed.connect(self._sync_tool_button)

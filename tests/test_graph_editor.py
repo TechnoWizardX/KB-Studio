@@ -1115,6 +1115,52 @@ class GraphEditorUndoTests(unittest.TestCase):
         self.assertIs(edge.target, target)
         editor.close()
 
+    def test_full_cycle_create_save_reload_round_trip(self):
+        editor = GraphEditorWidget()
+        source = editor.scene.add_node("source", QPointF(100, 100))
+        target = editor.scene.add_node("target", QPointF(380, 140))
+        middle = editor.scene.add_node("middle", QPointF(240, 60))
+        first = editor.scene.connect_nodes(source, target, "->")
+        editor.scene.connect_nodes(middle, target, "=>", gwf_type="pair/orient", gwf_tag="pair")
+        first.waypoints = [QPointF(240, 150)]
+        first.update_path()
+        editor.scene.add_bus(source, QPointF(220, 260))
+        editor.scene.add_contour(
+            [QPointF(60, 40), QPointF(420, 40), QPointF(420, 300), QPointF(60, 300)]
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            graph_path = os.path.join(directory, "cycle.gwf")
+            with patch(
+                "src.gui.graph_editor.graph_editor.get_project_root",
+                return_value=Path(directory),
+            ), patch(
+                "src.gui.graph_editor.graph_editor.QFileDialog.getSaveFileName",
+                return_value=(graph_path, "GWF files (*.gwf)"),
+            ):
+                editor.save()
+            self.assertTrue(os.path.isfile(graph_path))
+
+            reloaded = GraphEditorWidget()
+            with patch(
+                "src.gui.graph_editor.graph_editor.get_project_root",
+                return_value=Path(directory),
+            ):
+                reloaded.apply_file(graph_path)
+
+            self.assertEqual(
+                {node.identifier for node in reloaded.scene.nodes.values()},
+                {"source", "target", "middle"},
+            )
+            self.assertEqual(len(reloaded.scene.edges), 2)
+            route = reloaded.scene.edges[0].waypoints
+            self.assertEqual(len(route), 1)
+            self.assertAlmostEqual(route[0].x(), 240, delta=0.01)
+            self.assertEqual([item.kind for item in reloaded.scene.aux_objects], ["bus", "contour"])
+            self.assertFalse(reloaded.undo_stack.canUndo())
+            self.assertFalse(reloaded.undo_stack.canRedo())
+            editor.close()
+            reloaded.close()
+
     def test_main_window_switches_to_graph_editor_for_gwf_files(self):
         try:
             from src.gui.main_window import MainWindow

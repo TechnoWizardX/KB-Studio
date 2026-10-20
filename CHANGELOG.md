@@ -23,11 +23,14 @@
   connector types, reversing pair direction, and deleting objects.
 - Added graph arrangers: grid, vertical and horizontal lines, and a circle
   arrangement for the neighbours of the selected node.
+- Added toolbar icons (Lucide SVG assets embedded through the application
+  resource bundle) with tooltips for every graph editor action.
 
 ### Changed
 
 - The editor selector in the top bar switches between the SCs text editor and the
   SCg graph editor.
+- Graph editor actions moved from text buttons to theme-aware toolbar icons.
 
 ## [1.4.0] - Unreleased
 

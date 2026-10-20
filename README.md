@@ -32,7 +32,9 @@ deleting. The toolbar arrangers lay the graph out as a grid, vertical line,
 horizontal line, or circle around the neighbours of the selected node. All
 editing actions support undo and redo (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y). The
 graph editor also provides node search, zoom, fit-to-graph, and PNG export.
-Unsupported GWF elements are preserved as unmodified document elements.
+Toolbar actions use theme-aware icons from the embedded Lucide icon set
+(ISC license, see `src/resources/icons/`). Unsupported GWF elements are
+preserved as unmodified document elements.
 
 ## Build on Linux
 
