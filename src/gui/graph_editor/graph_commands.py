@@ -153,6 +153,31 @@ class CommandDeleteSelection(_GraphCommand):
         )
 
 
+class CommandWaypointsChange(_GraphCommand):
+    def __init__(
+        self,
+        scene: GraphScene,
+        edge,
+        old_waypoints: list[QPointF],
+        new_waypoints: list[QPointF],
+    ):
+        super().__init__(scene, "Change connector route")
+        self.edge = edge
+        self.old_waypoints = [QPointF(point) for point in old_waypoints]
+        self.new_waypoints = [QPointF(point) for point in new_waypoints]
+
+    def _apply(self, waypoints: list[QPointF]) -> None:
+        self.edge.waypoints = [QPointF(point) for point in waypoints]
+        self.edge.update_path()
+        self.scene.connector_changed(self.edge)
+
+    def redo(self) -> None:
+        self._apply(self.new_waypoints)
+
+    def undo(self) -> None:
+        self._apply(self.old_waypoints)
+
+
 class CommandMoveObjects(_GraphCommand):
     def __init__(self, scene: GraphScene, old_positions: dict):
         super().__init__(scene, "Move objects")

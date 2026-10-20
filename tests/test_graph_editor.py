@@ -23,6 +23,7 @@ from src.gui.graph_editor.graph_commands import (
     CommandMoveObjects,
     CommandNodeTypeChange,
     CommandRenameNode,
+    CommandWaypointsChange,
 )
 from src.gui.graph_editor.graph_editor import (
     _CONNECTOR_TYPES,
@@ -900,6 +901,65 @@ class GraphEditorUndoTests(unittest.TestCase):
 
         self.assertEqual(editor.undo_stack.count(), count)
         editor.close()
+
+    def test_waypoint_commands_change_connector_route(self):
+        source = self.scene.add_node("source", QPointF(100, 100))
+        target = self.scene.add_node("target", QPointF(400, 100))
+        edge = self.scene.connect_nodes(source, target, "->")
+        old_waypoints = []
+        new_waypoints = [QPointF(250, 200), QPointF(320, 60)]
+        self.stack.push(
+            CommandWaypointsChange(self.scene, edge, old_waypoints, new_waypoints)
+        )
+        self.assertEqual(edge.waypoints, new_waypoints)
+
+        exported = ET.fromstring(self.scene.to_gwf())
+        points = exported.findall("staticSector/arc/points/point")
+        self.assertEqual(len(points), 2)
+        self.assertEqual(float(points[0].get("x")), 250.0)
+
+        self.stack.undo()
+
+        self.assertEqual(edge.waypoints, [])
+        self.assertEqual(
+            ET.fromstring(self.scene.to_gwf()).findall("staticSector/arc/points/point"),
+            [],
+        )
+
+        self.stack.redo()
+
+        self.assertEqual(edge.waypoints, new_waypoints)
+
+    def test_waypoint_requester_routes_through_widget_undo_stack(self):
+        editor = GraphEditorWidget()
+        source = editor.scene.add_node("source", QPointF(100, 100))
+        target = editor.scene.add_node("target", QPointF(400, 100))
+        edge = editor.scene.connect_nodes(source, target, "->")
+        old_waypoints = []
+        new_waypoints = [QPointF(250, 200)]
+        count = editor.undo_stack.count()
+
+        edge.waypoints_requester(edge, old_waypoints, new_waypoints)
+
+        self.assertEqual(editor.undo_stack.count(), count + 1)
+        self.assertEqual(edge.waypoints, new_waypoints)
+
+        editor.undo_stack.undo()
+
+        self.assertEqual(edge.waypoints, [])
+        editor.close()
+
+    def test_waypoint_insert_index_matches_nearest_segment(self):
+        source = self.scene.add_node("source", QPointF(0, 0))
+        target = self.scene.add_node("target", QPointF(300, 0))
+        edge = self.scene.connect_nodes(source, target, "->")
+        self.assertEqual(edge._waypoint_insert_index(QPointF(290, 0)), 0)
+
+        edge.waypoints = [QPointF(200, 150)]
+        edge.update_path()
+
+        self.assertEqual(edge._waypoint_insert_index(QPointF(250, 100)), 1)
+        self.assertEqual(edge._waypoint_insert_index(QPointF(100, 100)), 0)
 
     def test_main_window_switches_to_graph_editor_for_gwf_files(self):
         try:
