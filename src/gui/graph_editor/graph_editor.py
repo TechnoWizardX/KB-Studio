@@ -70,6 +70,7 @@ from src.gui.graph_editor.gwf_codec import (
     parse_gwf_document,
     serialize_gwf,
 )
+from src.gui.graph_editor import scg_painter
 from src.utils.security import get_project_root, safe_path
 
 
@@ -185,18 +186,8 @@ class GraphNode(QGraphicsItem):
         return QRectF(-half_size, -half_size, self.ICON_SIZE, self.ICON_SIZE)
 
     def _glyph_shape(self) -> QPainterPath:
-        path = QPainterPath()
         permanence, structure = _node_type_parts(self.gwf_type)
-        rect = self._glyph_rect()
-        if structure == "not_define":
-            path.addEllipse(rect.adjusted(8.4, 8.4, -8.4, -8.4))
-        elif structure in {"group", "relation"}:
-            path.addRect(rect)
-        elif permanence == "const":
-            path.addEllipse(rect)
-        else:
-            path.addRect(rect)
-        return path
+        return scg_painter.node_shape(self._glyph_rect(), permanence, structure)
 
     def connection_point(self, target: QPointF) -> QPointF:
         center = QPointF(0, 0)
@@ -218,42 +209,23 @@ class GraphNode(QGraphicsItem):
     def paint(self, painter: QPainter, _option, _widget=None) -> None:
         permanence, structure = _node_type_parts(self.gwf_type)
         color = QColor("#66aaff") if self.isSelected() else QColor("#d4d4d4")
-        brush = QBrush(QColor(255, 255, 255, 224))
         if structure == "not_define":
             color = QColor("#d4d4d4")
-            brush = QBrush(QColor(color.red(), color.green(), color.blue(), 224))
-        painter.save()
-        pen = QPen(color, 2)
-        if "/var/" in self.gwf_type or "/meta/" in self.gwf_type:
-            pen.setStyle(Qt.PenStyle.DashLine)
-        elif "/temp" in self.gwf_type or "/temp/" in self.gwf_type:
-            pen.setStyle(Qt.PenStyle.DotLine)
-        painter.setPen(pen)
-        painter.setBrush(brush)
         glyph = self._glyph_rect()
-        if structure == "not_define":
-            glyph = glyph.adjusted(8.4, 8.4, -8.4, -8.4)
-        if structure == "not_define":
-            painter.drawEllipse(glyph)
-        elif structure in {"group", "relation"}:
-            painter.drawRect(glyph)
-        elif permanence == "const":
-            painter.drawEllipse(glyph)
-        else:
-            painter.drawRect(glyph)
-        self._paint_structure(painter, glyph, structure, color)
+        painter.save()
+        scg_painter.paint_node(painter, glyph, color, permanence, structure)
+        painter.restore()
         content = (
             self.gwf_element.find("content")
             if self.gwf_element is not None
             else None
         )
         if content is not None and content.get("type", "0") != "0":
+            painter.save()
             painter.setBrush(QBrush(QColor("#cc66ff")))
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRect(
-                QRectF(glyph.right() - 5, glyph.bottom() - 5, 5, 5)
-            )
-        painter.restore()
+            painter.drawRect(QRectF(glyph.right() - 5, glyph.bottom() - 5, 5, 5))
+            painter.restore()
 
     def set_identifier(self, identifier: str) -> None:
         self.prepareGeometryChange()
@@ -262,42 +234,6 @@ class GraphNode(QGraphicsItem):
         self.label.setPlainText(identifier)
         self._position_label()
         self.update()
-
-    @staticmethod
-    def _paint_structure(
-        painter: QPainter, rect: QRectF, structure: str, color: QColor
-    ) -> None:
-        center = rect.center()
-        left, right = rect.left(), rect.right()
-        top, bottom = rect.top(), rect.bottom()
-        if structure == "struct":
-            painter.setBrush(QBrush(color))
-            painter.drawEllipse(QRectF(center.x() - 2, center.y() - 2, 4, 4))
-        elif structure == "tuple":
-            painter.drawLine(QPointF(left, center.y()), QPointF(right, center.y()))
-        elif structure == "role":
-            painter.drawLine(QPointF(left, center.y()), QPointF(right, center.y()))
-            painter.drawLine(QPointF(center.x(), top), QPointF(center.x(), bottom))
-        elif structure == "relation":
-            painter.drawLine(QPointF(left, top), QPointF(right, bottom))
-            painter.drawLine(QPointF(right, top), QPointF(left, bottom))
-        elif structure == "group":
-            painter.drawLine(QPointF(left, top), QPointF(right, bottom))
-            painter.drawLine(QPointF(right, top), QPointF(left, bottom))
-            painter.drawLine(QPointF(left, center.y()), QPointF(right, center.y()))
-        elif structure == "abstract":
-            for y in range(int(top + 2), int(bottom), 3):
-                painter.drawLine(QPointF(left, y), QPointF(right, y))
-        elif structure == "material":
-            for offset in range(0, int(rect.width()), 5):
-                painter.drawLine(
-                    QPointF(left + offset, top),
-                    QPointF(left, min(bottom, top + offset)),
-                )
-                painter.drawLine(
-                    QPointF(right - offset, bottom),
-                    QPointF(right, max(top, bottom - offset)),
-                )
 
     def itemChange(self, change, value):
         result = super().itemChange(change, value)
@@ -651,40 +587,27 @@ class GraphEdge(QGraphicsPathItem):
             or "/orient/" in self.gwf_type
         )
 
+    def _edge_style(self) -> scg_painter.ScgEdgeStyle:
+        return scg_painter.ScgEdgeStyle.from_connector(self.gwf_tag, self.gwf_type)
+
     def paint(self, painter: QPainter, _option, _widget=None) -> None:
         line = self.path()
         if line.isEmpty():
             return
-        end = line.pointAtPercent(1)
-        middle = line.pointAtPercent(0.5)
-        pen = QPen(
-            QColor("#66aaff") if self.isSelected() else QColor("#a0a0a0"),
-            2,
-        )
-        if "/var/" in self.gwf_type or "/meta/" in self.gwf_type:
-            pen.setStyle(Qt.PenStyle.DashLine)
-        elif "/temp" in self.gwf_type:
-            pen.setStyle(Qt.PenStyle.DotLine)
-        painter.setPen(pen)
-        painter.drawPath(line)
-        oriented = self._is_oriented_type()
-        arrow_start = line.pointAtPercent(0.98)
-        dx = end.x() - arrow_start.x()
-        dy = end.y() - arrow_start.y()
-        length = math.hypot(dx, dy)
-        if length and oriented:
-            unit_x = dx / length
-            unit_y = dy / length
-            arrow_base = end - QPointF(unit_x * 11, unit_y * 11)
-            perpendicular = QPointF(-unit_y * 5, unit_x * 5)
-            painter.drawLine(end, arrow_base + perpendicular)
-            painter.drawLine(end, arrow_base - perpendicular)
-        if length and "/neg" in self.gwf_type:
-            midpoint = line.pointAtPercent(0.5)
-            perpendicular = QPointF(-dy / length * 6, dx / length * 6)
-            painter.drawLine(midpoint - perpendicular, midpoint + perpendicular)
-        painter.setPen(QColor("#d4d4d4"))
-        painter.drawText(middle + QPointF(5, -5), self.edge_type)
+        color = QColor("#66aaff") if self.isSelected() else QColor("#a0a0a0")
+        style = self._edge_style()
+        painter.save()
+        scg_painter.paint_edge(painter, line, style, color)
+        painter.restore()
+        if not style.has_distinct_visual:
+            # Connector types without their own SCg form carry their SCs token
+            # next to the line instead.
+            painter.save()
+            painter.setPen(QColor("#d4d4d4"))
+            painter.drawText(
+                line.pointAtPercent(0.5) + QPointF(5, -5), self.edge_type
+            )
+            painter.restore()
         if self.isSelected():
             pen = QPen(QColor("#66aaff"), 1)
             painter.setPen(pen)

@@ -41,6 +41,14 @@
 - The editor selector in the top bar switches between the SCs text editor and the
   SCg graph editor.
 - Graph editor actions moved from text buttons to theme-aware toolbar icons.
+- Nodes and connectors are drawn with the canonical SCg visual alphabet
+  (extracted into `scg_painter.py`, following the OSTIS KBE reference
+  implementation): constant nodes are circles and variable nodes are rectangles
+  with the structure glyph (dot, hatching, cross, ...) drawn inside; arcs and
+  membership pairs are thin lines with filled arrowheads, dashes for
+  variable/temporary connectors and tick marks for negative/fuzzy ones; binary
+  pairs are thick hollow lines. Connector types without a distinct visual form
+  are signed with their SCs token next to the line.
 
 ## [1.4.0] - Unreleased
 

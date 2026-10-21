@@ -9,11 +9,12 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
-from PySide6.QtGui import QImage, QUndoStack
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QColor, QImage, QUndoStack
+from PySide6.QtGui import QPainter, QPainterPath
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QComboBox, QMessageBox
 
+from src.gui.graph_editor import scg_painter
 from src.gui.graph_editor.graph_commands import (
     CommandConnectorDotsChange,
     CommandConnectorTypeChange,
@@ -33,8 +34,10 @@ from src.gui.graph_editor.graph_editor import (
     _EDGE_TYPES,
     _relation_for_gwf,
     GraphEditorWidget,
+    GraphNode,
     GraphScene,
 )
+from src.gui.graph_editor.scg_painter import ScgEdgeStyle as _ScgEdgeStyle
 from src.lark_syntax.parser import SCSParser
 
 
@@ -382,31 +385,122 @@ class GraphSceneTests(unittest.TestCase):
             ],
         )
 
-    def test_scg2_group_and_relation_nodes_drawn_as_squares(self):
+    def test_scg2_node_glyphs_follow_the_scg_alphabet(self):
         general = self.scene.add_node(
             "general_node", QPointF(40, 40), gwf_type="node/const/perm/general"
         )
         group = self.scene.add_node(
             "group_node", QPointF(140, 40), gwf_type="node/const/perm/group"
         )
-        relation = self.scene.add_node(
-            "relation_node",
-            QPointF(240, 40),
-            gwf_type="node/const/perm/relation",
+        var_group = self.scene.add_node(
+            "var_group", QPointF(240, 40), gwf_type="node/var/perm/group"
         )
 
         corner = QPointF(11, 11)
         self.assertFalse(
             general._glyph_shape().contains(corner),
-            "general node glyph must be a circle",
+            "const node glyph must be a circle",
         )
-        self.assertTrue(
+        self.assertFalse(
             group._glyph_shape().contains(corner),
-            "group node glyph must be a square",
+            "const group node must be a circle with an inner glyph",
         )
         self.assertTrue(
-            relation._glyph_shape().contains(corner),
-            "relation node glyph must be a square",
+            var_group._glyph_shape().contains(corner),
+            "var node glyph must be a rectangle",
+        )
+
+    def test_scg2_structure_glyphs_differ_between_node_types(self):
+        def ink_count(gwf_type: str) -> int:
+            node = GraphNode("test", "1", gwf_type, "test", None)
+            image = QImage(48, 48, QImage.Format.Format_ARGB32)
+            image.fill(QColor("#1e1e1e"))
+            painter = QPainter(image)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            painter.translate(24, 24)
+            node.paint(painter, None, None)
+            painter.end()
+            # glyph centre sits at image (24, 24); border ring is outside this
+            # window, so any dark pixel here is an inner structure glyph
+            count = 0
+            for x in range(18, 31):
+                for y in range(18, 31):
+                    if image.pixelColor(x, y).value() < 215:
+                        count += 1
+            return count
+
+        self.assertEqual(
+            ink_count("node/const/perm/general"), 0,
+            "plain general node has no inner glyph",
+        )
+        self.assertGreater(ink_count("node/const/perm/struct"), 0)
+        self.assertGreater(ink_count("node/const/perm/relation"), 10)
+        self.assertGreater(ink_count("node/const/perm/group"), 10)
+        self.assertGreater(ink_count("node/const/perm/abstract"), 10)
+
+    def test_scg_edge_styles_follow_the_visual_alphabet(self):
+        arc = _ScgEdgeStyle.from_connector(
+            "arc", "arc/const/pos/perm/orient/membership"
+        )
+        self.assertEqual(arc.family, "thin")
+        self.assertTrue(arc.oriented)
+
+        var_temp = _ScgEdgeStyle.from_connector(
+            "arc", "arc/var/neg/temp/orient/membership"
+        )
+        self.assertTrue(var_temp.variable)
+        self.assertTrue(var_temp.temporary)
+        self.assertEqual(var_temp.polarity, "neg")
+
+        fat_pair = _ScgEdgeStyle.from_connector("pair", "pair/const/-/perm/orient")
+        self.assertEqual(fat_pair.family, "fat")
+        self.assertTrue(fat_pair.oriented)
+
+        fat_var = _ScgEdgeStyle.from_connector("pair", "pair/var/-/perm/noorien")
+        self.assertEqual(fat_var.family, "fat")
+        self.assertFalse(fat_var.oriented)
+        self.assertTrue(fat_var.variable)
+
+        unknown = _ScgEdgeStyle.from_connector("edge", "edge/const/pos")
+        self.assertEqual(unknown.family, "plain")
+        self.assertFalse(unknown.has_distinct_visual)
+
+    def test_scg_connectors_render_alphabet_styles(self):
+        def render(style: _ScgEdgeStyle, oriented: bool = False) -> QImage:
+            path = QPainterPath(QPointF(0, -40))
+            path.lineTo(QPointF(0, 40))
+            image = QImage(100, 100, QImage.Format.Format_ARGB32)
+            image.fill(QColor("#1e1e1e"))
+            painter = QPainter(image)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            painter.translate(50, 50)
+            scg_painter.paint_edge(painter, path, style, QColor("#a0a0a0"))
+            painter.end()
+            return image
+
+        fat = render(
+            _ScgEdgeStyle.from_connector("pair", "pair/const/-/perm/orient")
+        )
+        self.assertLess(
+            fat.pixelColor(50, 50).value(), 90,
+            "fat pair core must be hollow (background colour)",
+        )
+        rail = max(
+            fat.pixelColor(x, 50).value() for x in range(42, 50)
+        )
+        self.assertGreater(
+            rail, 100, "fat pair rails must be visible",
+        )
+
+        arc_image = render(
+            _ScgEdgeStyle.from_connector(
+                "arc", "arc/const/pos/perm/orient/membership"
+            ),
+            oriented=True,
+        )
+        self.assertGreater(
+            arc_image.pixelColor(50, 87).value(), 100,
+            "oriented arc must draw a filled arrowhead",
         )
 
     def test_membership_pair_draws_an_orientation_arrow(self):
