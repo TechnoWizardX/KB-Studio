@@ -152,8 +152,8 @@ def serialize_gwf(scene: GraphScene) -> str:
             if edge.gwf_element is not None
             else ET.Element(edge.gwf_tag)
         )
-        start = edge.source.scenePos()
-        end = edge.target.scenePos()
+        start = edge.begin_element_point()
+        end = edge.end_element_point()
         element.attrib.update(
             {
                 "type": edge.gwf_type,

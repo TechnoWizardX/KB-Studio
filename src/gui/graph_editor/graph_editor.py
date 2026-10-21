@@ -330,14 +330,38 @@ class GraphEdge(QGraphicsPathItem):
     def _endpoint_center(endpoint: GraphNode | GraphEdge) -> QPointF:
         if isinstance(endpoint, GraphNode):
             return endpoint.mapToScene(QPointF(0, 0))
+        if isinstance(endpoint, GraphAuxObject) and endpoint.is_contour():
+            return endpoint.mapToScene(endpoint.path().boundingRect().center())
         path = endpoint.mapToScene(endpoint.path())
         return path.pointAtPercent(0.5)
 
+    def begin_element_point(self) -> QPointF:
+        """GWF b_x/b_y coordinate: anchor point of the connector start."""
+        return self._element_point(True)
+
+    def end_element_point(self) -> QPointF:
+        """GWF e_x/e_y coordinate: anchor point of the connector end."""
+        return self._element_point(False)
+
+    def _element_point(self, begin: bool) -> QPointF:
+        endpoint = self.source if begin else self.target
+        if isinstance(endpoint, (GraphNode, GraphEdge)):
+            return endpoint.scenePos()
+        path = self.path()
+        if path.isEmpty():
+            return self._endpoint_center(endpoint)
+        element = path.elementAt(0 if begin else path.elementCount() - 1)
+        return QPointF(element.x, element.y)
+
     @staticmethod
     def _endpoint_connection_point(
-        endpoint: GraphNode | GraphEdge, toward: QPointF, dot: float
+        endpoint: GraphNode | GraphEdge | GraphAuxObject,
+        toward: QPointF,
+        dot: float,
     ) -> QPointF:
         if isinstance(endpoint, GraphNode):
+            return endpoint.connection_point(toward)
+        if isinstance(endpoint, GraphAuxObject):
             return endpoint.connection_point(toward)
         return endpoint.cross(dot)
 
@@ -643,6 +667,7 @@ class GraphAuxObject(QGraphicsPathItem):
         self.gwf_id = element.get("id", "")
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
         self.setZValue(-1 if kind == "contour" else 0)
 
         path = QPainterPath()
@@ -665,11 +690,47 @@ class GraphAuxObject(QGraphicsPathItem):
         self.setPen(QPen(QColor("#a0a0a0"), 1, Qt.PenStyle.DashLine))
         self.setBrush(Qt.BrushStyle.NoBrush)
 
+    def is_contour(self) -> bool:
+        return self.kind == "contour"
+
+    def connection_point(self, target: QPointF) -> QPointF:
+        """Attachment point on the contour border towards ``target``."""
+        center = self.path().boundingRect().center()
+        if not self.is_contour():
+            return self.mapToScene(center)
+        target_local = self.mapFromScene(target)
+        ray = QLineF(center, target_local)
+        if ray.length() == 0:
+            return self.mapToScene(center)
+        best_point: QPointF | None = None
+        best_distance = math.inf
+        segment_count = self.path().elementCount() - 1
+        for index in range(segment_count):
+            first = self.path().elementAt(index)
+            second = self.path().elementAt(index + 1)
+            start = QPointF(first.x, first.y)
+            end = QPointF(second.x, second.y)
+            intersection_type, intersection_point = ray.intersects(
+                QLineF(start, end)
+            )
+            if (
+                intersection_type != QLineF.IntersectionType.BoundedIntersection
+            ):
+                continue
+            distance = QLineF(center, intersection_point).length()
+            if distance > 1e-6 and distance < best_distance:
+                best_distance = distance
+                best_point = intersection_point
+        if best_point is None:
+            return self.mapToScene(center)
+        return self.mapToScene(best_point)
+
     def itemChange(self, change, value):
         result = super().itemChange(change, value)
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             scene = self.scene()
             if isinstance(scene, GraphScene) and not scene._loading:
+                scene._refresh_connected_edges(self, set())
                 scene._update_scene_rect()
                 scene.model_changed.emit()
         return result
@@ -711,6 +772,15 @@ class GraphAuxObject(QGraphicsPathItem):
                 {"x": str(round(point.x, 3)), "y": str(round(point.y, 3))},
             )
         return element
+
+
+def _is_connector_endpoint(item: object) -> bool:
+    """Connectors may attach to nodes, other connectors, and contours."""
+    return (
+        isinstance(item, (GraphNode, GraphEdge))
+        or isinstance(item, GraphAuxObject)
+        and item.is_contour()
+    )
 
 
 class GraphScene(QGraphicsScene):
@@ -785,11 +855,12 @@ class GraphScene(QGraphicsScene):
         source_anchor: QPointF | None = None,
         target_anchor: QPointF | None = None,
     ) -> GraphEdge:
-        if not isinstance(source, (GraphNode, GraphEdge)) or not isinstance(
-            target, (GraphNode, GraphEdge)
+        if not _is_connector_endpoint(source) or not _is_connector_endpoint(
+            target
         ):
             raise ValueError(
-                "SCg connectors can only be attached to nodes or connectors."
+                "SCg connectors can only be attached to nodes, connectors "
+                "or contours."
             )
         if source is target:
             raise ValueError("Choose two different graph objects to create a relation.")
@@ -955,8 +1026,9 @@ class GraphScene(QGraphicsScene):
         removed_aux = {
             item for item in selected if isinstance(item, GraphAuxObject)
         }
-        removed_objects: set[GraphNode | GraphEdge] = set(removed_nodes)
+        removed_objects: set = set(removed_nodes)
         removed_objects.update(removed_edges)
+        removed_objects.update(removed_aux)
         while True:
             dependent_edges = {
                 edge
@@ -1022,6 +1094,10 @@ class GraphScene(QGraphicsScene):
                 if node.scene() is not self:
                     self.addItem(node)
                     self.nodes[node.identifier] = node
+            for item in removed_aux:
+                if item.scene() is not self:
+                    self.addItem(item)
+                    self.aux_objects.append(item)
             pending = list(removed_edges)
             while pending:
                 remaining: list[GraphEdge] = []
@@ -1040,10 +1116,6 @@ class GraphScene(QGraphicsScene):
                 if not restored_any:
                     break
                 pending = remaining
-            for item in removed_aux:
-                if item.scene() is not self:
-                    self.addItem(item)
-                    self.aux_objects.append(item)
         finally:
             self._loading = False
         self._update_scene_rect()
@@ -1077,7 +1149,7 @@ class GraphScene(QGraphicsScene):
         if edge.scene() is self:
             return
         for endpoint in (edge.source, edge.target):
-            if not isinstance(endpoint, (GraphNode, GraphEdge)) or (
+            if not _is_connector_endpoint(endpoint) or (
                 endpoint.scene() is not self
             ):
                 raise ValueError("Both graph objects must belong to this graph.")
@@ -1241,7 +1313,7 @@ class GraphScene(QGraphicsScene):
                 and child.get("owner") not in known_node_ids
             ]
 
-            element_ids: dict[str, GraphNode | GraphEdge] = {}
+            element_ids: dict[str, GraphNode | GraphEdge | GraphAuxObject] = {}
             node_ids: dict[str, GraphNode] = {}
             for element in sector.findall("node"):
                 gwf_id = element.get("id", "")
@@ -1267,6 +1339,26 @@ class GraphScene(QGraphicsScene):
                 )
                 element_ids[gwf_id] = node
                 node_ids[gwf_id] = node
+
+            # buses and contours are loaded before connectors so connectors
+            # can reference contours as their endpoints
+            for tag in ("bus", "contour"):
+                for element in sector.findall(tag):
+                    if (
+                        tag == "bus"
+                        and element.get("owner", "") not in node_ids
+                    ):
+                        continue
+                    owner = (
+                        node_ids.get(element.get("owner", ""))
+                        if tag == "bus"
+                        else None
+                    )
+                    item = GraphAuxObject(tag, element, owner)
+                    self.addItem(item)
+                    self.aux_objects.append(item)
+                    if item.is_contour():
+                        element_ids[item.gwf_id] = item
 
             pending_connectors = [
                 element
@@ -1314,21 +1406,6 @@ class GraphScene(QGraphicsScene):
                     )
                     break
                 pending_connectors = remaining
-            for tag in ("bus", "contour"):
-                for element in sector.findall(tag):
-                    if (
-                        tag == "bus"
-                        and element.get("owner", "") not in node_ids
-                    ):
-                        continue
-                    owner = (
-                        node_ids.get(element.get("owner", ""))
-                        if tag == "bus"
-                        else None
-                    )
-                    item = GraphAuxObject(tag, element, owner)
-                    self.addItem(item)
-                    self.aux_objects.append(item)
         finally:
             self._loading = False
 
@@ -1512,6 +1589,7 @@ class GraphEditorWidget(QFrame):
             self._commit_move,
             self._show_context_menu,
             self.remove_selected,
+            contour_class=GraphAuxObject,
         )
         self.view.tool_error.connect(self._show_tool_error)
         self.view.tool_changed.connect(self._show_tool)
@@ -1797,10 +1875,11 @@ class GraphEditorWidget(QFrame):
             {
                 GraphCanvasView.SELECT: "Select and move SCg objects.",
                 GraphCanvasView.NODE: "Click the canvas to create a node.",
-                GraphCanvasView.CONNECTOR:                 "Drag from a node or connector to another graph object to create an arc.",
+                GraphCanvasView.CONNECTOR:                 "Drag from a node, connector or contour to another graph object to create an arc.",
                 GraphCanvasView.BUS: "Drag from an owner node to place a bus.",
                 GraphCanvasView.CONTOUR: (
-                    "Click contour vertices; double-click or Enter to finish."
+                    "Click contour vertices; to close, click the first "
+                    "vertex again, double-click, or press Enter."
                 ),
             }[tool]
         )

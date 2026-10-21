@@ -9,6 +9,7 @@ from PySide6.QtGui import (
     QMouseEvent,
     QPainter,
     QPainterPath,
+    QPen,
     QWheelEvent,
 )
 from PySide6.QtWidgets import (
@@ -19,6 +20,8 @@ from PySide6.QtWidgets import (
     QGraphicsView,
     QWidget,
 )
+
+CONTOUR_SNAP_RADIUS_PX = 12.0
 
 
 class GraphCanvasView(QGraphicsView):
@@ -44,10 +47,12 @@ class GraphCanvasView(QGraphicsView):
         build_context_menu: Callable[[QPointF, QGraphicsItem | None, object], None],
         delete_selection: Callable[[], None],
         parent: QWidget | None = None,
+        contour_class: type | None = None,
     ):
         super().__init__(scene, parent)
         self.node_class = node_class
         self.connector_class = connector_class
+        self.contour_class = contour_class
         self.create_node = create_node
         self.create_connector = create_connector
         self.create_bus = create_bus
@@ -60,6 +65,7 @@ class GraphCanvasView(QGraphicsView):
         self._start_point: QPointF | None = None
         self._preview: QGraphicsItem | None = None
         self._contour_points: list[QPointF] = []
+        self._contour_suppress_finish = False
         self._drag_positions: dict | None = None
         self._space_pressed = False
         self._pan_button: Qt.MouseButton | None = None
@@ -133,19 +139,25 @@ class GraphCanvasView(QGraphicsView):
             return
 
         if self.tool == self.CONTOUR:
-            self._contour_points.append(scene_position)
-            self._update_contour_preview(scene_position)
+            if self._should_close_contour(scene_position):
+                self._contour_suppress_finish = True
+                self._finish_contour()
+            else:
+                self._contour_points.append(scene_position)
+                self._update_contour_preview(scene_position)
             event.accept()
             return
 
         item = self._graph_object_at(event.position().toPoint())
-        is_valid_start = (
-            isinstance(item, (self.node_class, self.connector_class))
-            if self.tool == self.CONNECTOR
-            else isinstance(item, self.node_class)
-        )
+        if self.tool == self.CONNECTOR:
+            is_valid_start = self._is_connector_start(item)
+        else:
+            is_valid_start = isinstance(item, self.node_class)
         if not is_valid_start:
-            expected = "node or connector" if self.tool == self.CONNECTOR else "node"
+            if self.tool == self.CONNECTOR:
+                expected = "node, connector or contour"
+            else:
+                expected = "node"
             self.tool_error.emit(f"Start this tool on a {expected}.")
             event.accept()
             return
@@ -180,6 +192,18 @@ class GraphCanvasView(QGraphicsView):
             return
         super().mouseMoveEvent(event)
 
+    def _contour_snap_radius(self) -> float:
+        scale = abs(self.transform().m11()) or 1.0
+        return CONTOUR_SNAP_RADIUS_PX / scale
+
+    def _should_close_contour(self, point: QPointF) -> bool:
+        """True, если точка в радиусе прилипания к первой вершине контура."""
+        return (
+            len(self._contour_points) >= 3
+            and QLineF(point, self._contour_points[0]).length()
+            <= self._contour_snap_radius()
+        )
+
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self._pan_button == event.button():
             self._pan_button = None
@@ -210,8 +234,10 @@ class GraphCanvasView(QGraphicsView):
         self._start_point = None
 
         if self.tool == self.CONNECTOR:
-            if not isinstance(target, (self.node_class, self.connector_class)):
-                self.tool_error.emit("Connectors must end on a node or connector.")
+            if not self._is_connector_start(target):
+                self.tool_error.emit(
+                    "Connectors must end on a node, connector or contour."
+                )
             elif target is start:
                 self.tool_error.emit("Choose two different graph objects.")
             else:
@@ -242,11 +268,18 @@ class GraphCanvasView(QGraphicsView):
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if self.tool == self.CONTOUR and event.button() == Qt.MouseButton.LeftButton:
+            if not self._contour_points and self._contour_suppress_finish:
+                # контур уже замкнут кликом по первой вершине; двойной клик
+                # от этого же нажатия игнорируем
+                self._contour_suppress_finish = False
+                event.accept()
+                return
             point = self.mapToScene(event.position().toPoint())
-            if (
-                not self._contour_points
-                or (point - self._contour_points[-1]).manhattanLength() > 1
-            ):
+            if self._should_close_contour(point):
+                pass
+            elif not self._contour_points:
+                self._contour_points.append(point)
+            elif (point - self._contour_points[-1]).manhattanLength() > 1:
                 self._contour_points.append(point)
             self._finish_contour()
             event.accept()
@@ -260,11 +293,10 @@ class GraphCanvasView(QGraphicsView):
                 event.position().toPoint(),
                 include_connectors=self.tool == self.CONNECTOR,
             )
-            is_valid_start = (
-                isinstance(item, (self.node_class, self.connector_class))
-                if self.tool == self.CONNECTOR
-                else isinstance(item, self.node_class)
-            )
+            if self.tool == self.CONNECTOR:
+                is_valid_start = self._is_connector_start(item)
+            else:
+                is_valid_start = isinstance(item, self.node_class)
             if is_valid_start:
                 self._start_node = item
                 self._start_point = scene_position
@@ -316,13 +348,19 @@ class GraphCanvasView(QGraphicsView):
         self._remove_preview()
         if not self._contour_points:
             return
-        points = [*self._contour_points, current]
+        self._contour_suppress_finish = False
+        snapping = self._should_close_contour(current)
+        preview_end = self._contour_points[0] if snapping else current
+        points = [*self._contour_points, preview_end]
         path_item = QGraphicsPathItem()
         path = QPainterPath(points[0])
         for point in points[1:]:
             path.lineTo(point)
         path_item.setPath(path)
-        path_item.setPen(QColor(Qt.GlobalColor.cyan))
+        pen = QPen(QColor(Qt.GlobalColor.cyan), 0)
+        if snapping:
+            pen = QPen(QColor("#44dd66"), 2)
+        path_item.setPen(pen)
         path_item.setZValue(10_000)
         self._preview = path_item
         self.scene().addItem(path_item)
@@ -345,6 +383,7 @@ class GraphCanvasView(QGraphicsView):
         self._start_node = None
         self._start_point = None
         self._contour_points.clear()
+        self._contour_suppress_finish = False
 
     def keyReleaseEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Space:
@@ -355,11 +394,20 @@ class GraphCanvasView(QGraphicsView):
             return
         super().keyReleaseEvent(event)
 
+    def _connector_endpoint_classes(self) -> tuple:
+        classes = (self.node_class, self.connector_class)
+        return classes + ((self.contour_class,) if self.contour_class else ())
+
+    def _is_connector_start(self, item) -> bool:
+        return isinstance(item, self._connector_endpoint_classes())
+
     def _graph_object_at(
         self, position, *, include_connectors: bool = True
     ) -> QGraphicsItem | None:
         allowed = (
-            (self.node_class, self.connector_class)
+            (self.node_class, self.connector_class, self.contour_class)
+            if include_connectors and self.contour_class
+            else (self.node_class, self.connector_class)
             if include_connectors
             else (self.node_class,)
         )

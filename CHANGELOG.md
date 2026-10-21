@@ -23,6 +23,10 @@
   connector types, reversing pair direction, and deleting objects.
 - Added graph arrangers: grid, vertical and horizontal lines, and a circle
   arrangement for the neighbours of the selected node.
+- Added connector attachment to contour borders: arcs and pairs can start or
+  end on a contour, the attachment point follows the contour while it moves,
+  deleting the contour removes its connectors (undoable), and GWF load/save
+  keeps contour references including accurate `b_x`/`b_y`/`e_x`/`e_y`.
 - Added toolbar icons (Lucide SVG assets embedded through the application
   resource bundle) with tooltips for every graph editor action.
 - The graph editor understands SCg 2.0 spelled GWF types: nodes
@@ -41,6 +45,10 @@
 - The editor selector in the top bar switches between the SCs text editor and the
   SCg graph editor.
 - Graph editor actions moved from text buttons to theme-aware toolbar icons.
+- The contour tool now closes the shape by clicking anywhere near the first
+  vertex instead of requiring an exact click on the preview line; the preview
+  turns green when the click would close the contour. Double-click and Enter
+  still finish the contour as before.
 - Nodes and connectors are drawn with the canonical SCg visual alphabet
   (extracted into `scg_painter.py`, following the OSTIS KBE reference
   implementation): constant nodes are circles and variable nodes are rectangles

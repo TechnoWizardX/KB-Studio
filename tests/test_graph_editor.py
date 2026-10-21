@@ -33,6 +33,7 @@ from src.gui.graph_editor.graph_editor import (
     _CONNECTOR_TYPES,
     _EDGE_TYPES,
     _relation_for_gwf,
+    GraphAuxObject,
     GraphEditorWidget,
     GraphNode,
     GraphScene,
@@ -652,6 +653,137 @@ class GraphSceneTests(unittest.TestCase):
         self.assertEqual(
             [item.kind for item in editor.scene.aux_objects], ["bus", "contour"]
         )
+        editor.close()
+
+    def test_connector_attaches_to_contour_endpoint(self):
+        node = self.scene.add_node("source", QPointF(120, 120))
+        contour = self.scene.add_contour(
+            [
+                QPointF(300, 200),
+                QPointF(420, 200),
+                QPointF(420, 320),
+                QPointF(300, 320),
+            ]
+        )
+
+        edge = self.scene.connect_nodes(node, contour, "->")
+
+        self.assertEqual(len(self.scene.edges), 1)
+        end = edge.path().pointAtPercent(1.0)
+        # attachment lands on the contour border (left edge), not the centre
+        self.assertAlmostEqual(end.x(), 300.0, delta=0.5)
+        self.assertGreaterEqual(end.y(), 200)
+        self.assertLessEqual(end.y(), 320)
+
+        bus = self.scene.add_bus(node, QPointF(700, 300))
+        with self.assertRaises(ValueError):
+            self.scene.connect_nodes(node, bus, "->")
+
+    def test_connector_to_contour_follows_contour_movement(self):
+        node = self.scene.add_node("source", QPointF(120, 120))
+        contour = self.scene.add_contour(
+            [
+                QPointF(300, 200),
+                QPointF(420, 200),
+                QPointF(420, 320),
+                QPointF(300, 320),
+            ]
+        )
+        edge = self.scene.connect_nodes(node, contour, "->")
+
+        contour.setPos(30, 0)
+
+        end = edge.path().pointAtPercent(1.0)
+        self.assertAlmostEqual(end.x(), 330.0, delta=0.5)
+
+    def test_deleting_contour_removes_attached_connector_and_undo_restores(self):
+        node = self.scene.add_node("source", QPointF(120, 120))
+        contour = self.scene.add_contour(
+            [
+                QPointF(300, 200),
+                QPointF(420, 200),
+                QPointF(420, 320),
+                QPointF(300, 320),
+            ]
+        )
+        edge = self.scene.connect_nodes(node, contour, "->")
+        self.assertEqual(edge.scene(), self.scene)
+
+        contour.setSelected(True)
+        stack = QUndoStack()
+        stack.push(CommandDeleteSelection(self.scene, [contour]))
+        self.assertEqual(self.scene.edges, [])
+        self.assertNotIn(contour, self.scene.aux_objects)
+
+        stack.undo()
+
+        self.assertEqual(self.scene.edges, [edge])
+        self.assertIn(contour, self.scene.aux_objects)
+        self.assertEqual(edge.scene(), self.scene)
+
+    def test_connector_to_contour_survives_gwf_round_trip(self):
+        node = self.scene.add_node("source", QPointF(120, 120))
+        contour = self.scene.add_contour(
+            [
+                QPointF(300, 200),
+                QPointF(420, 200),
+                QPointF(420, 320),
+                QPointF(300, 320),
+            ]
+        )
+        self.scene.connect_nodes(node, contour, "->")
+
+        reloaded = GraphScene()
+        reloaded.load_gwf(self.scene.to_gwf())
+
+        self.assertEqual(len(reloaded.edges), 1)
+        edge = reloaded.edges[0]
+        self.assertIsInstance(edge.source, GraphNode)
+        self.assertIs(edge.source, reloaded.nodes["source"])
+        target = edge.target if isinstance(edge.target, GraphAuxObject) else None
+        self.assertIsNotNone(target)
+        self.assertTrue(target.is_contour())
+        document = ET.fromstring(self.scene.to_gwf())
+        sector = document.find("staticSector")
+        arc = sector.find("arc")
+        self.assertEqual(arc.get("id_e"), target.gwf_id)
+
+    def test_contour_tool_closes_by_clicking_near_the_first_point(self):
+        editor = GraphEditorWidget()
+        editor.resize(900, 600)
+        editor.show()
+        editor.view.set_tool(editor.view.CONTOUR)
+        for point in (QPointF(400, 300), QPointF(500, 300), QPointF(450, 380)):
+            QTest.mouseClick(
+                editor.view.viewport(),
+                Qt.MouseButton.LeftButton,
+                pos=editor.view.mapFromScene(point),
+            )
+            self.app.processEvents()
+        self.assertEqual(editor.scene.aux_objects, [], "far click must not close")
+        # a click far from the first vertex keeps collecting points
+        far_point = QPointF(600, 250)
+        QTest.mouseClick(
+            editor.view.viewport(),
+            Qt.MouseButton.LeftButton,
+            pos=editor.view.mapFromScene(far_point),
+        )
+        self.app.processEvents()
+        self.assertEqual(len(editor.view._contour_points), 4)
+
+        near_first = QPointF(408, 304)
+        QTest.mouseClick(
+            editor.view.viewport(),
+            Qt.MouseButton.LeftButton,
+            pos=editor.view.mapFromScene(near_first),
+        )
+        self.app.processEvents()
+
+        self.assertEqual(
+            [item.kind for item in editor.scene.aux_objects], ["contour"]
+        )
+        contour = editor.scene.aux_objects[0]
+        self.assertGreater(contour.path().elementCount(), 3)
         editor.close()
 
     def test_gwf_load_edit_export_preserves_types_and_unknown_elements(self):
