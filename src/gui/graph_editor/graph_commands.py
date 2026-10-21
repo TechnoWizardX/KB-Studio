@@ -197,6 +197,31 @@ class CommandWaypointsChange(_GraphCommand):
         self._apply(self.old_waypoints)
 
 
+class CommandConnectorDotsChange(_GraphCommand):
+    def __init__(
+        self,
+        scene: GraphScene,
+        edge,
+        old_dots: tuple[float, float],
+        new_dots: tuple[float, float],
+    ):
+        super().__init__(scene, "Move connector attach point")
+        self.edge = edge
+        self.old_dots = (float(old_dots[0]), float(old_dots[1]))
+        self.new_dots = (float(new_dots[0]), float(new_dots[1]))
+
+    def _apply(self, dots: tuple[float, float]) -> None:
+        self.edge.begin_dot, self.edge.end_dot = dots
+        self.edge.update_path()
+        self.scene.connector_changed(self.edge)
+
+    def redo(self) -> None:
+        self._apply(self.new_dots)
+
+    def undo(self) -> None:
+        self._apply(self.old_dots)
+
+
 class CommandMoveObjects(_GraphCommand):
     def __init__(self, scene: GraphScene, old_positions: dict):
         super().__init__(scene, "Move objects")

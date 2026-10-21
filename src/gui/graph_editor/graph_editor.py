@@ -6,7 +6,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QPointF, QLineF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -41,6 +41,7 @@ from src.core.signals import signals
 from src.resources.icons import Icons
 from src.gui.graph_editor.graph_canvas import GraphCanvasView
 from src.gui.graph_editor.graph_commands import (
+    CommandConnectorDotsChange,
     CommandConnectorTypeChange,
     CommandCreateBus,
     CommandCreateContour,
@@ -328,6 +329,7 @@ class GraphNode(QGraphicsItem):
 
 class GraphEdge(QGraphicsPathItem):
     WAYPOINT_HANDLE_HALF = 3.5
+    DOT_HANDLE_RADIUS = 8.0
 
     def __init__(
         self,
@@ -364,8 +366,11 @@ class GraphEdge(QGraphicsPathItem):
         self.setZValue(0)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
         self.waypoints_requester: Callable[..., None] | None = None
+        self.dots_requester: Callable[..., None] | None = None
         self._drag_waypoint: int | None = None
         self._drag_original_waypoints: list[QPointF] | None = None
+        self._drag_dot_side: str | None = None
+        self._drag_original_dots: tuple[float, float] | None = None
         self.update_path()
 
     def update_path(self) -> None:
@@ -467,6 +472,41 @@ class GraphEdge(QGraphicsPathItem):
                 return index
         return None
 
+    def _dot_handle_at(self, point: QPointF) -> str | None:
+        """Возвращает 'begin'/'end', если точка у ручки крепления на коннекторе."""
+        line = self.path()
+        if line.isEmpty():
+            return None
+        for side, percent in (("begin", 0.0), ("end", 1.0)):
+            endpoint = self.source if side == "begin" else self.target
+            if not isinstance(endpoint, GraphEdge):
+                continue
+            anchor = line.pointAtPercent(percent)
+            if QLineF(point, anchor).length() <= self.DOT_HANDLE_RADIUS:
+                return side
+        return None
+
+    def _apply_dragged_dot(self, dot: float) -> None:
+        line = self.mapToScene(self.path())
+        max_dot = max(line.elementCount() - 1, 1)
+        dot = min(max(dot, 0.0), max_dot)
+        if self._drag_dot_side == "begin":
+            self.begin_dot = dot
+        else:
+            self.end_dot = dot
+        self.update_path()
+        self.update()
+
+    def _change_dots(
+        self, old_dots: tuple[float, float], new_dots: tuple[float, float]
+    ) -> None:
+        self.begin_dot, self.end_dot = new_dots
+        self.update_path()
+        scene = self.scene()
+        if isinstance(scene, GraphScene):
+            scene.connector_changed(self)
+        self.update()
+
     def _waypoint_insert_index(self, point: QPointF) -> int:
         scene_path = self.mapToScene(self.path())
         best_index = 0
@@ -512,43 +552,70 @@ class GraphEdge(QGraphicsPathItem):
             super().mousePressEvent(event)
             return
         index = self._waypoint_index_at(event.scenePos())
-        if index is None:
-            super().mousePressEvent(event)
+        if index is not None:
+            self.setSelected(True)
+            self._drag_waypoint = index
+            self._drag_original_waypoints = [
+                QPointF(point) for point in self.waypoints
+            ]
+            event.accept()
             return
-        self.setSelected(True)
-        self._drag_waypoint = index
-        self._drag_original_waypoints = [
-            QPointF(point) for point in self.waypoints
-        ]
-        event.accept()
+        side = self._dot_handle_at(event.scenePos())
+        if side is not None:
+            self.setSelected(True)
+            self._drag_dot_side = side
+            self._drag_original_dots = (self.begin_dot, self.end_dot)
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
-        if self._drag_waypoint is None:
-            super().mouseMoveEvent(event)
+        if self._drag_waypoint is not None:
+            self.waypoints[self._drag_waypoint] = QPointF(event.scenePos())
+            self.update_path()
+            scene = self.scene()
+            if isinstance(scene, GraphScene):
+                scene._refresh_connected_edges(self, set())
+            self.update()
+            event.accept()
             return
-        self.waypoints[self._drag_waypoint] = QPointF(event.scenePos())
-        self.update_path()
-        scene = self.scene()
-        if isinstance(scene, GraphScene):
-            scene._refresh_connected_edges(self, set())
-        self.update()
-        event.accept()
+        if self._drag_dot_side is not None:
+            self._apply_dragged_dot(self.dot_position(event.scenePos()))
+            scene = self.scene()
+            if isinstance(scene, GraphScene):
+                scene._refresh_connected_edges(self, set())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
-        if self._drag_waypoint is None:
-            super().mouseReleaseEvent(event)
+        if self._drag_waypoint is not None:
+            self._drag_waypoint = None
+            old_list = self._drag_original_waypoints
+            self._drag_original_waypoints = None
+            new_list = [QPointF(point) for point in self.waypoints]
+            if (
+                self.waypoints_requester is not None
+                and old_list is not None
+                and old_list != new_list
+            ):
+                self.waypoints_requester(self, old_list, new_list)
+            event.accept()
             return
-        self._drag_waypoint = None
-        old_list = self._drag_original_waypoints
-        self._drag_original_waypoints = None
-        new_list = [QPointF(point) for point in self.waypoints]
-        if (
-            self.waypoints_requester is not None
-            and old_list is not None
-            and old_list != new_list
-        ):
-            self.waypoints_requester(self, old_list, new_list)
-        event.accept()
+        if self._drag_dot_side is not None:
+            self._drag_dot_side = None
+            old_dots = self._drag_original_dots
+            self._drag_original_dots = None
+            new_dots = (self.begin_dot, self.end_dot)
+            if (
+                self.dots_requester is not None
+                and old_dots is not None
+                and new_dots != old_dots
+            ):
+                self.dots_requester(self, old_dots, new_dots)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -631,6 +698,14 @@ class GraphEdge(QGraphicsPathItem):
                         half * 2,
                         half * 2,
                     )
+                )
+            for side, percent in (("begin", 0.0), ("end", 1.0)):
+                endpoint = self.source if side == "begin" else self.target
+                if not isinstance(endpoint, GraphEdge):
+                    continue
+                anchor = line.pointAtPercent(percent)
+                painter.drawEllipse(
+                    anchor, self.DOT_HANDLE_RADIUS, self.DOT_HANDLE_RADIUS
                 )
 
 
@@ -719,6 +794,7 @@ class GraphScene(QGraphicsScene):
     model_changed = Signal()
     rename_requested = Signal(object, str)
     waypoints_changed = Signal(object, list, list)
+    dots_changed = Signal(object, object, object)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -824,6 +900,7 @@ class GraphScene(QGraphicsScene):
         self.edges.append(edge)
         self._update_scene_rect()
         edge.waypoints_requester = self.waypoints_changed.emit
+        edge.dots_requester = self.dots_changed.emit
         if not self._loading:
             self.model_changed.emit()
         return edge
@@ -1549,6 +1626,7 @@ class GraphEditorWidget(QFrame):
         self.scene.selectionChanged.connect(self._sync_type_selectors)
         self.scene.rename_requested.connect(self._on_rename_requested)
         self.scene.waypoints_changed.connect(self._on_waypoints_changed)
+        self.scene.dots_changed.connect(self._on_dots_changed)
         self.node_type_combo.currentIndexChanged.connect(self._apply_selected_node_type)
         self.edge_type_combo.currentIndexChanged.connect(
             self._apply_selected_connector_type
@@ -1771,6 +1849,11 @@ class GraphEditorWidget(QFrame):
     def _on_waypoints_changed(self, edge, old_waypoints, new_waypoints) -> None:
         self.undo_stack.push(
             CommandWaypointsChange(self.scene, edge, old_waypoints, new_waypoints)
+        )
+
+    def _on_dots_changed(self, edge, old_dots, new_dots) -> None:
+        self.undo_stack.push(
+            CommandConnectorDotsChange(self.scene, edge, old_dots, new_dots)
         )
 
     def _on_rename_requested(self, node: GraphNode, identifier: str) -> None:

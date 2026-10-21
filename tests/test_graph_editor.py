@@ -15,6 +15,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QComboBox, QMessageBox
 
 from src.gui.graph_editor.graph_commands import (
+    CommandConnectorDotsChange,
     CommandConnectorTypeChange,
     CommandCreateBus,
     CommandCreateContour,
@@ -1083,6 +1084,93 @@ class GraphEditorUndoTests(unittest.TestCase):
         self.stack.redo()
 
         self.assertEqual(edge.waypoints, new_waypoints)
+
+    def test_dot_handles_are_only_shown_for_connector_endpoints(self):
+        source = self.scene.add_node("source", QPointF(0, 0))
+        target = self.scene.add_node("target", QPointF(300, 0))
+        edge = self.scene.connect_nodes(source, target, "->")
+        attribute = self.scene.connect_nodes(
+            self.scene.add_node("attr", QPointF(150, 200)),
+            edge,
+            "->",
+            target_anchor=edge.path().pointAtPercent(0.5),
+        )
+
+        midpoint = edge.path().pointAtPercent(0.5)
+        self.assertIsNone(edge._dot_handle_at(midpoint))
+        hit = attribute._dot_handle_at(
+            attribute.path().pointAtPercent(1.0)
+        )
+        self.assertEqual(hit, "end")
+        self.assertIsNone(
+            attribute._dot_handle_at(attribute.path().pointAtPercent(0.0))
+        )
+
+    def test_dot_drag_moves_attach_point_and_stays_on_connector(self):
+        source = self.scene.add_node("source", QPointF(0, 0))
+        target = self.scene.add_node("target", QPointF(300, 0))
+        edge = self.scene.connect_nodes(source, target, "->")
+        attribute = self.scene.connect_nodes(
+            self.scene.add_node("attr", QPointF(150, 200)),
+            edge,
+            "->",
+            target_anchor=edge.path().pointAtPercent(0.25),
+        )
+        self.assertLess(attribute.end_dot, 0.5)
+
+        attribute._drag_dot_side = "end"
+        attribute._drag_original_dots = (attribute.begin_dot, attribute.end_dot)
+        attribute._apply_dragged_dot(edge.dot_position(edge.path().pointAtPercent(0.75)))
+
+        self.assertGreater(attribute.end_dot, 0.5)
+        anchor = attribute.path().pointAtPercent(1.0)
+        self.assertEqual(edge.mapFromScene(anchor).y(), 0)
+
+    def test_dot_requester_routes_through_widget_undo_stack(self):
+        editor = GraphEditorWidget()
+        source = editor.scene.add_node("source", QPointF(0, 0))
+        target = editor.scene.add_node("target", QPointF(300, 0))
+        edge = editor.scene.connect_nodes(source, target, "->")
+        attribute = editor.scene.connect_nodes(
+            editor.scene.add_node("attr", QPointF(150, 200)),
+            edge,
+            "->",
+            target_anchor=edge.path().pointAtPercent(0.25),
+        )
+        old_dots = (attribute.begin_dot, attribute.end_dot)
+        new_dots = (old_dots[0], old_dots[1] + 0.5)
+        count = editor.undo_stack.count()
+
+        attribute.dots_requester(attribute, old_dots, new_dots)
+
+        self.assertEqual(editor.undo_stack.count(), count + 1)
+        self.assertAlmostEqual(attribute.end_dot, new_dots[1], delta=1e-9)
+
+        editor.undo_stack.undo()
+
+        self.assertAlmostEqual(attribute.end_dot, old_dots[1], delta=1e-9)
+        editor.close()
+
+    def test_connector_dots_command_round_trips(self):
+        source = self.scene.add_node("source", QPointF(0, 0))
+        target = self.scene.add_node("target", QPointF(300, 0))
+        edge = self.scene.connect_nodes(source, target, "->")
+        attribute = self.scene.connect_nodes(
+            self.scene.add_node("attr", QPointF(150, 200)),
+            edge,
+            "->",
+            target_anchor=edge.path().pointAtPercent(0.25),
+        )
+        old_dots = (attribute.begin_dot, attribute.end_dot)
+        new_dots = (old_dots[0], old_dots[1] + 0.25)
+
+        self.stack.push(CommandConnectorDotsChange(self.scene, attribute, old_dots, new_dots))
+        self.assertAlmostEqual(attribute.end_dot, new_dots[1], delta=1e-9)
+
+        self.stack.undo()
+        self.assertAlmostEqual(attribute.end_dot, old_dots[1], delta=1e-9)
+        self.stack.redo()
+        self.assertAlmostEqual(attribute.end_dot, new_dots[1], delta=1e-9)
 
     def test_waypoint_requester_routes_through_widget_undo_stack(self):
         editor = GraphEditorWidget()

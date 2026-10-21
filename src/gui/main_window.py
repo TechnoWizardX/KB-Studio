@@ -73,7 +73,7 @@ class MainWindow(QMainWindow):
         self.main_splitter.addWidget(self.dir_view)
         self.main_splitter.addWidget(self.editor_stack)
         self.main_splitter.addWidget(self.chat_bot)
-        self.main_splitter.setSizes([300, 500, 200])
+        self.main_splitter.setSizes([200, 500, 200])
 
         signals.error_occured.connect(self.show_error)
         signals.selected_new_file.connect(self._on_file_selected)

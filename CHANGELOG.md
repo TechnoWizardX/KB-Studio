@@ -31,6 +31,10 @@
   (`pair/...orient/.../membership`, `pair/const/-/perm/noorien`, and similar
   arc/pair spellings). Such files open with all relations drawn, and saving
   keeps object types and the original element order.
+- Connector attach points (GWF dot balances) are editable: when a connector
+  that is attached to another connector is selected, circle handles appear at
+  its endpoints and can be dragged along the parent connector; the change is
+  undoable and is saved back through `dotBBalance`/`dotEBalance`.
 
 ### Changed
 
