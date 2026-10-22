@@ -121,7 +121,7 @@ _NODE_STRUCTURE_ALIASES = {
     "relop": "relation",
     "relation": "relation",
     "group": "group",
-    "atom": "not_define",
+    "atom": "group",
 }
 
 
@@ -145,6 +145,10 @@ def node_type_parts(gwf_type: str) -> tuple[str, str]:
         permanence = "const" if structure == "not_define" else "var"
     if permanence not in {"const", "var"}:
         permanence = "const"
+    # kbe maps "node/var/not_define" onto the variable general node, the
+    # small "not defined" circle is only used for constants
+    if permanence == "var" and structure == "not_define":
+        structure = "general"
     return permanence, structure
 
 

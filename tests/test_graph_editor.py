@@ -837,8 +837,12 @@ class GraphSceneTests(unittest.TestCase):
         path_start = edge.path().pointAtPercent(0)
         path_end = edge.path().pointAtPercent(1)
 
-        self.assertAlmostEqual(path_start.x(), 112, delta=1)
-        self.assertAlmostEqual(path_end.x(), 288, delta=1)
+        self.assertAlmostEqual(
+            path_start.x(), 100 + GraphNode.ICON_SIZE / 2, delta=1
+        )
+        self.assertAlmostEqual(
+            path_end.x(), 300 - GraphNode.ICON_SIZE / 2, delta=1
+        )
         self.assertTrue(source.shape().contains(QPointF(0, 0)))
         self.assertTrue(source.boundingRect().contains(source.shape().boundingRect()))
 
@@ -856,8 +860,16 @@ class GraphSceneTests(unittest.TestCase):
         self.assertEqual(self.scene.to_gwf().count('type="node/meta/group"'), 1)
 
         self.scene.set_node_type(node, "node/var/not_define")
+        # kbe renders var_not_define as a variable (rectangular) node; the
+        # small "not defined" circle is reserved for constants
+        self.assertTrue(node.shape().contains(QPointF(4, 4)))
+
+        self.scene.set_node_type(node, "node/const/not_define")
         self.assertTrue(node.shape().contains(QPointF(0, 0)))
-        self.assertFalse(node.shape().contains(QPointF(4, 4)))
+        self.assertFalse(
+            node.shape().contains(QPointF(4, 4)),
+            "const not_define must be the small circle",
+        )
 
     def test_connector_type_selector_only_offers_parseable_scs_tokens(self):
         parser = SCSParser()

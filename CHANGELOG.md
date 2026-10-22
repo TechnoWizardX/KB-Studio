@@ -49,6 +49,18 @@
   vertex instead of requiring an exact click on the preview line; the preview
   turns green when the click would close the contour. Double-click and Enter
   still finish the contour as before.
+- Nodes and connectors follow the KBE reference visuals more closely: node
+  glyphs are larger (30 px icons, 4 px borders, thicker glyph strokes,
+  hatching) so node structures (rrel/nrel roles, relations, groups, abstract,
+  ...) are clearly distinguishable; "atom" maps to the group glyph and
+  `node/var/not_define` renders as a variable node like in KBE.
+- Connector arrowheads are solid triangles drawn over lines that stop at the
+  arrow base (KBE behaviour), so arrows never sink into the line; connectors
+  attached to other connectors paint above their parents so their arrowheads
+  are not covered.
+- Nodes and connectors show tooltips with identifier/type info, and dragging
+  no longer lags on large graphs (per-item repaint updates, deferred
+  model-change notifications and cached pens/styles).
 - Nodes and connectors are drawn with the canonical SCg visual alphabet
   (extracted into `scg_painter.py`, following the OSTIS KBE reference
   implementation): constant nodes are circles and variable nodes are rectangles

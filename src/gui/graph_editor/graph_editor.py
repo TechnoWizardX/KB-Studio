@@ -128,7 +128,7 @@ class GraphNodeLabel(QGraphicsTextItem):
 
 
 class GraphNode(QGraphicsItem):
-    ICON_SIZE = 24
+    ICON_SIZE = 30
     LABEL_GAP = 8
 
     def __init__(
@@ -160,6 +160,10 @@ class GraphNode(QGraphicsItem):
         self.setZValue(1)
         self._position_label()
         self.rename_requester: Callable[..., None] | None = None
+        self._update_tooltip()
+
+    def _update_tooltip(self) -> None:
+        self.setToolTip(f"{self.identifier}\n{self.gwf_type}")
 
     def boundingRect(self):
         glyph_bounds = self._glyph_rect().adjusted(-2, -2, 2, 2)
@@ -233,6 +237,7 @@ class GraphNode(QGraphicsItem):
         self.gwf_idtf = identifier
         self.label.setPlainText(identifier)
         self._position_label()
+        self._update_tooltip()
         self.update()
 
     def itemChange(self, change, value):
@@ -307,6 +312,7 @@ class GraphEdge(QGraphicsPathItem):
         self._drag_original_waypoints: list[QPointF] | None = None
         self._drag_dot_side: str | None = None
         self._drag_original_dots: tuple[float, float] | None = None
+        self.setToolTip(f"{gwf_tag}: {gwf_type} ({edge_type})")
         self.update_path()
 
     def update_path(self) -> None:
@@ -325,6 +331,12 @@ class GraphEdge(QGraphicsPathItem):
             path.lineTo(waypoint)
         path.lineTo(end)
         self.setPath(path)
+        # connectors attached to other connectors must paint above their
+        # parents, otherwise parent lines cover the arrowheads
+        attached = isinstance(self.source, GraphEdge) or isinstance(
+            self.target, GraphEdge
+        )
+        self.setZValue(1.5 if attached else 0.0)
 
     @staticmethod
     def _endpoint_center(endpoint: GraphNode | GraphEdge) -> QPointF:
@@ -732,7 +744,8 @@ class GraphAuxObject(QGraphicsPathItem):
             if isinstance(scene, GraphScene) and not scene._loading:
                 scene._refresh_connected_edges(self, set())
                 scene._update_scene_rect()
-                scene.model_changed.emit()
+                if not scene._in_drag:
+                    scene.model_changed.emit()
         return result
 
     def to_gwf_element(self) -> ET.Element:
@@ -800,6 +813,7 @@ class GraphScene(QGraphicsScene):
         self.gwf_sector_attributes: dict[str, str] = {}
         self.gwf_sector_extras: list[ET.Element] = []
         self._loading = False
+        self._in_drag = False
         self.setSceneRect(0, 0, 1600, 1000)
         self.setBackgroundBrush(QColor("#1e1e1e"))
 
@@ -913,6 +927,7 @@ class GraphScene(QGraphicsScene):
         edge.gwf_type = gwf_type
         edge.gwf_tag = gwf_tag
         edge.edge_type = scs_token
+        edge.setToolTip(f"{gwf_tag}: {gwf_type} ({scs_token})")
         edge.update()
         if not self._loading:
             self.model_changed.emit()
@@ -1191,6 +1206,15 @@ class GraphScene(QGraphicsScene):
         if not self._loading:
             self.model_changed.emit()
 
+    def _set_dragging(self, active: bool) -> None:
+        """Item moves in progress: model_changed is deferred to the drag end
+        so per-pixel moves do not trigger save-state work each frame."""
+        if self._in_drag == active:
+            return
+        self._in_drag = active
+        if not active:
+            self.model_changed.emit()
+
     def connector_changed(self, edge: GraphEdge) -> None:
         self._refresh_connected_edges(edge, set())
         self._update_scene_rect()
@@ -1216,7 +1240,7 @@ class GraphScene(QGraphicsScene):
                     path.lineTo(item.mapFromScene(end))
                     item.setPath(path)
         self._update_scene_rect()
-        if not self._loading:
+        if not self._loading and not self._in_drag:
             self.model_changed.emit()
 
     def _update_scene_rect(self) -> None:

@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QLineF, QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 
 # Line widths, in item units (kbe: LINE_* defines).
@@ -35,8 +35,10 @@ ARROW_WIDTH = 8.0
 MARK_PERIOD = 28.0
 MARK_OFFSET = 22.0
 
-NODE_OUTLINE_WIDTH = 3.0
+NODE_OUTLINE_WIDTH = 4.0
 NODE_FILL = QColor(255, 255, 255, 224)
+GLYPH_WIDTH = 2.5
+HATCH_WIDTH = 1.0
 
 # QPen dash pattern values are multiples of the pen width (same ratios as kbe).
 DASH_VAR_PERM = (8.0, 6.0)
@@ -45,6 +47,39 @@ DASH_TEMP_VAR = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 7.0)
 DASH_ACCESS_MARK = (1.0, 2.5)
 DASH_FAT_VAR_INSET = (2.5, 10.0 / 4.8)
 DASH_FAT_UNKNOWN = (8.0, 6.0)
+
+_pen_cache: dict[tuple, QPen] = {}
+
+
+def cached_pen(
+    color: QColor,
+    width: float,
+    *,
+    style: Qt.PenStyle = Qt.PenStyle.SolidLine,
+    cap: Qt.PenCapStyle = Qt.PenCapStyle.FlatCap,
+    join: Qt.PenJoinStyle = Qt.PenJoinStyle.RoundJoin,
+    dash_pattern: tuple[float, ...] | None = None,
+    dash_offset: float = 0.0,
+) -> QPen:
+    """Shared QPen instances: painting runs per item per frame, so pens are
+    cached by their full configuration instead of being reallocated."""
+    key = (
+        color.rgba(),
+        round(width, 2),
+        style,
+        cap,
+        join,
+        dash_pattern,
+        dash_offset,
+    )
+    pen = _pen_cache.get(key)
+    if pen is None:
+        pen = QPen(QBrush(color, Qt.BrushStyle.SolidPattern), width, style, cap, join)
+        if dash_pattern is not None:
+            pen.setDashPattern(list(dash_pattern))
+        pen.setDashOffset(dash_offset)
+        _pen_cache[key] = pen
+    return pen
 
 _POSITIVE = {"pos", "neg", "fuz"}
 _PERIODS = {"perm", "temp"}
@@ -70,6 +105,9 @@ class ScgEdgeStyle:
 
     @classmethod
     def from_connector(cls, tag: str, gwf_type: str) -> "ScgEdgeStyle":
+        cached = _STYLE_CACHE.get((tag, gwf_type))
+        if cached is not None:
+            return cached
         segments = gwf_type.split("/")
         if tag not in {"arc", "pair"} or not segments or segments[0] != tag:
             return cls(family="plain")
@@ -104,7 +142,7 @@ class ScgEdgeStyle:
                 and len(segments) <= 3
             )
         )
-        return cls(
+        style = cls(
             family=family,
             oriented=oriented,
             polarity=polarity,
@@ -112,6 +150,11 @@ class ScgEdgeStyle:
             temporary="temp" in segments,
             unknown_side=side == "-",
         )
+        _STYLE_CACHE[(tag, gwf_type)] = style
+        return style
+
+
+_STYLE_CACHE: dict[tuple[str, str], ScgEdgeStyle] = {}
 
 
 def node_shape(rect: QRectF, permanence: str, structure: str) -> QPainterPath:
@@ -142,7 +185,7 @@ def paint_node(
     """Draws the node border and its inner structure glyph (kbe paintNode)."""
     painter.save()
     shape = node_shape(rect, permanence, structure)
-    pen = QPen(QBrush(color, Qt.BrushStyle.SolidPattern), NODE_OUTLINE_WIDTH)
+    pen = cached_pen(color, NODE_OUTLINE_WIDTH)
     painter.setPen(pen)
     if structure == "not_define":
         painter.setBrush(QBrush(color, Qt.BrushStyle.SolidPattern))
@@ -151,18 +194,21 @@ def paint_node(
         return
     painter.setBrush(QBrush(NODE_FILL, Qt.BrushStyle.SolidPattern))
 
+    # the outline stroke covers half of its width inwards; the glyph must be
+    # clipped to the shape inside the border (kbe clips to bound.adjusted(1,1))
+    inset = NODE_OUTLINE_WIDTH / 2 + 0.5
+    inner = rect.adjusted(inset, inset, -inset, -inset)
     if permanence == "var":
-        inner = rect.adjusted(1.2, 1.2, -1.2, -1.2)
         painter.drawRect(inner)
-        clip = QPainterPath()
+    else:
+        painter.drawEllipse(inner)
+    clip = QPainterPath()
+    if permanence == "var":
         clip.addRect(inner)
     else:
-        inner = rect.adjusted(1.2, 1.2, -1.2, -1.2)
-        painter.drawEllipse(inner)
-        clip = QPainterPath()
         clip.addEllipse(inner)
     painter.setClipPath(clip, Qt.ClipOperation.IntersectClip)
-    _paint_structure_glyph(painter, color, rect, structure)
+    _paint_structure_glyph(painter, color, inner, structure)
     painter.restore()
 
 
@@ -176,11 +222,10 @@ def _paint_structure_glyph(
     center = rect.center()
     left, right = rect.left(), rect.right()
     top, bottom = rect.top(), rect.bottom()
-    glyph_pen = QPen(QBrush(color, Qt.BrushStyle.SolidPattern), 2)
-    painter.setPen(glyph_pen)
+    painter.setPen(cached_pen(color, GLYPH_WIDTH))
     if structure == "struct":
         painter.setBrush(QBrush(color, Qt.BrushStyle.SolidPattern))
-        radius = rect.width() / 10.0
+        radius = rect.width() / 8.0
         painter.drawEllipse(
             QRectF(
                 center.x() - radius,
@@ -190,15 +235,13 @@ def _paint_structure_glyph(
             )
         )
     elif structure == "abstract":
-        thin = QPen(QBrush(color, Qt.BrushStyle.SolidPattern), 0)
-        painter.setPen(thin)
-        y = top
+        painter.setPen(cached_pen(color, HATCH_WIDTH))
+        y = top + HATCH_WIDTH
         while y < bottom:
             painter.drawLine(QPointF(left, y), QPointF(right, y))
             y += 3.0
     elif structure == "material":
-        thin = QPen(QBrush(color, Qt.BrushStyle.SolidPattern), 0)
-        painter.setPen(thin)
+        painter.setPen(cached_pen(color, HATCH_WIDTH))
         distance = right - left
         step = 4.2
         offset = 0.0
@@ -225,6 +268,55 @@ def _paint_structure_glyph(
         painter.drawLine(QPointF(left, center.y()), QPointF(right, center.y()))
 
 
+def polyline_points(path: QPainterPath) -> list[QPointF]:
+    """Vertexes of a polyline-style QPainterPath."""
+    return [
+        QPointF(element.x, element.y)
+        for element in (
+            path.elementAt(index)
+            for index in range(path.elementCount())
+        )
+    ]
+
+
+def _trimmed_polyline(
+    points: list[QPointF], trim: float
+) -> list[QPointF] | None:
+    """Polyline shortened by ``trim`` units at the end (kbe corrects the
+    last pair point so the line stops at the arrow base)."""
+    if len(points) < 2 or trim <= 0:
+        return None
+    total = 0.0
+    lengths: list[float] = []
+    for index in range(len(points) - 1):
+        segment = QLineF(points[index], points[index + 1]).length()
+        lengths.append(segment)
+        total += segment
+    remaining = total - trim
+    if remaining <= 1.0:
+        return None
+    result = [points[0]]
+    covered = 0.0
+    for index, segment in enumerate(lengths):
+        if covered + segment <= remaining:
+            result.append(points[index + 1])
+            covered += segment
+        else:
+            fraction = (remaining - covered) / segment
+            start = points[index]
+            end = points[index + 1]
+            result.append(start + (end - start) * fraction)
+            break
+    return result
+
+
+def _polyline_path(points: list[QPointF]) -> QPainterPath:
+    path = QPainterPath(points[0])
+    for point in points[1:]:
+        path.lineTo(point)
+    return path
+
+
 def paint_edge(
     painter: QPainter,
     path: QPainterPath,
@@ -241,9 +333,37 @@ def paint_edge(
     _paint_thin_connector(painter, path, style, color)
 
 
+def _line_and_arrow_base(
+    path: QPainterPath, style: ScgEdgeStyle
+) -> tuple[QPainterPath, QPointF | None, QPointF | None]:
+    """Line path shortened at the arrow side plus the arrow direction.
+
+    Returns (line_path, unit_direction, end_point); the direction and end
+    point are None when no arrow must be drawn.
+    """
+    if not style.oriented:
+        return path, None, None
+    total = path.length()
+    if total <= ARROW_LENGTH * 1.5:
+        return path, None, None
+    end = path.pointAtPercent(1.0)
+    before = path.pointAtPercent(
+        max(0.0, 1.0 - min(ARROW_LENGTH / total, 0.5))
+    )
+    direction = end - before
+    length = math.hypot(direction.x(), direction.y())
+    if not length:
+        return path, None, None
+    unit = QPointF(direction.x() / length, direction.y() / length)
+    points = _trimmed_polyline(polyline_points(path), ARROW_LENGTH)
+    if points is None:
+        return path, None, None
+    return _polyline_path(points), unit, end
+
+
 def _paint_plain_line(painter: QPainter, path: QPainterPath, color: QColor) -> None:
     painter.save()
-    painter.setPen(QPen(color, LINE_THIN_WIDTH))
+    painter.setPen(cached_pen(color, LINE_THIN_WIDTH))
     painter.drawPath(path)
     painter.restore()
 
@@ -255,26 +375,23 @@ def _paint_thin_connector(
     color: QColor,
 ) -> None:
     painter.save()
-    pen = QPen(color, LINE_THIN_WIDTH)
-    pen.setCapStyle(Qt.PenCapStyle.FlatCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    pattern: tuple[float, ...] | None = None
     if style.variable:
         pattern = DASH_TEMP_VAR if style.temporary else DASH_VAR_PERM
     elif style.temporary:
         pattern = DASH_TEMP_CONST
-    else:
-        pattern = None
-    if pattern is not None:
-        pen.setDashPattern(list(pattern))
+    line_path, unit, end = _line_and_arrow_base(path, style)
+    pen = cached_pen(color, LINE_THIN_WIDTH, dash_pattern=pattern)
     painter.setPen(pen)
-    painter.drawPath(path)
+    painter.drawPath(line_path)
 
-    if style.oriented and path.length() > ARROW_LENGTH:
-        _paint_arrow(painter, path, color)
+    if unit is not None and end is not None:
+        _paint_arrow(painter, unit, end, color)
 
     if style.has_distinct_visual and style.polarity in {"neg", "fuz"}:
-        mark_pen = QPen(color, MARK_WIDTH)
-        mark_pen.setDashPattern(list(DASH_ACCESS_MARK))
+        mark_pen = cached_pen(
+            color, MARK_WIDTH, dash_pattern=DASH_ACCESS_MARK
+        )
         painter.setPen(mark_pen)
         length = path.length() - ARROW_LENGTH - 3
         distance = MARK_OFFSET
@@ -304,56 +421,45 @@ def _paint_fat_pair(
     color: QColor,
 ) -> None:
     painter.save()
-    fat_pen = QPen(color, LINE_FAT_WIDTH)
-    fat_pen.setCapStyle(Qt.PenCapStyle.FlatCap)
-    fat_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(fat_pen)
-    painter.drawPath(path)
+    line_path, unit, end = _line_and_arrow_base(path, style)
+    painter.setPen(cached_pen(color, LINE_FAT_WIDTH))
+    painter.drawPath(line_path)
 
-    inset_pen = QPen(QColor("#1e1e1e"), LINE_FAT_IN_WIDTH)
-    inset_pen.setCapStyle(Qt.PenCapStyle.FlatCap)
-    inset_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    if style.variable:
-        inset_pen.setDashPattern(list(DASH_FAT_VAR_INSET))
-        inset_pen.setDashOffset(20)
+    inset_pattern = DASH_FAT_VAR_INSET if style.variable else None
+    inset_pen = cached_pen(
+        QColor("#1e1e1e"),
+        LINE_FAT_IN_WIDTH,
+        dash_pattern=inset_pattern,
+        dash_offset=20 if style.variable else 0.0,
+    )
     painter.setPen(inset_pen)
-    painter.drawPath(path)
+    painter.drawPath(line_path)
 
     if style.unknown_side and not style.variable:
-        overlay = QPen(color, LINE_THIN_WIDTH)
-        overlay.setDashPattern(list(DASH_FAT_UNKNOWN))
-        painter.setPen(overlay)
-        painter.drawPath(path)
+        painter.setPen(
+            cached_pen(color, LINE_THIN_WIDTH, dash_pattern=DASH_FAT_UNKNOWN)
+        )
+        painter.drawPath(line_path)
 
-    if style.oriented and path.length() > ARROW_LENGTH:
-        _paint_arrow(painter, path, color, inset=False)
+    if unit is not None and end is not None:
+        _paint_arrow(painter, unit, end, color)
     painter.restore()
 
 
 def _paint_arrow(
     painter: QPainter,
-    path: QPainterPath,
+    unit: QPointF,
+    end: QPointF,
     color: QColor,
-    inset: bool = True,
 ) -> None:
-    """Filled triangle arrowhead at the end of the polyline."""
-    end = path.pointAtPercent(1.0)
-    near = path.pointAtPercent(max(0.0, 1.0 - min(ARROW_LENGTH / path.length(), 0.5)))
-    direction = end - near
-    length = math.hypot(direction.x(), direction.y())
-    if not length:
-        return
-    unit = QPointF(direction.x() / length, direction.y() / length)
+    """Solid filled triangle arrowhead at the end of the polyline (kbe draws
+    it with Qt::NoPen and shortens the line up to the arrow base)."""
     perpendicular = QPointF(-unit.y(), unit.x())
     base = end - unit * ARROW_LENGTH
-    tip = end
     corner_a = base + perpendicular * (ARROW_WIDTH / 2)
     corner_b = base - perpendicular * (ARROW_WIDTH / 2)
     painter.save()
-    if inset:
-        painter.setPen(QPen(NODE_FILL, LINE_THIN_WIDTH))
-    else:
-        painter.setPen(Qt.PenStyle.NoPen)
+    painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QBrush(color, Qt.BrushStyle.SolidPattern))
-    painter.drawPolygon([tip, corner_a, corner_b])
+    painter.drawPolygon([end, corner_a, corner_b])
     painter.restore()

@@ -72,7 +72,11 @@ class GraphCanvasView(QGraphicsView):
         self._last_pan_position: QPointF | None = None
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
-        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
+        # repainting the whole viewport per mouse move is far too expensive
+        # for large graphs; bounding-rect updates repaint only dirty regions
+        self.setViewportUpdateMode(
+            QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate
+        )
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
@@ -126,6 +130,7 @@ class GraphCanvasView(QGraphicsView):
                 for item in self.scene().items()
                 if item.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsMovable
             }
+            self.scene()._set_dragging(bool(self._drag_positions))
 
         if event.button() != Qt.MouseButton.LeftButton or self.tool == self.SELECT:
             super().mousePressEvent(event)
@@ -216,6 +221,7 @@ class GraphCanvasView(QGraphicsView):
         if event.button() != Qt.MouseButton.LeftButton:
             super().mouseReleaseEvent(event)
             return
+        self.scene()._set_dragging(False)
         if self.tool not in {self.CONNECTOR, self.BUS} or self._start_node is None:
             if drag_positions is not None:
                 self.commit_move(drag_positions)
