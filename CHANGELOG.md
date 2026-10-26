@@ -60,6 +60,10 @@
   near-white, variables blue, meta violet); connectors and buses are a lighter
   grey (`#c9d1d9`) with a solid 2 px bus line and a dashed contour; selection
   is highlighted in orange (`#ffa657`) for nodes, connectors, and dot handles.
+- Added an event-loop stall recorder behind `KB_CAPTURE_STALLS=1`: when the
+  editor event loop freezes for 150 ms or longer, the current Python call
+  stacks of all threads are dumped to stderr (faulthandler/SIGUSR2), so a
+  hard-to-reproduce freeze can be captured with the exact offending code.
 - The editor selector in the top bar switches between the SCs text editor and the
   SCg graph editor.
 - Graph editor actions moved from text buttons to theme-aware toolbar icons.

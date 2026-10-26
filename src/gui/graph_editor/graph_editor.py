@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import math
+import os
+import signal
+import sys
+import threading
+import time as _time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from copy import deepcopy
@@ -743,8 +748,8 @@ class GraphAuxObject(QGraphicsPathItem):
                     # dragging the bus keeps its start glued to the owner node
                     scene._glue_bus_start(self)
                 scene._refresh_connected_edges(self, set())
-                scene._update_scene_rect()
                 if not scene._in_drag:
+                    scene._update_scene_rect()
                     scene.model_changed.emit()
         return result
 
@@ -1557,6 +1562,60 @@ class GraphScene(QGraphicsScene):
         return item_ids
 
 
+def _install_stall_recorder(canvas: "GraphEditorWidget") -> None:
+    """Opt-in stall profiler (``KB_CAPTURE_STALLS=1``).
+
+    A background thread watches two concurrency signals:
+    the timestamps of a UI-thread QTimer (catches stalls that block the
+    event loop even in C code) and the watchdog's own scheduling (catches
+    long GIL-holding handlers). When a signal shows a gap of 150 ms or
+    more, ``faulthandler`` dumps the current call stacks of all threads
+    (the C signal handler runs even while the main thread is stuck), so a
+    freeze reproduces with the exact offending code printed to stderr.
+    Only active with the environment variable set; normal runs unaffected.
+    """
+    import faulthandler
+
+    if os.environ.get("KB_CAPTURE_STALLS") != "1":
+        return
+
+    probed = {"main": _time.perf_counter()}
+
+    tick_timer = QTimer(canvas)
+    tick_timer.setTimerType(Qt.TimerType.PreciseTimer)
+    tick_timer.setInterval(10)
+
+    def tick() -> None:
+        probed["main"] = _time.perf_counter()
+
+    tick_timer.timeout.connect(tick)
+    tick_timer.start()
+
+    signal_number = signal.SIGUSR2
+    faulthandler.register(signal_number, file=sys.stderr, all_threads=True)
+
+    def watch() -> None:
+        last_own = _time.perf_counter()
+        while True:
+            _time.sleep(0.01)
+            now = _time.perf_counter()
+            own_gap = (now - last_own) * 1000
+            main_gap = (now - probed["main"]) * 1000
+            last_own = now
+            if max(own_gap, main_gap) >= 150:
+                print(
+                    f"\n[stall] detected {max(own_gap, main_gap):.0f}ms "
+                    f"(own={own_gap:.0f}ms main={main_gap:.0f}ms), "
+                    f"dumping thread stacks:",
+                    flush=True,
+                )
+                os.kill(os.getpid(), signal_number)
+                probed["main"] = _time.perf_counter()
+                last_own = _time.perf_counter()
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
 class GraphEditorWidget(QFrame):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -1694,6 +1753,7 @@ class GraphEditorWidget(QFrame):
         self.view.tool_error.connect(self._show_tool_error)
         self.view.tool_changed.connect(self._show_tool)
         layout.addWidget(self.view)
+        _install_stall_recorder(self)
 
         self.tool_group = QButtonGroup(self)
         self.tool_group.setExclusive(True)
