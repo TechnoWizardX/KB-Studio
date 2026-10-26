@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import math
 import os
 import signal
@@ -26,7 +27,9 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFrame,
     QGraphicsItem,
@@ -34,9 +37,12 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsTextItem,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -54,6 +60,7 @@ from src.gui.graph_editor.graph_commands import (
     CommandCreateNode,
     CommandDeleteSelection,
     CommandMoveObjects,
+    CommandNodeContentChange,
     CommandNodeTypeChange,
     CommandRenameNode,
     CommandSwapConnectorOrientation,
@@ -71,6 +78,10 @@ from src.gui.graph_editor.graph_types import (
     relation_for_gwf as _relation_for_gwf,
 )
 from src.gui.graph_editor.gwf_codec import (
+    build_content_element,
+    content_elements_equal,
+    empty_content_element,
+    guess_content_mime,
     gwf_number as _gwf_number,
     parse_gwf_document,
     serialize_gwf,
@@ -135,6 +146,8 @@ class GraphNodeLabel(QGraphicsTextItem):
 class GraphNode(QGraphicsItem):
     ICON_SIZE = 30
     LABEL_GAP = 8
+    CONTENT_GAP = 6
+    CONTENT_WIDTH = 220
 
     def __init__(
         self,
@@ -150,6 +163,7 @@ class GraphNode(QGraphicsItem):
         self.gwf_type = gwf_type
         self.gwf_idtf = gwf_idtf
         self.gwf_element = gwf_element
+        self._content_item: QGraphicsTextItem | None = None
         self.label = GraphNodeLabel(gwf_idtf or identifier, self)
         self.label.setDefaultTextColor(QColor("#d4d4d4"))
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -159,6 +173,7 @@ class GraphNode(QGraphicsItem):
         )
         self.label.committed.connect(self._on_label_committed)
         self.label.cancelled.connect(self._on_label_cancelled)
+        self._refresh_content_viewer()
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
@@ -168,11 +183,102 @@ class GraphNode(QGraphicsItem):
         self._update_tooltip()
 
     def _update_tooltip(self) -> None:
-        self.setToolTip(f"{self.identifier}\n{self.gwf_type}")
+        tooltip = f"{self.identifier}\n{self.gwf_type}"
+        content_text = self._content_viewer_text()
+        if content_text:
+            preview = content_text.replace("\n", " ")[:120]
+            tooltip += f"\n{preview}"
+        self.setToolTip(tooltip)
+
+    # --- content (attachments) ------------------------------------------------
+
+    def content_element(self) -> ET.Element | None:
+        return (
+            self.gwf_element.find("content")
+            if self.gwf_element is not None
+            else None
+        )
+
+    def has_content(self) -> bool:
+        element = self.content_element()
+        return element is not None and element.get("type", "0") != "0"
+
+    def _content_viewer_text(self) -> str:
+        """Short text shown under the node for visible content."""
+        element = self.content_element()
+        if element is None or element.get("type", "0") == "0":
+            return ""
+        c_type = element.get("type", "0")
+        if c_type in {"1", "2", "3"}:
+            return (element.text or "").strip()
+        file_name = element.get("file_name", "") or "file"
+        raw = element.text or ""
+        padding = int(raw.endswith("==")) + int(raw.endswith("="))
+        size = max(0, len(raw) * 3 // 4 - padding)
+        return f"📎 {file_name} ({size} B)"
+
+    def set_node_content(self, content: ET.Element) -> None:
+        """Replace the ``<content>`` subtree of this node."""
+        self.prepareGeometryChange()
+        if self.gwf_element is None:
+            self.gwf_element = ET.Element("node")
+        old = self.gwf_element.find("content")
+        if old is not None:
+            self.gwf_element.remove(old)
+        self.gwf_element.append(deepcopy(content))
+        self._refresh_content_viewer()
+        self._update_tooltip()
+        self.update()
+
+    def _refresh_content_viewer(self) -> None:
+        """Show, hide or update the content label under the node."""
+        element = self.content_element()
+        visible = (
+            element is not None
+            and element.get("type", "0") != "0"
+            and element.get("content_visibility", "false") == "true"
+        )
+        text = self._content_viewer_text() if visible else ""
+        if self._content_item is None and not text:
+            return
+        if self._content_item is None:
+            self._content_item = QGraphicsTextItem(self)
+            self._content_item.setDefaultTextColor(QColor("#c9d1d9"))
+            font = self._content_item.font()
+            font.setPointSizeF(font.pointSizeF() - 1.0)
+            self._content_item.setFont(font)
+            self._content_item.setTextWidth(self.CONTENT_WIDTH)
+            self._content_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            self._content_item.setFlag(
+                QGraphicsItem.GraphicsItemFlag.ItemStacksBehindParent
+            )
+            self._content_item.document().documentLayout().documentSizeChanged.connect(
+                self._position_content
+            )
+        self._content_item.setVisible(bool(text))
+        if text:
+            self._content_item.setPlainText(text)
+        self._position_content()
+
+    def _position_content(self, *_document_size) -> None:
+        self.prepareGeometryChange()
+        if self._content_item is None or not self._content_item.isVisible():
+            return
+        bounds = self._content_item.boundingRect()
+        self._content_item.setPos(
+            -bounds.width() / 2,
+            self._glyph_rect().bottom() + self.CONTENT_GAP,
+        )
 
     def boundingRect(self):
-        glyph_bounds = self._glyph_rect().adjusted(-2, -2, 2, 2)
-        return glyph_bounds.united(self._label_rect())
+        bounds = self._glyph_rect().adjusted(-2, -2, 2, 2).united(self._label_rect())
+        if self._content_item is not None and self._content_item.isVisible():
+            bounds = bounds.united(
+                self._content_item.boundingRect().translated(
+                    self._content_item.pos()
+                )
+            )
+        return bounds
 
     def shape(self) -> QPainterPath:
         path = self._glyph_shape()
@@ -233,12 +339,7 @@ class GraphNode(QGraphicsItem):
         painter.save()
         scg_painter.paint_node(painter, glyph, color, permanence, structure)
         painter.restore()
-        content = (
-            self.gwf_element.find("content")
-            if self.gwf_element is not None
-            else None
-        )
-        if content is not None and content.get("type", "0") != "0":
+        if self.has_content():
             painter.save()
             painter.setBrush(QBrush(QColor("#cc66ff")))
             painter.setPen(Qt.PenStyle.NoPen)
@@ -1040,6 +1141,15 @@ class GraphScene(QGraphicsScene):
         node.update()
         self.node_moved(node)
 
+    def set_node_content(self, node: GraphNode, content: ET.Element) -> None:
+        """Replace a node's content element and refresh its visuals."""
+        if node.scene() is not self:
+            raise ValueError("The node must belong to this graph.")
+        node.set_node_content(content)
+        self._update_scene_rect()
+        if not self._loading:
+            self.model_changed.emit()
+
     def add_contour(self, points: list[QPointF]) -> GraphAuxObject:
         if len(points) < 3:
             raise ValueError("A contour needs at least three points.")
@@ -1560,6 +1670,151 @@ class GraphScene(QGraphicsScene):
             if (object_id := element.get("id"))
         )
         return item_ids
+
+
+class _ContentDialog(QDialog):
+    """Editor for node content: link text, attached file and visibility.
+
+    Mirrors the kbe SCg content dialogs: the text field edits string content
+    (type 1), ``Attach file...`` replaces the content with raw file data
+    (type 4, base64 in GWF) and the checkbox controls whether the content
+    label is drawn under the node. ``OK`` is disabled until something to
+    save remains.
+    """
+
+    def __init__(self, node: GraphNode, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.node = node
+        element = node.content_element()
+        self._c_type = element.get("type", "0") if element is not None else "0"
+        self._mime = element.get("mime_type", "") if element is not None else ""
+        self._file_name = (
+            element.get("file_name", "") if element is not None else ""
+        )
+        self._attached: tuple[str, str, str] | None = None
+        self._deleted = False
+        visible = self._c_type != "0" and element.get(
+            "content_visibility", "false"
+        ) == "true"
+
+        self.setWindowTitle(f"Content of {node.identifier}")
+        self.setMinimumWidth(460)
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Text:", self))
+        self.text_edit = QPlainTextEdit(self)
+        if self._c_type in {"1", "2", "3"}:
+            self.text_edit.setPlainText(element.text or "")
+        else:
+            self.text_edit.setPlainText("")
+        self.text_edit.setPlaceholderText("Term or content text…")
+        layout.addWidget(self.text_edit, 1)
+
+        file_row = QHBoxLayout()
+        self.attach_button = QPushButton("Attach file…", self)
+        self.attach_button.clicked.connect(self._attach_file)
+        self.file_label = QLabel("", self)
+        self.file_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        file_row.addWidget(self.attach_button)
+        file_row.addWidget(self.file_label, 1)
+        layout.addLayout(file_row)
+        self._update_file_label()
+        if self._c_type == "4":
+            self.text_edit.setEnabled(False)
+
+        self.visible_checkbox = QCheckBox(
+            "Show content under the node", self
+        )
+        self.visible_checkbox.setChecked(visible or self._c_type == "0")
+        layout.addWidget(self.visible_checkbox)
+
+        buttons = QHBoxLayout()
+        self.remove_button = QPushButton("Remove content", self)
+        self.remove_button.setEnabled(node.has_content())
+        self.remove_button.clicked.connect(self._remove_content)
+        ok_button = QPushButton("OK", self)
+        ok_button.setDefault(True)
+        ok_button.clicked.connect(self.accept)
+        cancel_button = QPushButton("Cancel", self)
+        cancel_button.clicked.connect(self.reject)
+        buttons.addWidget(self.remove_button)
+        buttons.addStretch(1)
+        buttons.addWidget(ok_button)
+        buttons.addWidget(cancel_button)
+        layout.addLayout(buttons)
+
+    def _update_file_label(self) -> None:
+        if self._attached is not None:
+            _mime, name, data = self._attached
+            size = len(data) * 3 // 4
+            self.file_label.setText(f"📎 {name} ({size} B)")
+            return
+        if self._c_type == "4":
+            element = self.node.content_element()
+            size = len((element.text or "")) * 3 // 4 if element is not None else 0
+            self.file_label.setText(
+                f"📎 {self._file_name or 'file'} ({size} B)"
+            )
+        else:
+            self.file_label.setText("No file attached")
+
+    def _attach_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Attach content file", ""
+        )
+        if not path:
+            return
+        try:
+            raw = Path(path).read_bytes()
+        except OSError as error:
+            QMessageBox.warning(self, "Cannot attach file", str(error))
+            return
+        self._attached = (
+            guess_content_mime(os.path.basename(path)),
+            os.path.basename(path),
+            base64.b64encode(raw).decode("ascii"),
+        )
+        self.text_edit.setEnabled(False)
+        self._update_file_label()
+
+    def _remove_content(self) -> None:
+        self._deleted = True
+        self.accept()
+
+    def result_content(self) -> ET.Element | None:
+        """``<content>`` element to store, or None for removal.
+
+        Rules, like the kbe writer: an attached file wins over the text; an
+        empty text marks content as removed; string content keeps the type
+        and MIME of the original numeric content when the value still parses.
+        """
+        if self._deleted:
+            return None
+        visible = self.visible_checkbox.isChecked()
+        if self._attached is not None:
+            mime, file_name, data = self._attached
+            return build_content_element("4", mime, visible, file_name, data)
+        text = self.text_edit.toPlainText().strip()
+        if not text:
+            return empty_content_element()
+        c_type, mime = self._string_type(text)
+        return build_content_element(c_type, mime, visible, "", text)
+
+    def _string_type(self, text: str) -> tuple[str, str]:
+        if self._c_type == "2":
+            try:
+                int(text)
+            except ValueError:
+                return "1", self._mime or "content/term"
+            return "2", self._mime or "content/int"
+        if self._c_type == "3":
+            try:
+                float(text)
+            except ValueError:
+                return "1", self._mime or "content/term"
+            return "3", self._mime or "content/real"
+        return "1", self._mime or "content/term"
 
 
 def _install_stall_recorder(canvas: "GraphEditorWidget") -> None:
@@ -2137,9 +2392,13 @@ class GraphEditorWidget(QFrame):
             item.setSelected(True)
 
         rename_action = None
+        content_action = None
         type_menu = None
         if isinstance(item, GraphNode):
             rename_action = menu.addAction("Rename")
+            content_action = menu.addAction(
+                "Edit content…" if item.has_content() else "Add content…"
+            )
             type_menu = menu.addMenu("Node type")
             for label, gwf_type in _NODE_TYPES:
                 type_action = type_menu.addAction(label)
@@ -2171,6 +2430,23 @@ class GraphEditorWidget(QFrame):
             self.remove_selected()
         elif rename_action is not None and chosen is rename_action:
             QTimer.singleShot(0, item.label.start_editing)
+        elif content_action is not None and chosen is content_action:
+            QTimer.singleShot(
+                0, lambda node=item: self._open_content_editor(node)
+            )
+
+    def _open_content_editor(self, node: GraphNode) -> None:
+        dialog = _ContentDialog(node, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        element = dialog.result_content()
+        if element is None:
+            if not node.has_content():
+                return
+            element = empty_content_element()
+        elif content_elements_equal(element, node.content_element()):
+            return
+        self.undo_stack.push(CommandNodeContentChange(self.scene, node, element))
 
     def _swap_connector(self, edge: GraphEdge) -> None:
         if edge.gwf_tag != "pair":

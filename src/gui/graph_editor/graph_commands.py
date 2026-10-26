@@ -6,10 +6,14 @@ so repeated undo/redo cycles reuse the same SCg objects and GWF identities.
 """
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
+from copy import deepcopy
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QPointF
 from PySide6.QtGui import QUndoCommand
+
+from src.gui.graph_editor.gwf_codec import empty_content_element
 
 if TYPE_CHECKING:
     from src.gui.graph_editor.graph_editor import GraphScene
@@ -271,6 +275,23 @@ class CommandNodeTypeChange(_GraphCommand):
 
     def undo(self) -> None:
         self.scene.set_node_type(self.node, self.old_type)
+
+
+class CommandNodeContentChange(_GraphCommand):
+    def __init__(self, scene: GraphScene, node, content: ET.Element):
+        super().__init__(scene, f"Edit content of {node.identifier}")
+        self.node = node
+        old = node.content_element()
+        self.old_content = (
+            deepcopy(old) if old is not None else empty_content_element()
+        )
+        self.new_content = deepcopy(content)
+
+    def redo(self) -> None:
+        self.scene.set_node_content(self.node, self.new_content)
+
+    def undo(self) -> None:
+        self.scene.set_node_content(self.node, self.old_content)
 
 
 class CommandConnectorTypeChange(_GraphCommand):

@@ -9,6 +9,67 @@ if TYPE_CHECKING:
     from src.gui.graph_editor.graph_editor import GraphScene
 
 
+from PySide6.QtCore import QMimeDatabase
+
+CONTENT_TERM_MIME = "content/term"
+_EMPTY_CONTENT: dict[str, str] = {
+    "type": "0",
+    "mime_type": "",
+    "content_visibility": "false",
+    "file_name": "",
+}
+
+
+def empty_content_element() -> ET.Element:
+    """A ``<content>`` element that marks a node as having no content."""
+    return ET.Element("content", dict(_EMPTY_CONTENT))
+
+
+def guess_content_mime(file_name: str) -> str:
+    """Best-effort MIME type for an attached file, kbe-style."""
+    mime = QMimeDatabase().mimeTypeForFile(
+        file_name, QMimeDatabase.MatchMode.MatchExtension
+    )
+    name = mime.name()
+    return name if name and name != "application/octet-stream" else "application/octet-stream"
+
+
+def build_content_element(
+    c_type: str,
+    mime_type: str,
+    visible: bool,
+    file_name: str,
+    text: str,
+) -> ET.Element:
+    """Build a ``<content>`` element like the kbe GWF writer does.
+
+    Types 1-3 (string, int, real) keep ``text`` raw, type 4 (data) carries a
+    ``file_name``, a ``mime_type`` and base64-encoded ``text``; the writer
+    emits the same value as CDATA in both cases.
+    """
+    element = ET.Element(
+        "content",
+        {
+            "type": c_type,
+            "mime_type": mime_type,
+            "content_visibility": "true" if visible else "false",
+            "file_name": file_name,
+        },
+    )
+    if text:
+        element.text = text
+    return element
+
+
+def content_elements_equal(first: ET.Element | None, second: ET.Element | None) -> bool:
+    """Compare the attributes and payload of two ``<content>`` elements."""
+    first_attributes = first.attrib if first is not None else {}
+    second_attributes = second.attrib if second is not None else {}
+    if first_attributes != second_attributes:
+        return False
+    return (first.text or "") == (second.text or "")
+
+
 def gwf_number(element: ET.Element, attribute: str, context: str) -> float:
     try:
         value = float(element.get(attribute, "0"))

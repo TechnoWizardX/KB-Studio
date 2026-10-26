@@ -24,6 +24,7 @@ from src.gui.graph_editor.graph_commands import (
     CommandCreateNode,
     CommandDeleteSelection,
     CommandMoveObjects,
+    CommandNodeContentChange,
     CommandNodeTypeChange,
     CommandRenameNode,
     CommandSwapConnectorOrientation,
@@ -32,11 +33,17 @@ from src.gui.graph_editor.graph_commands import (
 from src.gui.graph_editor.graph_editor import (
     _CONNECTOR_TYPES,
     _EDGE_TYPES,
+    _ContentDialog,
     _relation_for_gwf,
     GraphAuxObject,
     GraphEditorWidget,
     GraphNode,
     GraphScene,
+)
+from src.gui.graph_editor.gwf_codec import (
+    build_content_element,
+    content_elements_equal,
+    empty_content_element,
 )
 from src.gui.graph_editor.scg_painter import ScgEdgeStyle as _ScgEdgeStyle
 from src.lark_syntax.parser import SCSParser
@@ -450,6 +457,149 @@ class GraphSceneTests(unittest.TestCase):
                 ("n3", "node/const/perm/relation"),
             ],
         )
+
+    def test_string_content_round_trip_and_viewer_label(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/perm/relation" idtf="" id="n1"
+                x="100" y="100">
+            <content type="1" mime_type="content/term"
+                     content_visibility="true" file_name=""><![CDATA[дать список своих возможностей]]></content>
+          </node>
+          <node type="node/const/perm/relation" idtf="" id="n2"
+                x="400" y="100">
+            <content type="0" mime_type=""
+                     content_visibility="false" file_name=""/>
+          </node>
+        </staticSector></GWF>"""
+
+        self.scene.load_gwf(source)
+        linked, empty = self.scene.nodes["node_1"], self.scene.nodes["node_2"]
+
+        self.assertTrue(linked.has_content())
+        self.assertFalse(empty.has_content())
+        label = linked._content_item
+        self.assertIsNotNone(label)
+        self.assertTrue(label.isVisible())
+        self.assertEqual(label.toPlainText(), "дать список своих возможностей")
+        self.assertFalse(empty._content_item and empty._content_item.isVisible())
+
+        output = self.scene.to_gwf()
+        reloaded = GraphScene()
+        reloaded.load_gwf(output)
+        round_trip = reloaded.nodes["node_1"]
+        content = round_trip.content_element()
+        self.assertEqual(content.get("type"), "1")
+        self.assertEqual(content.get("mime_type"), "content/term")
+        self.assertEqual(content.get("content_visibility"), "true")
+        self.assertEqual(content.text, "дать список своих возможностей")
+        self.assertTrue(round_trip._content_item.isVisible())
+
+    def test_hidden_content_stays_in_file_without_a_viewer_label(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/perm/relation" idtf="" id="n1"
+                x="100" y="100">
+            <content type="1" mime_type="content/term"
+                     content_visibility="false" file_name=""><![CDATA[скрытый текст]]></content>
+          </node>
+        </staticSector></GWF>"""
+
+        self.scene.load_gwf(source)
+        node = self.scene.nodes["node_1"]
+
+        self.assertTrue(node.has_content())
+        self.assertTrue(node._content_item is None or not node._content_item.isVisible())
+
+        output = self.scene.to_gwf()
+        content = ET.fromstring(output).find("staticSector/node/content")
+        self.assertEqual(content.get("content_visibility"), "false")
+        self.assertEqual(content.text, "скрытый текст")
+
+    def test_file_content_round_trips_base64_and_file_name(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/perm/relation" idtf="" id="n1"
+                x="100" y="100">
+            <content type="4" mime_type="image/png"
+                     content_visibility="true" file_name="picture.png"><![CDATA[aGVsbG8=]]></content>
+          </node>
+        </staticSector></GWF>"""
+
+        self.scene.load_gwf(source)
+        node = self.scene.nodes["node_1"]
+
+        self.assertEqual(node._content_viewer_text(), "📎 picture.png (5 B)")
+
+        output = self.scene.to_gwf()
+        content = ET.fromstring(output).find("staticSector/node/content")
+        self.assertEqual(content.get("type"), "4")
+        self.assertEqual(content.get("file_name"), "picture.png")
+        self.assertEqual(content.get("mime_type"), "image/png")
+        self.assertEqual(content.text, "aGVsbG8=")
+
+    def test_content_shape_keeps_connectors_off_the_label(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/perm/relation" idtf="" id="n1"
+                x="100" y="100">
+            <content type="1" mime_type="content/term"
+                     content_visibility="true" file_name=""><![CDATA[длинный текст вложения]]></content>
+          </node>
+        </staticSector></GWF>"""
+        self.scene.load_gwf(source)
+        node = self.scene.nodes["node_1"]
+
+        label = node._content_item
+        center = label.mapToItem(node, label.boundingRect().center())
+
+        self.assertTrue(node.boundingRect().contains(center))
+        self.assertFalse(node.shape().contains(center))
+
+    def test_content_dialog_result_and_removal(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/perm/relation" idtf="" id="n1"
+                x="100" y="100">
+            <content type="1" mime_type="content/term"
+                     content_visibility="true" file_name=""><![CDATA[текст вложения]]></content>
+          </node>
+        </staticSector></GWF>"""
+        self.scene.load_gwf(source)
+        node = self.scene.nodes["node_1"]
+
+        dialog = _ContentDialog(node)
+        self.assertTrue(dialog.remove_button.isEnabled())
+        self.assertEqual(dialog.text_edit.toPlainText(), "текст вложения")
+        self.assertTrue(dialog.visible_checkbox.isChecked())
+        kept = dialog.result_content()
+        self.assertEqual(kept.get("type"), "1")
+        self.assertEqual(kept.get("mime_type"), "content/term")
+
+        dialog.text_edit.setPlainText("обновлённый текст")
+        edited = dialog.result_content()
+        self.assertEqual(edited.text, "обновлённый текст")
+
+        dialog._remove_content()
+        self.assertIsNone(dialog.result_content())
+
+        dialog.text_edit.setPlainText("")
+        dialog._deleted = False
+        self.assertEqual(
+            dialog.result_content().get("type"), empty_content_element().get("type")
+        )
+
+        fresh = _ContentDialog(self.scene.add_node("fresh"))
+        self.assertFalse(fresh.remove_button.isEnabled())
+
+    def test_attached_file_content_dialog_result(self):
+        node = self.scene.add_node("holder")
+        dialog = _ContentDialog(node)
+        self.assertTrue(dialog.text_edit.isEnabled())
+
+        dialog._attached = ("image/png", "photo.png", "aGk=")
+        result = dialog.result_content()
+
+        self.assertEqual(result.get("type"), "4")
+        self.assertEqual(result.get("file_name"), "photo.png")
+        self.assertEqual(result.get("mime_type"), "image/png")
+        self.assertEqual(result.text, "aGk=")
+        self.assertTrue(dialog.visible_checkbox.isChecked())
 
     def test_scg2_node_glyphs_follow_the_scg_alphabet(self):
         general = self.scene.add_node(
@@ -1331,6 +1481,58 @@ class GraphEditorUndoTests(unittest.TestCase):
         self.stack.undo()
 
         self.assertEqual((edge.gwf_type, edge.gwf_tag, edge.edge_type), ("arc/-/-", "arc", "->"))
+
+    def test_node_content_change_command_undo_redo(self):
+        node = self.scene.add_node("term")
+        content = build_content_element(
+            "1", "content/term", True, "", "новое вложение"
+        )
+        self.stack.push(CommandNodeContentChange(self.scene, node, content))
+        self.assertTrue(node.has_content())
+        self.assertEqual(node._content_viewer_text(), "новое вложение")
+        self.assertIn("новое вложение", self.scene.to_gwf())
+
+        self.stack.undo()
+
+        self.assertFalse(node.has_content())
+        self.assertNotIn("новое вложение", self.scene.to_gwf())
+
+        self.stack.redo()
+
+        self.assertTrue(node.has_content())
+        self.assertEqual(node._content_viewer_text(), "новое вложение")
+
+    def test_node_content_change_undo_restores_file_content(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/perm/relation" idtf="" id="n1"
+                x="100" y="100">
+            <content type="1" mime_type="content/term"
+                     content_visibility="true" file_name=""><![CDATA[исходный текст]]></content>
+          </node>
+        </staticSector></GWF>"""
+        self.scene.load_gwf(self.scene.to_gwf()) if False else None
+        node = self.scene.add_node("term")
+        content = build_content_element(
+            "4", "image/png", True, "photo.png", "aGk="
+        )
+        self.scene.set_node_content(node, content)
+        self.assertEqual(node._content_viewer_text(), "📎 photo.png (2 B)")
+
+        command = CommandNodeContentChange(
+            self.scene, node, build_content_element(
+                "1", "content/term", True, "", "string replacement"
+            )
+        )
+        self.stack.push(command)
+
+        self.assertIn("string replacement", self.scene.to_gwf())
+
+        self.stack.undo()
+
+        restored = node.content_element()
+        self.assertEqual(restored.get("type"), "4")
+        self.assertEqual(restored.get("file_name"), "photo.png")
+        self.assertEqual(restored.text, "aGk=")
 
     def test_delete_selection_undo_restores_edges_and_bindings(self):
         source = self.scene.add_node("source", QPointF(100, 120))

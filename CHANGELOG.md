@@ -4,6 +4,15 @@
 
 ### Added
 
+- Added node content (attachments/links) support in the graph editor, matching
+  the KBE GWF conventions: string content (type 1, `content/term`) shows as a
+  word-wrapped label under the node when `content_visibility` is true, file
+  content (type 4) shows the file name with its size; the violet marker is
+  drawn for any non-empty content. A context menu command
+  ("Add content…"/"Edit content…") opens a content dialog with the text field,
+  an "Attach file…" button (file data is stored base64 with `file_name` and a
+  MIME type), a visibility checkbox and content removal. Content edits are
+  undoable (Ctrl+Z/Ctrl+Shift+Z) and round-trip through GWF save/load.
 - Added the SCg graph editor built with PySide6: typed constant, variable, and
   meta nodes; typed directed and undirected connectors attached to node borders
   or other connectors; editable buses and contours; GWF 1.6/2.0 load and save
