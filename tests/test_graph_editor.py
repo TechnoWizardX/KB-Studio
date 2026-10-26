@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
+from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QUndoStack
 from PySide6.QtGui import QPainter, QPainterPath
 from PySide6.QtTest import QTest
@@ -40,6 +40,39 @@ from src.gui.graph_editor.graph_editor import (
 )
 from src.gui.graph_editor.scg_painter import ScgEdgeStyle as _ScgEdgeStyle
 from src.lark_syntax.parser import SCSParser
+
+
+def _closest_point_on_polyline(path: QPainterPath, point: QPointF) -> QPointF:
+    """Nearest point on a polyline path (used by bus attachment tests)."""
+    best = QPointF(path.elementAt(0).x, path.elementAt(0).y)
+    best_distance = math.inf
+    for index in range(path.elementCount() - 1):
+        first = path.elementAt(index)
+        second = path.elementAt(index + 1)
+        start = QPointF(first.x, first.y)
+        end = QPointF(second.x, second.y)
+        vector = end - start
+        squared = vector.x() ** 2 + vector.y() ** 2
+        if not squared:
+            candidate = start
+        else:
+            fraction = max(
+                0.0,
+                min(
+                    1.0,
+                    ((point.x() - start.x()) * vector.x()
+                     + (point.y() - start.y()) * vector.y())
+                    / squared,
+                ),
+            )
+            candidate = start + vector * fraction
+        distance = (
+            (point.x() - candidate.x()) ** 2 + (point.y() - candidate.y()) ** 2
+        )
+        if distance < best_distance:
+            best_distance = distance
+            best = candidate
+    return best
 
 
 class GraphSceneTests(unittest.TestCase):
@@ -676,8 +709,40 @@ class GraphSceneTests(unittest.TestCase):
         self.assertLessEqual(end.y(), 320)
 
         bus = self.scene.add_bus(node, QPointF(700, 300))
-        with self.assertRaises(ValueError):
-            self.scene.connect_nodes(node, bus, "->")
+        attached = self.scene.connect_nodes(
+            node, bus, "->", target_anchor=QPointF(400, 300)
+        )
+        # the connector ends on the bus line, projected at the drop point
+        bus_end = attached.path().pointAtPercent(1.0)
+        closest_point = _closest_point_on_polyline(
+            bus.mapToScene(bus.path()), bus_end
+        )
+        self.assertLess(QLineF(bus_end, closest_point).length(), 0.5)
+
+    def test_connector_to_bus_follows_owner_node_movement(self):
+        node = self.scene.add_node("source", QPointF(120, 120))
+        target = self.scene.add_node("bus_owner", QPointF(500, 260))
+        bus = self.scene.add_bus(target, QPointF(600, 300))
+        edge = self.scene.connect_nodes(
+            node, bus, "->", target_anchor=QPointF(600, 300)
+        )
+        # the connector is pinned to its anchor point on the bus line
+        self.assertAlmostEqual(
+            edge.path().pointAtPercent(1.0).x(), 600.0, delta=1.0
+        )
+
+        target.setPos(QPointF(560, 320))
+
+        # the bus start stays glued to the owner node border
+        glued = bus.cross(0.0)
+        node_border = target.connection_point(
+            bus.mapToScene(bus.path()).pointAtPercent(1.0)
+        )
+        self.assertLess(QLineF(glued, node_border).length(), 1.0)
+        # and the connector still ends on the bus polyline
+        self.assertAlmostEqual(
+            edge.path().pointAtPercent(1.0).x(), 600.0, delta=1.0
+        )
 
     def test_connector_to_contour_follows_contour_movement(self):
         node = self.scene.add_node("source", QPointF(120, 120))
@@ -695,6 +760,135 @@ class GraphSceneTests(unittest.TestCase):
 
         end = edge.path().pointAtPercent(1.0)
         self.assertAlmostEqual(end.x(), 330.0, delta=0.5)
+
+    def test_connector_to_bus_starts_and_attaches_and_round_trips_gwf(self):
+        node = self.scene.add_node("source", QPointF(120, 120))
+        owner = self.scene.add_node("bus_owner", QPointF(500, 220))
+        bus = self.scene.add_bus(owner, QPointF(600, 300))
+
+        # connector drawn FROM the bus to a node
+        from_edge = self.scene.connect_nodes(
+            bus, node, "->", source_anchor=QPointF(620, 320)
+        )
+        begin = from_edge.path().pointAtPercent(0.0)
+        closest_point = _closest_point_on_polyline(
+            bus.mapToScene(bus.path()), begin
+        )
+        self.assertLess(QLineF(begin, closest_point).length(), 0.5)
+
+        # connector drawn TO the bus
+        to_edge = self.scene.connect_nodes(
+            node, bus, "->", target_anchor=QPointF(630, 340)
+        )
+        end = to_edge.path().pointAtPercent(1.0)
+        closest_point = _closest_point_on_polyline(
+            bus.mapToScene(bus.path()), end
+        )
+        self.assertLess(QLineF(end, closest_point).length(), 0.5)
+
+        reloaded = GraphScene()
+        reloaded.load_gwf(self.scene.to_gwf())
+        self.assertEqual(len(reloaded.edges), 2)
+        reloaded_bus = next(
+            item for item in reloaded.aux_objects if item.kind == "bus"
+        )
+        bus_edges = [
+            edge
+            for edge in reloaded.edges
+            if reloaded_bus in (edge.source, edge.target)
+        ]
+        # both connectors survive with the bus as an endpoint
+        self.assertEqual(len(bus_edges), 2)
+        for edge in reloaded.edges:
+            endpoint = edge.source if edge.source is not reloaded_bus else edge.target
+            self.assertIs(endpoint, reloaded.nodes["source"])
+
+    def test_deleting_bus_owner_removes_bus_and_attached_connectors(self):
+        node = self.scene.add_node("source", QPointF(120, 120))
+        owner = self.scene.add_node("bus_owner", QPointF(500, 220))
+        bus = self.scene.add_bus(owner, QPointF(600, 300))
+        self.scene.connect_nodes(node, bus, "->")
+
+        removed_nodes, removed_edges, removed_aux = (
+            self.scene._collect_removal([owner])
+        )
+        self.assertIn(bus, removed_aux)
+        self.assertEqual(len(removed_edges), 1)
+        self.scene._remove_objects(removed_nodes, removed_edges, removed_aux)
+        self.assertEqual(self.scene.edges, [])
+        self.assertEqual(self.scene.aux_objects, [])
+
+    def test_deleting_bus_keeps_owner_and_removes_its_connectors(self):
+        node = self.scene.add_node("source", QPointF(120, 120))
+        owner = self.scene.add_node("bus_owner", QPointF(500, 220))
+        bus = self.scene.add_bus(owner, QPointF(600, 300))
+        self.scene.connect_nodes(node, bus, "->")
+
+        removed_nodes, removed_edges, removed_aux = (
+            self.scene._collect_removal([bus])
+        )
+        self.assertNotIn(owner, removed_nodes)
+        self.assertEqual(len(removed_edges), 1)
+        self.scene._remove_objects(removed_nodes, removed_edges, removed_aux)
+        self.assertIn(owner, self.scene.nodes.values())
+        self.assertEqual(self.scene.aux_objects, [])
+        self.assertEqual(self.scene.edges, [])
+
+    def test_connector_to_bus_created_through_canvas_widget(self):
+        editor = GraphEditorWidget()
+        node = editor.scene.add_node("node", QPointF(120, 120))
+        owner = editor.scene.add_node("bus_owner", QPointF(500, 220))
+        bus = editor.scene.add_bus(owner, QPointF(600, 300))
+        editor._create_connector(node, bus, QPointF(200, 150), QPointF(610, 310))
+        self.assertEqual(len(editor.scene.edges), 1)
+        edge = editor.scene.edges[0]
+        self.assertIs(edge.target, bus)
+        self.assertAlmostEqual(edge.end_dot, 1.0, delta=0.2)
+        editor.close()
+
+    def test_kbe_gwf_with_bus_referencing_arcs_loads_connectors(self):
+        reloaded = GraphScene()
+        reloaded.load_gwf(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<GWF version="2.0">
+    <staticSector>
+        <node type="node/const/perm/general" idtf="owner" shapeColor="0" id="111" parent="0" left="0" top="0" right="110" bottom="28" textColor="164" text_angle="0" text_font="Times New Roman [Arial]" font_size="10" x="500" y="260" haveBus="true" idtf_pos="0">
+            <content type="0" mime_type="content/base" file_name="">c2MgdGV4dA==</content>
+        </node>
+        <node type="node/const/perm/general" idtf="attr" shapeColor="0" id="222" parent="0" left="0" top="0" right="110" bottom="28" textColor="164" text_angle="0" text_font="Times New Roman [Arial]" font_size="10" x="120" y="120" haveBus="false" idtf_pos="0">
+            <content type="0" mime_type="content/base" file_name="">c2MgdGV4dA==</content>
+        </node>
+        <bus type="" idtf="" shapeColor="0" id="333" parent="0" owner="111" b_x="515" b_y="241" e_x="600" e_y="300" haveBus="false" idtf_pos="0">
+            <points>
+                <point x="560" y="280" />
+            </points>
+        </bus>
+        <arc type="arc/const/neg" idtf="" shapeColor="0" id="444" parent="0" id_b="222" id_e="333" b_x="130" b_y="150" e_x="545" e_y="260" dotBBalance="0.5" dotEBalance="1.2" haveBus="false">
+            <points>
+                <point x="300" y="200" />
+            </points>
+        </arc>
+    </staticSector>
+</GWF>
+            """
+        )
+
+        self.assertEqual(len(reloaded.aux_objects), 1)
+        bus = reloaded.aux_objects[0]
+        self.assertEqual(bus.kind, "bus")
+        self.assertEqual(len(reloaded.edges), 1)
+        edge = reloaded.edges[0]
+        self.assertIs(edge.source, reloaded.nodes["attr"])
+        self.assertIs(edge.target, bus)
+        # dotBBalance on the bus: sector 1 at 20% (attach on the second segment)
+        end = edge.path().pointAtPercent(1.0)
+        closest_point = _closest_point_on_polyline(
+            bus.mapToScene(bus.path()), end
+        )
+        self.assertLess(QLineF(end, closest_point).length(), 0.5)
+        self.assertLessEqual(
+            QLineF(QPointF(560.0, 280.0), closest_point).length(), 15.0
+        )
 
     def test_deleting_contour_removes_attached_connector_and_undo_restores(self):
         node = self.scene.add_node("source", QPointF(120, 120))

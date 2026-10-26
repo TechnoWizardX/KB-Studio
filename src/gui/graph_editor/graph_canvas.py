@@ -160,7 +160,7 @@ class GraphCanvasView(QGraphicsView):
             is_valid_start = isinstance(item, self.node_class)
         if not is_valid_start:
             if self.tool == self.CONNECTOR:
-                expected = "node, connector or contour"
+                expected = "node, connector, contour or bus"
             else:
                 expected = "node"
             self.tool_error.emit(f"Start this tool on a {expected}.")
@@ -242,7 +242,7 @@ class GraphCanvasView(QGraphicsView):
         if self.tool == self.CONNECTOR:
             if not self._is_connector_start(target):
                 self.tool_error.emit(
-                    "Connectors must end on a node, connector or contour."
+                    "Connectors must end on a node, connector, contour or bus."
                 )
             elif target is start:
                 self.tool_error.emit("Choose two different graph objects.")

@@ -363,7 +363,7 @@ class GraphEdge(QGraphicsPathItem):
         if path.isEmpty():
             return self._endpoint_center(endpoint)
         element = path.elementAt(0 if begin else path.elementCount() - 1)
-        return QPointF(element.x, element.y)
+        return self.mapToScene(QPointF(element.x, element.y))
 
     @staticmethod
     def _endpoint_connection_point(
@@ -374,6 +374,10 @@ class GraphEdge(QGraphicsPathItem):
         if isinstance(endpoint, GraphNode):
             return endpoint.connection_point(toward)
         if isinstance(endpoint, GraphAuxObject):
+            if endpoint.kind == "bus":
+                # kbe: connectors attach to bus polyline dots, like arcs
+                # attached to other point objects
+                return endpoint.cross(dot)
             return endpoint.connection_point(toward)
         return endpoint.cross(dot)
 
@@ -381,57 +385,10 @@ class GraphEdge(QGraphicsPathItem):
         return self.cross(self.dot_position(toward))
 
     def dot_position(self, point: QPointF) -> float:
-        scene_path = self.mapToScene(self.path())
-        if scene_path.elementCount() < 2:
-            return 0.0
-
-        closest_dot = 0.0
-        closest_distance = math.inf
-        for index in range(scene_path.elementCount() - 1):
-            first = scene_path.elementAt(index)
-            second = scene_path.elementAt(index + 1)
-            start = QPointF(first.x, first.y)
-            end = QPointF(second.x, second.y)
-            vector = end - start
-            length_squared = vector.x() ** 2 + vector.y() ** 2
-            if not length_squared:
-                fraction = 0.0
-                candidate = start
-            else:
-                offset = point - start
-                fraction = max(
-                    0.0,
-                    min(
-                        1.0,
-                        (offset.x() * vector.x() + offset.y() * vector.y())
-                        / length_squared,
-                    ),
-                )
-                candidate = start + vector * fraction
-            delta = point - candidate
-            distance = delta.x() ** 2 + delta.y() ** 2
-            if distance < closest_distance:
-                closest_distance = distance
-                closest_dot = index + fraction
-        return closest_dot
+        return _scene_path_dot_position(self.mapToScene(self.path()), point)
 
     def cross(self, dot: float) -> QPointF:
-        scene_path = self.mapToScene(self.path())
-        count = scene_path.elementCount()
-        if count < 2:
-            return self.scenePos()
-        if dot >= count - 1:
-            segment, fraction = count - 2, 1.0
-        elif dot <= 0:
-            segment, fraction = 0, 0.0
-        else:
-            segment = int(dot)
-            fraction = dot - segment
-        first = scene_path.elementAt(segment)
-        second = scene_path.elementAt(segment + 1)
-        start = QPointF(first.x, first.y)
-        end = QPointF(second.x, second.y)
-        return start + (end - start) * fraction
+        return _scene_path_cross(self.mapToScene(self.path()), dot)
 
     def boundingRect(self):
         return self.path().boundingRect().adjusted(-15, -18, 15, 18)
@@ -451,7 +408,7 @@ class GraphEdge(QGraphicsPathItem):
             return None
         for side, percent in (("begin", 0.0), ("end", 1.0)):
             endpoint = self.source if side == "begin" else self.target
-            if not isinstance(endpoint, GraphEdge):
+            if not isinstance(endpoint, (GraphEdge, GraphAuxObject)):
                 continue
             anchor = line.pointAtPercent(percent)
             if QLineF(point, anchor).length() <= self.DOT_HANDLE_RADIUS:
@@ -459,10 +416,14 @@ class GraphEdge(QGraphicsPathItem):
         return None
 
     def _apply_dragged_dot(self, dot: float) -> None:
-        line = self.mapToScene(self.path())
-        max_dot = max(line.elementCount() - 1, 1)
-        dot = min(max(dot, 0.0), max_dot)
-        if self._drag_dot_side == "begin":
+        side = self._drag_dot_side
+        endpoint = self.source if side == "begin" else self.target
+        if isinstance(endpoint, (GraphEdge, GraphAuxObject)):
+            # the dot travels along the parent polyline
+            parent_path = endpoint.mapToScene(endpoint.path())
+            max_dot = max(parent_path.elementCount() - 1, 1)
+            dot = min(max(dot, 0.0), max_dot)
+        if side == "begin":
             self.begin_dot = dot
         else:
             self.end_dot = dot
@@ -705,11 +666,24 @@ class GraphAuxObject(QGraphicsPathItem):
     def is_contour(self) -> bool:
         return self.kind == "contour"
 
+    def dot_position(self, point: QPointF) -> float:
+        """Nearest polyline dot to ``point`` (kbe SCgBus::dotPos)."""
+        return _scene_path_dot_position(self.mapToScene(self.path()), point)
+
+    def cross(self, dot: float) -> QPointF:
+        """Scene point at polyline ``dot`` (kbe SCgBus::cross)."""
+        return _scene_path_cross(self.mapToScene(self.path()), dot)
+
     def connection_point(self, target: QPointF) -> QPointF:
-        """Attachment point on the contour border towards ``target``."""
+        """Attachment point: on the bus polyline or the contour border."""
+        if self.kind == "bus":
+            scene_path = self.mapToScene(self.path())
+            if scene_path.elementCount() < 2:
+                return self.mapToScene(self.path().boundingRect().center())
+            return _scene_path_cross(
+                scene_path, _scene_path_dot_position(scene_path, target)
+            )
         center = self.path().boundingRect().center()
-        if not self.is_contour():
-            return self.mapToScene(center)
         target_local = self.mapFromScene(target)
         ray = QLineF(center, target_local)
         if ray.length() == 0:
@@ -742,6 +716,9 @@ class GraphAuxObject(QGraphicsPathItem):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             scene = self.scene()
             if isinstance(scene, GraphScene) and not scene._loading:
+                if self.kind == "bus":
+                    # dragging the bus keeps its start glued to the owner node
+                    scene._glue_bus_start(self)
                 scene._refresh_connected_edges(self, set())
                 scene._update_scene_rect()
                 if not scene._in_drag:
@@ -787,13 +764,64 @@ class GraphAuxObject(QGraphicsPathItem):
         return element
 
 
+def _scene_path_dot_position(scene_path: QPainterPath, point: QPointF) -> float:
+    """Dot of a polyline path nearest to ``point`` (kbe SCgPair::dotPos)."""
+    if scene_path.elementCount() < 2:
+        return 0.0
+
+    closest_dot = 0.0
+    closest_distance = math.inf
+    for index in range(scene_path.elementCount() - 1):
+        first = scene_path.elementAt(index)
+        second = scene_path.elementAt(index + 1)
+        start = QPointF(first.x, first.y)
+        end = QPointF(second.x, second.y)
+        vector = end - start
+        length_squared = vector.x() ** 2 + vector.y() ** 2
+        if not length_squared:
+            fraction = 0.0
+            candidate = start
+        else:
+            offset = point - start
+            fraction = max(
+                0.0,
+                min(
+                    1.0,
+                    (offset.x() * vector.x() + offset.y() * vector.y())
+                    / length_squared,
+                ),
+            )
+            candidate = start + vector * fraction
+        delta = point - candidate
+        distance = delta.x() ** 2 + delta.y() ** 2
+        if distance < closest_distance:
+            closest_distance = distance
+            closest_dot = index + fraction
+    return closest_dot
+
+
+def _scene_path_cross(scene_path: QPainterPath, dot: float) -> QPointF:
+    """Scene point at ``dot`` segment-position on a polyline (kbe SCgObject::cross)."""
+    count = scene_path.elementCount()
+    if count < 2:
+        return scene_path.elementAt(0) if count else QPointF()
+    if dot >= count - 1:
+        segment, fraction = count - 2, 1.0
+    elif dot <= 0:
+        segment, fraction = 0, 0.0
+    else:
+        segment = int(dot)
+        fraction = dot - segment
+    first = scene_path.elementAt(segment)
+    second = scene_path.elementAt(segment + 1)
+    start = QPointF(first.x, first.y)
+    end = QPointF(second.x, second.y)
+    return start + (end - start) * fraction
+
+
 def _is_connector_endpoint(item: object) -> bool:
-    """Connectors may attach to nodes, other connectors, and contours."""
-    return (
-        isinstance(item, (GraphNode, GraphEdge))
-        or isinstance(item, GraphAuxObject)
-        and item.is_contour()
-    )
+    """Connectors may attach to nodes, other connectors, contours and buses."""
+    return isinstance(item, (GraphNode, GraphEdge, GraphAuxObject))
 
 
 class GraphScene(QGraphicsScene):
@@ -873,8 +901,8 @@ class GraphScene(QGraphicsScene):
             target
         ):
             raise ValueError(
-                "SCg connectors can only be attached to nodes, connectors "
-                "or contours."
+                "SCg connectors can only be attached to nodes, connectors, "
+                "contours or buses."
             )
         if source is target:
             raise ValueError("Choose two different graph objects to create a relation.")
@@ -899,9 +927,15 @@ class GraphScene(QGraphicsScene):
             gwf_element,
             waypoints,
         )
-        if isinstance(source, GraphEdge) and source_anchor is not None:
+        if (
+            isinstance(source, (GraphEdge, GraphAuxObject))
+            and source_anchor is not None
+        ):
             edge.begin_dot = source.dot_position(source_anchor)
-        if isinstance(target, GraphEdge) and target_anchor is not None:
+        if (
+            isinstance(target, (GraphEdge, GraphAuxObject))
+            and target_anchor is not None
+        ):
             edge.end_dot = target.dot_position(target_anchor)
         edge.update_path()
         self.addItem(edge)
@@ -1044,6 +1078,13 @@ class GraphScene(QGraphicsScene):
         removed_objects: set = set(removed_nodes)
         removed_objects.update(removed_edges)
         removed_objects.update(removed_aux)
+        # buses of removed nodes go with the node and cascade their connector
+        removed_aux.update(
+            item
+            for item in self.aux_objects
+            if item.owner in removed_nodes and item not in removed_aux
+        )
+        removed_objects.update(removed_aux)
         while True:
             dependent_edges = {
                 edge
@@ -1055,9 +1096,6 @@ class GraphScene(QGraphicsScene):
                 break
             removed_edges.update(new_edges)
             removed_objects.update(new_edges)
-        removed_aux.update(
-            item for item in self.aux_objects if item.owner in removed_nodes
-        )
         return removed_nodes, removed_edges, removed_aux
 
     def remove_selected(self) -> None:
@@ -1221,24 +1259,31 @@ class GraphScene(QGraphicsScene):
         if not self._loading:
             self.model_changed.emit()
 
+    def _glue_bus_start(self, item: GraphAuxObject) -> None:
+        """Keep the first bus point attached to the owner node border."""
+        if item.kind != "bus" or item.owner is None or item.scene() is not self:
+            return
+        scene_path = item.mapToScene(item.path())
+        elements = [
+            scene_path.elementAt(index)
+            for index in range(scene_path.elementCount())
+        ]
+        if len(elements) < 2:
+            return
+        second = QPointF(elements[1].x, elements[1].y)
+        end = QPointF(elements[-1].x, elements[-1].y)
+        start = item.owner.connection_point(second)
+        path = QPainterPath(item.mapFromScene(start))
+        for element in elements[1:]:
+            path.lineTo(item.mapFromScene(QPointF(element.x, element.y)))
+        item.setPath(path)
+        self._refresh_connected_edges(item, set())
+
     def node_moved(self, node: GraphNode) -> None:
         self._refresh_connected_edges(node, set())
         for item in self.aux_objects:
             if item.kind == "bus" and item.owner is node:
-                old_path = item.mapToScene(item.path())
-                elements = [
-                    old_path.elementAt(index)
-                    for index in range(old_path.elementCount())
-                ]
-                if len(elements) >= 2:
-                    second = QPointF(elements[1].x, elements[1].y)
-                    end = QPointF(elements[-1].x, elements[-1].y)
-                    start = node.connection_point(second)
-                    path = QPainterPath(item.mapFromScene(start))
-                    for element in elements[1:-1]:
-                        path.lineTo(item.mapFromScene(QPointF(element.x, element.y)))
-                    path.lineTo(item.mapFromScene(end))
-                    item.setPath(path)
+                self._glue_bus_start(item)
         self._update_scene_rect()
         if not self._loading and not self._in_drag:
             self.model_changed.emit()
@@ -1381,8 +1426,8 @@ class GraphScene(QGraphicsScene):
                     item = GraphAuxObject(tag, element, owner)
                     self.addItem(item)
                     self.aux_objects.append(item)
-                    if item.is_contour():
-                        element_ids[item.gwf_id] = item
+                    # contours and buses provide element ids for connectors
+                    element_ids[item.gwf_id] = item
 
             pending_connectors = [
                 element
@@ -1723,11 +1768,14 @@ class GraphEditorWidget(QFrame):
         source_anchor: QPointF,
         target_anchor: QPointF,
     ) -> None:
-        if not isinstance(source, (GraphNode, GraphEdge)) or not isinstance(
-            target, (GraphNode, GraphEdge)
+        if (
+            not isinstance(source, (GraphNode, GraphEdge, GraphAuxObject))
+            or not isinstance(
+                target, (GraphNode, GraphEdge, GraphAuxObject)
+            )
         ):
             self._show_tool_error(
-                "Connectors must join nodes or other connectors."
+                "Connectors must join nodes, connectors, contours or buses."
             )
             return
         gwf_type, gwf_tag, token = self.edge_type_combo.currentData()

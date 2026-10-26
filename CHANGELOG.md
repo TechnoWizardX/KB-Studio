@@ -27,6 +27,14 @@
   end on a contour, the attachment point follows the contour while it moves,
   deleting the contour removes its connectors (undoable), and GWF load/save
   keeps contour references including accurate `b_x`/`b_y`/`e_x`/`e_y`.
+- Added connector attachment to buses (as in the KBE reference): arcs and
+  pairs can start or end on the bus polyline, the attach point is computed
+  from the drop position and follows the bus when its owner node is moved or
+  the bus itself is dragged (the bus start stays glued to the owner node
+  border); deleting the bus or its owner removes the connectors attached to
+  it (undoable); GWF files written by KBE (arcs with `id_b`/`id_e` pointing
+  to a bus and bus dots in `dotBBalance`/`dotEBalance`) load with all such
+  connectors attached, and saving keeps the bus reference and attach dots.
 - Added toolbar icons (Lucide SVG assets embedded through the application
   resource bundle) with tooltips for every graph editor action.
 - The graph editor understands SCg 2.0 spelled GWF types: nodes
