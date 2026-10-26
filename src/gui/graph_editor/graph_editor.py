@@ -1274,6 +1274,7 @@ class GraphScene(QGraphicsScene):
             return
         self._in_drag = active
         if not active:
+            self._update_scene_rect()
             self.model_changed.emit()
 
     def connector_changed(self, edge: GraphEdge) -> None:
@@ -1307,13 +1308,20 @@ class GraphScene(QGraphicsScene):
         for item in self.aux_objects:
             if item.kind == "bus" and item.owner is node:
                 self._glue_bus_start(item)
-        self._update_scene_rect()
+        if not self._in_drag:
+            # during a drag the scene rect constant avoids a full-scene
+            # invalidation (and the scrollbar recentering repaint) per
+            # per-pixel move; it is recomputed once at the drag end
+            self._update_scene_rect()
         if not self._loading and not self._in_drag:
             self.model_changed.emit()
 
     def _update_scene_rect(self) -> None:
         bounds = self.itemsBoundingRect().united(QRectF(0, 0, 1600, 1000))
-        self.setSceneRect(bounds.adjusted(-200, -200, 200, 200))
+        adjusted = bounds.adjusted(-200, -200, 200, 200)
+        # an unchanged setSceneRect still invalidates the whole scene
+        if adjusted != self.sceneRect():
+            self.setSceneRect(adjusted)
 
     def _refresh_connected_edges(
         self, endpoint: GraphNode | GraphEdge, refreshed: set[GraphEdge]
