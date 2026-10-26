@@ -36,7 +36,9 @@ MARK_PERIOD = 28.0
 MARK_OFFSET = 22.0
 
 NODE_OUTLINE_WIDTH = 4.0
-NODE_FILL = QColor(255, 255, 255, 224)
+# dark interior: the bright border reads clearly against the dark canvas,
+# so node types (by border colour) stay recognisable
+NODE_FILL = QColor("#2b313a")
 GLYPH_WIDTH = 2.5
 HATCH_WIDTH = 1.0
 

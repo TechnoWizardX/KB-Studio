@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QImage, QUndoStack
+from PySide6.QtCore import QEvent, QLineF, QPoint, QPointF, QRectF, Qt
+from PySide6.QtGui import QColor, QImage, QMouseEvent, QUndoStack
 from PySide6.QtGui import QPainter, QPainterPath
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QComboBox, QMessageBox
@@ -40,6 +40,26 @@ from src.gui.graph_editor.graph_editor import (
 )
 from src.gui.graph_editor.scg_painter import ScgEdgeStyle as _ScgEdgeStyle
 from src.lark_syntax.parser import SCSParser
+
+
+def _send_mouse(view, event_type, pos, button=Qt.MouseButton.LeftButton):
+    """Send a synthetic QMouseEvent directly to the canvas viewport.
+
+    QTest.mouse* remaps positions through global window coordinates, which is
+    unreliable for freshly shown windows (async layout can shift the lookup);
+    a directly sent event keeps the exact viewport-local position.
+    """
+    viewport = view.viewport()
+    event = QMouseEvent(
+        event_type,
+        QPointF(pos),
+        viewport.mapToGlobal(QPoint(pos)),
+        button,
+        button,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QApplication.sendEvent(viewport, event)
+    return event
 
 
 def _closest_point_on_polyline(path: QPainterPath, point: QPointF) -> QPointF:
@@ -297,24 +317,36 @@ class GraphSceneTests(unittest.TestCase):
 
         start = editor.view.mapFromScene(source.mapToScene(QPointF(0, 0)))
         finish = editor.view.mapFromScene(target.mapToScene(QPointF(0, 0)))
-        QTest.mousePress(editor.view.viewport(), Qt.MouseButton.LeftButton, pos=start)
-        QTest.mouseMove(editor.view.viewport(), finish, 100)
-        QTest.mouseRelease(
-            editor.view.viewport(), Qt.MouseButton.LeftButton, pos=finish
+        _send_mouse(
+            editor.view, QEvent.Type.MouseButtonPress, start
+        )
+        _send_mouse(editor.view, QEvent.Type.MouseMove, finish)
+        _send_mouse(
+            editor.view, QEvent.Type.MouseButtonRelease, finish
         )
         self.app.processEvents()
         self.assertEqual(len(editor.scene.edges), 1)
 
+        # the first connector grew the scene rect; QGraphicsView recenters
+        # its scrollbars asynchronously, so recompute the pressed positions
+        self.app.processEvents()
+        start = editor.view.mapFromScene(source.mapToScene(QPointF(0, 0)))
         edge_middle = editor.scene.edges[0].path().pointAtPercent(0.5)
         edge_position = editor.view.mapFromScene(edge_middle)
-        QTest.mousePress(editor.view.viewport(), Qt.MouseButton.LeftButton, pos=start)
-        QTest.mouseMove(editor.view.viewport(), edge_position, 100)
-        QTest.mouseRelease(
-            editor.view.viewport(), Qt.MouseButton.LeftButton, pos=edge_position
+        _send_mouse(
+            editor.view, QEvent.Type.MouseButtonPress, start
+        )
+        _send_mouse(editor.view, QEvent.Type.MouseMove, edge_position)
+        _send_mouse(
+            editor.view, QEvent.Type.MouseButtonRelease, edge_position
         )
         self.app.processEvents()
 
-        self.assertEqual(len(editor.scene.edges), 2)
+        self.assertEqual(
+            len(editor.scene.edges),
+            2,
+            f"status: {editor.status_label.text()!r}",
+        )
         self.assertIs(editor.scene.edges[1].target, editor.scene.edges[0])
         editor.close()
 
@@ -455,11 +487,12 @@ class GraphSceneTests(unittest.TestCase):
             node.paint(painter, None, None)
             painter.end()
             # glyph centre sits at image (24, 24); border ring is outside this
-            # window, so any dark pixel here is an inner structure glyph
+            # window; the node interior is dark, so any bright pixel here is
+            # an inner structure glyph
             count = 0
             for x in range(18, 31):
                 for y in range(18, 31):
-                    if image.pixelColor(x, y).value() < 215:
+                    if image.pixelColor(x, y).value() > 215:
                         count += 1
             return count
 

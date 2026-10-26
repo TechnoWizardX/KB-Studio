@@ -212,7 +212,16 @@ class GraphNode(QGraphicsItem):
 
     def paint(self, painter: QPainter, _option, _widget=None) -> None:
         permanence, structure = _node_type_parts(self.gwf_type)
-        color = QColor("#66aaff") if self.isSelected() else QColor("#d4d4d4")
+        # border colour encodes the constancy side, like sc-web themes do:
+        # constants are near white, variables blue-violet, meta violet
+        if self.isSelected():
+            color = QColor("#ffa657")
+        elif self.gwf_type.startswith("node/meta"):
+            color = QColor("#d2a8ff")
+        elif self.gwf_type.startswith("node/var"):
+            color = QColor("#79c0ff")
+        else:
+            color = QColor("#e6e6e6")
         if structure == "not_define":
             color = QColor("#d4d4d4")
         glyph = self._glyph_rect()
@@ -316,16 +325,26 @@ class GraphEdge(QGraphicsPathItem):
         self.update_path()
 
     def update_path(self) -> None:
-        source_center = self._endpoint_center(self.source)
-        target_center = self._endpoint_center(self.target)
-        source_toward = self.waypoints[0] if self.waypoints else target_center
-        target_toward = self.waypoints[-1] if self.waypoints else source_center
+        # first pass: dot-balanced sides (connectors and buses) attach at
+        # their stored dot; shape sides aim at the other side's centre
+        target_initial_toward = (
+            self.waypoints[-1] if self.waypoints
+            else self._endpoint_center(self.source)
+        )
+        end = self._endpoint_connection_point(
+            self.target, target_initial_toward, self.end_dot
+        )
+        # second pass: every shape side aims at the actual attach point of
+        # the other side, so the connector approaches the border radially
+        # (towards the attach junction) instead of grazing it tangentially
+        source_toward = (
+            self.waypoints[0] if self.waypoints else end
+        )
         start = self._endpoint_connection_point(
             self.source, source_toward, self.begin_dot
         )
-        end = self._endpoint_connection_point(
-            self.target, target_toward, self.end_dot
-        )
+        if not self.waypoints:
+            end = self._endpoint_connection_point(self.target, start, self.end_dot)
         path = QPainterPath(start)
         for waypoint in self.waypoints:
             path.lineTo(waypoint)
@@ -591,7 +610,7 @@ class GraphEdge(QGraphicsPathItem):
         line = self.path()
         if line.isEmpty():
             return
-        color = QColor("#66aaff") if self.isSelected() else QColor("#a0a0a0")
+        color = QColor("#ffa657") if self.isSelected() else QColor("#c9d1d9")
         style = self._edge_style()
         painter.save()
         scg_painter.paint_edge(painter, line, style, color)
@@ -606,7 +625,7 @@ class GraphEdge(QGraphicsPathItem):
             )
             painter.restore()
         if self.isSelected():
-            pen = QPen(QColor("#66aaff"), 1)
+            pen = QPen(QColor("#ffa657"), 1)
             painter.setPen(pen)
             painter.setBrush(QBrush(QColor("#ffffff")))
             half = self.WAYPOINT_HANDLE_HALF
@@ -621,7 +640,7 @@ class GraphEdge(QGraphicsPathItem):
                 )
             for side, percent in (("begin", 0.0), ("end", 1.0)):
                 endpoint = self.source if side == "begin" else self.target
-                if not isinstance(endpoint, GraphEdge):
+                if not isinstance(endpoint, (GraphEdge, GraphAuxObject)):
                     continue
                 anchor = line.pointAtPercent(percent)
                 painter.drawEllipse(
@@ -660,7 +679,11 @@ class GraphAuxObject(QGraphicsPathItem):
                     path.lineTo(point)
                 path.closeSubpath()
         self.setPath(path)
-        self.setPen(QPen(QColor("#a0a0a0"), 1, Qt.PenStyle.DashLine))
+        if kind == "bus":
+            # solid and clearly visible, as the kbe bus (a 5 px solid line)
+            self.setPen(QPen(QColor("#c9d1d9"), 2))
+        else:
+            self.setPen(QPen(QColor("#8b949e"), 1, Qt.PenStyle.DashLine))
         self.setBrush(Qt.BrushStyle.NoBrush)
 
     def is_contour(self) -> bool:

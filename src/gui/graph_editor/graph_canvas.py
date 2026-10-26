@@ -410,6 +410,7 @@ class GraphCanvasView(QGraphicsView):
     def _graph_object_at(
         self, position, *, include_connectors: bool = True
     ) -> QGraphicsItem | None:
+        """Topmost allowed graph object at ``position`` (viewport coords)."""
         allowed = (
             (self.node_class, self.connector_class, self.contour_class)
             if include_connectors and self.contour_class

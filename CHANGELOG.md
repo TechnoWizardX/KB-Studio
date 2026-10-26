@@ -50,6 +50,16 @@
 
 ### Changed
 
+- Connectors now attach radially: every connector end anchored to a node or a
+  contour border aims at the actual attach point reached on the other side
+  (the junction of the other endpoint for buses and parent connectors), so
+  arcs and pairs approach the node centre instead of grazing the border
+  tangentially. Routes drawn through waypoints keep the KBE behaviour.
+- New colour scheme for readability on the dark canvas: node interiors are
+  filled dark while the bright border colour encodes the node kind (constants
+  near-white, variables blue, meta violet); connectors and buses are a lighter
+  grey (`#c9d1d9`) with a solid 2 px bus line and a dashed contour; selection
+  is highlighted in orange (`#ffa657`) for nodes, connectors, and dot handles.
 - The editor selector in the top bar switches between the SCs text editor and the
   SCg graph editor.
 - Graph editor actions moved from text buttons to theme-aware toolbar icons.
