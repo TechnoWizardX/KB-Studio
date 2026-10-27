@@ -8,9 +8,10 @@
   mode shows only the node glyph with the violet marker, expanded mode replaces
   the glyph with a square form carrying the content inside — string content as
   wrapped text, image attachments as a picture preview and other files as an
-  independently sized file caption; connectors attach to the square edges and
-  the toggle applies to every node with content (display-only, no document
-  modification).
+  independently sized file caption; connectors attach to the square edges. The
+  toggle applies to the selected nodes when something is selected (one node if
+  it is the only selection; mixed selections expand or collapse together), and
+  to the whole graph when the selection is empty; display-only change.
 - Added node content (attachments/links) support in the graph editor, matching
   the KBE GWF conventions: string content (type 1, `content/term`) shows as a
   word-wrapped label under the node when `content_visibility` is true, file

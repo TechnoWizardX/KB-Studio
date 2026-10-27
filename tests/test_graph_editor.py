@@ -603,7 +603,45 @@ class GraphSceneTests(unittest.TestCase):
         self.scene.add_node("plain")
 
         self.assertFalse(self.scene.toggle_content_display())
-        self.assertFalse(self.scene.content_expanded)
+        self.assertFalse(self.scene.toggle_content_display(
+            [self.scene.nodes["plain"]]
+        ))
+
+    def test_content_display_toggle_scopes_to_selection(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/perm/relation" idtf="" id="n1"
+                x="100" y="100">
+            <content type="1" mime_type="content/term"
+                     content_visibility="true" file_name=""><![CDATA[первое вложение]]></content>
+          </node>
+          <node type="node/const/perm/relation" idtf="" id="n2"
+                x="400" y="100">
+            <content type="1" mime_type="content/term"
+                     content_visibility="true" file_name=""><![CDATA[второе вложение]]></content>
+          </node>
+        </staticSector></GWF>"""
+        self.scene.load_gwf(source)
+        first, second = self.scene.nodes["node_1"], self.scene.nodes["node_2"]
+        first.setSelected(True)
+
+        self.scene.toggle_content_display(self.scene.selectedItems())
+
+        self.assertTrue(first.content_expanded)
+        self.assertFalse(second.content_expanded)
+        self.assertFalse(
+            first.content_expanded and not first._content_panel_rect()
+        )
+        self.assertIsNone(second._content_panel_rect())
+
+        # mixed selection collapses onto the expanded state
+        second.setSelected(True)
+        self.scene.toggle_content_display(self.scene.selectedItems())
+        self.assertTrue(first.content_expanded)
+        self.assertTrue(second.content_expanded)
+
+        self.scene.toggle_content_display(self.scene.selectedItems())
+        self.assertFalse(first.content_expanded)
+        self.assertFalse(second.content_expanded)
 
     def test_content_display_key_toggles_with_content(self):
         editor = GraphEditorWidget()
@@ -615,21 +653,50 @@ class GraphSceneTests(unittest.TestCase):
 
         _send_key(editor.view, Qt.Key.Key_C)
 
-        self.assertTrue(editor.scene.content_expanded)
+        self.assertTrue(node.content_expanded)
         self.assertIsNotNone(node._content_panel_rect())
 
         _send_key(editor.view, Qt.Key.Key_C)
 
-        self.assertFalse(editor.scene.content_expanded)
+        self.assertFalse(node.content_expanded)
         self.assertIsNone(node._content_panel_rect())
 
     def test_content_display_key_without_content_is_rejected(self):
         editor = GraphEditorWidget()
-        editor.scene.add_node("plain")
+        node = editor.scene.add_node("plain")
 
         _send_key(editor.view, Qt.Key.Key_C)
 
-        self.assertFalse(editor.scene.content_expanded)
+        self.assertFalse(node.content_expanded)
+
+    def test_content_display_key_scopes_to_selection(self):
+        editor = GraphEditorWidget()
+        first = editor.scene.add_node("first")
+        second = editor.scene.add_node("second")
+        for node in (first, second):
+            editor.scene.set_node_content(
+                node,
+                build_content_element("1", "content/term", True, "", "текст"),
+            )
+        first.setSelected(True)
+
+        _send_key(editor.view, Qt.Key.Key_C)
+
+        self.assertTrue(first.content_expanded)
+        self.assertFalse(second.content_expanded)
+
+        _send_key(editor.view, Qt.Key.Key_C)
+
+        self.assertFalse(first.content_expanded)
+        self.assertFalse(second.content_expanded)
+
+        first.setSelected(True)
+        second.setSelected(True)
+
+        _send_key(editor.view, Qt.Key.Key_C)
+
+        self.assertTrue(first.content_expanded)
+        self.assertTrue(second.content_expanded)
 
     def test_image_content_displays_a_pixmap_in_the_square_form(self):
         buffer = QBuffer()

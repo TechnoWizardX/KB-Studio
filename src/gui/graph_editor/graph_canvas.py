@@ -318,12 +318,22 @@ class GraphCanvasView(QGraphicsView):
             event.accept()
             return
         if event.key() == Qt.Key.Key_C:
-            # content display toggle: marker ↔ square with the content inside
+            # content display toggle: marker ↔ square with the content
+            # inside; applies to the selected nodes when something is
+            # selected, otherwise to the whole graph
             scene = self.scene()
-            if getattr(scene, "toggle_content_display", None) is None or not (
-                scene.toggle_content_display()
-            ):
-                self.tool_error.emit("No nodes with content to toggle.")
+            toggle = getattr(scene, "toggle_content_display", None)
+            selected = [
+                item for item in scene.selectedItems()
+                if isinstance(item, self.node_class)
+            ]
+            toggled = callable(toggle) and toggle(selected or None)
+            if not toggled:
+                self.tool_error.emit(
+                    "No selected nodes with content to toggle."
+                    if selected
+                    else "No nodes with content to toggle."
+                )
             event.accept()
             return
         tools = {

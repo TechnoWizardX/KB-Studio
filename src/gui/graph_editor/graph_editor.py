@@ -173,6 +173,7 @@ class GraphNode(QGraphicsItem):
         self._content_item: QGraphicsTextItem | None = None
         self._content_pixmap: QGraphicsPixmapItem | None = None
         self._panel_cache: tuple[tuple, QRectF | None] | None = None
+        self.content_expanded: bool = False
         self.label = GraphNodeLabel(gwf_idtf or identifier, self)
         self.label.setDefaultTextColor(QColor("#d4d4d4"))
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -250,13 +251,12 @@ class GraphNode(QGraphicsItem):
     def _content_panel_rect(self) -> QRectF | None:
         """Square glyph shown instead of the node body in expanded mode.
 
-        Active only when the scene display mode is expanded (toggled with C)
+        Active only when this node's display mode is expanded (toggled with C)
         and the content itself is visible according to ``content_visibility``.
         The size fits the payload: an image is shown as is (scaled to fit),
         strings and file labels are wrapped at the inner width.
         """
-        scene = self.scene()
-        if not (isinstance(scene, GraphScene) and scene.content_expanded):
+        if not self.content_expanded:
             return None
         element = self.content_element()
         if (
@@ -1100,7 +1100,6 @@ class GraphScene(QGraphicsScene):
         self.nodes: dict[str, GraphNode] = {}
         self.edges: list[GraphEdge] = []
         self.aux_objects: list[GraphAuxObject] = []
-        self.content_expanded: bool = False
         self.opaque_lines: list[str] = []
         self.gwf_root_attributes: dict[str, str] = {"version": "2.0"}
         self.gwf_root_extras: list[ET.Element] = []
@@ -1278,21 +1277,29 @@ class GraphScene(QGraphicsScene):
         node.update()
         self.node_moved(node)
 
-    def toggle_content_display(self) -> bool:
-        """Switch content display between the marker and the square form.
+    def toggle_content_display(self, nodes=None) -> bool:
+        """Switch content display of selected nodes (or the whole graph).
 
-        Applies to every node with content; does nothing (returns False)
-        when no node in the graph carries content. This is a display-only
-        change, so the document is not marked as modified.
+        ``nodes`` restricts the toggle to given nodes: with a mouse/keyboard
+        selection only them change (mixed selections collapse to one state:
+        expand if anyone is compact, else collapse). ``None`` targets every
+        node in the graph. Returns False (and changes nothing) when no node
+        with content is available. Display-only: no document modification.
         """
-        if not any(node.has_content() for node in self.nodes.values()):
+        candidates = self.nodes.values() if nodes is None else nodes
+        targets = [node for node in candidates if node.has_content()]
+        if not targets:
             return False
-        self.content_expanded = not self.content_expanded
-        for node in self.nodes.values():
-            if node.has_content():
+        expand = any(not node.content_expanded for node in targets)
+        changed = False
+        for node in targets:
+            if node.content_expanded != expand:
+                node.content_expanded = expand
                 node.refresh_content_display()
-        self._update_scene_rect()
-        return True
+                changed = True
+        if changed:
+            self._update_scene_rect()
+        return changed
 
     def set_node_content(self, node: GraphNode, content: ET.Element) -> None:
         """Replace a node's content element and refresh its visuals."""
