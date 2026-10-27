@@ -1,3 +1,4 @@
+import base64
 import math
 import os
 import tempfile
@@ -8,8 +9,23 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QLineF, QPoint, QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QImage, QMouseEvent, QUndoStack
+from PySide6.QtCore import (
+    QBuffer,
+    QEvent,
+    QIODevice,
+    QLineF,
+    QPoint,
+    QPointF,
+    QRectF,
+    Qt,
+)
+from PySide6.QtGui import (
+    QColor,
+    QImage,
+    QKeyEvent,
+    QMouseEvent,
+    QUndoStack,
+)
 from PySide6.QtGui import QPainter, QPainterPath
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QComboBox, QMessageBox
@@ -66,6 +82,15 @@ def _send_mouse(view, event_type, pos, button=Qt.MouseButton.LeftButton):
         Qt.KeyboardModifier.NoModifier,
     )
     QApplication.sendEvent(viewport, event)
+    return event
+
+
+def _send_key(view, key: int) -> None:
+    """Deliver a key press directly to the canvas view widget."""
+    event = QKeyEvent(
+        QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier
+    )
+    QApplication.sendEvent(view, event)
     return event
 
 
@@ -477,11 +502,21 @@ class GraphSceneTests(unittest.TestCase):
 
         self.assertTrue(linked.has_content())
         self.assertFalse(empty.has_content())
-        label = linked._content_item
-        self.assertIsNotNone(label)
-        self.assertTrue(label.isVisible())
-        self.assertEqual(label.toPlainText(), "дать список своих возможностей")
-        self.assertFalse(empty._content_item and empty._content_item.isVisible())
+        # compact display (default): marker only, no content text
+        self.assertIsNone(linked._content_item)
+        self.assertIsNone(linked._content_panel_rect())
+        self.assertEqual(linked._content_viewer_text(), "дать список своих возможностей")
+
+        self.scene.toggle_content_display()
+        self.assertTrue(linked._content_item.isVisible())
+        self.assertEqual(
+            linked._content_item.toPlainText(), "дать список своих возможностей"
+        )
+        self.assertFalse(empty.has_content() and empty._content_item)
+
+        self.scene.toggle_content_display()
+        self.assertIsNone(linked._content_panel_rect())
+        self.assertFalse(linked._content_item.isVisible())
 
         output = self.scene.to_gwf()
         reloaded = GraphScene()
@@ -492,7 +527,7 @@ class GraphSceneTests(unittest.TestCase):
         self.assertEqual(content.get("mime_type"), "content/term")
         self.assertEqual(content.get("content_visibility"), "true")
         self.assertEqual(content.text, "дать список своих возможностей")
-        self.assertTrue(round_trip._content_item.isVisible())
+        self.assertIsNone(round_trip._content_item)
 
     def test_hidden_content_stays_in_file_without_a_viewer_label(self):
         source = """<GWF version="2.0"><staticSector>
@@ -535,7 +570,7 @@ class GraphSceneTests(unittest.TestCase):
         self.assertEqual(content.get("mime_type"), "image/png")
         self.assertEqual(content.text, "aGVsbG8=")
 
-    def test_content_shape_keeps_connectors_off_the_label(self):
+    def test_content_display_toggle_switches_to_square_form(self):
         source = """<GWF version="2.0"><staticSector>
           <node type="node/const/perm/relation" idtf="" id="n1"
                 x="100" y="100">
@@ -546,11 +581,84 @@ class GraphSceneTests(unittest.TestCase):
         self.scene.load_gwf(source)
         node = self.scene.nodes["node_1"]
 
-        label = node._content_item
-        center = label.mapToItem(node, label.boundingRect().center())
+        self.scene.toggle_content_display()
+        panel = node._content_panel_rect()
+        self.assertIsNotNone(panel)
+        self.assertGreaterEqual(panel.width(), 100)
+        self.assertTrue(node._content_item.isVisible())
+        self.assertEqual(node._content_item.toPlainText(), "длинный текст вложения")
+        # the square form replaces the glyph for connectors
+        inside = node.mapFromScene(node.mapToScene(panel.topLeft() + QPointF(10, 10)))
+        self.assertTrue(node.shape().contains(inside))
+        outside = node.mapFromScene(
+            node.mapToScene(QPointF(panel.width() / 2, panel.bottom() + 12))
+        )
+        self.assertFalse(node.shape().contains(outside))
 
-        self.assertTrue(node.boundingRect().contains(center))
-        self.assertFalse(node.shape().contains(center))
+        self.scene.toggle_content_display()
+        self.assertIsNone(node._content_panel_rect())
+        self.assertFalse(node._content_item.isVisible())
+
+    def test_content_display_toggle_without_content_is_rejected(self):
+        self.scene.add_node("plain")
+
+        self.assertFalse(self.scene.toggle_content_display())
+        self.assertFalse(self.scene.content_expanded)
+
+    def test_content_display_key_toggles_with_content(self):
+        editor = GraphEditorWidget()
+        node = editor.scene.add_node("term")
+        editor.scene.set_node_content(
+            node,
+            build_content_element("1", "content/term", True, "", "текст вложения"),
+        )
+
+        _send_key(editor.view, Qt.Key.Key_C)
+
+        self.assertTrue(editor.scene.content_expanded)
+        self.assertIsNotNone(node._content_panel_rect())
+
+        _send_key(editor.view, Qt.Key.Key_C)
+
+        self.assertFalse(editor.scene.content_expanded)
+        self.assertIsNone(node._content_panel_rect())
+
+    def test_content_display_key_without_content_is_rejected(self):
+        editor = GraphEditorWidget()
+        editor.scene.add_node("plain")
+
+        _send_key(editor.view, Qt.Key.Key_C)
+
+        self.assertFalse(editor.scene.content_expanded)
+
+    def test_image_content_displays_a_pixmap_in_the_square_form(self):
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        image = QImage(40, 30, QImage.Format.Format_RGB32)
+        image.fill(QColor("#22aa66"))
+        image.save(buffer, "PNG")
+        raw = bytes(buffer.data())
+        source = (
+            "<GWF version=\"2.0\"><staticSector>\n"
+            "  <node type=\"node/const/perm/relation\" idtf=\"\" id=\"n1\"\n"
+            "        x=\"100\" y=\"100\">\n"
+            "    <content type=\"4\" mime_type=\"image/png\"\n"
+            "             content_visibility=\"true\" file_name=\"shot.png\">"
+            + base64.b64encode(raw).decode("ascii")
+            + "</content>\n"
+            "  </node>\n"
+            "</staticSector></GWF>"
+        )
+
+        self.scene.load_gwf(source)
+        node = self.scene.nodes["node_1"]
+        self.assertIsNotNone(node._content_image())
+
+        self.scene.toggle_content_display()
+
+        self.assertIsNotNone(node._content_panel_rect())
+        self.assertTrue(node._content_pixmap.isVisible())
+        self.assertTrue(node._content_item is None or not node._content_item.isVisible())
 
     def test_content_dialog_result_and_removal(self):
         source = """<GWF version="2.0"><staticSector>

@@ -317,6 +317,15 @@ class GraphCanvasView(QGraphicsView):
             self.setCursor(Qt.CursorShape.OpenHandCursor)
             event.accept()
             return
+        if event.key() == Qt.Key.Key_C:
+            # content display toggle: marker ↔ square with the content inside
+            scene = self.scene()
+            if getattr(scene, "toggle_content_display", None) is None or not (
+                scene.toggle_content_display()
+            ):
+                self.tool_error.emit("No nodes with content to toggle.")
+            event.accept()
+            return
         tools = {
             Qt.Key.Key_1: self.SELECT,
             Qt.Key.Key_2: self.CONNECTOR,

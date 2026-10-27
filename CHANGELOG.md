@@ -4,6 +4,13 @@
 
 ### Added
 
+- Added a content display toggle for node attachments on the `C` key: compact
+  mode shows only the node glyph with the violet marker, expanded mode replaces
+  the glyph with a square form carrying the content inside — string content as
+  wrapped text, image attachments as a picture preview and other files as an
+  independently sized file caption; connectors attach to the square edges and
+  the toggle applies to every node with content (display-only, no document
+  modification).
 - Added node content (attachments/links) support in the graph editor, matching
   the KBE GWF conventions: string content (type 1, `content/term`) shows as a
   word-wrapped label under the node when `content_visibility` is true, file

@@ -22,8 +22,11 @@ from PySide6.QtGui import (
     QPainterPath,
     QPainterPathStroker,
     QPen,
+    QPixmap,
     QShortcut,
+    QTextDocument,
     QUndoStack,
+    QFont,
 )
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -34,6 +37,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGraphicsItem,
     QGraphicsPathItem,
+    QGraphicsPixmapItem,
     QGraphicsScene,
     QGraphicsTextItem,
     QHBoxLayout,
@@ -147,7 +151,10 @@ class GraphNode(QGraphicsItem):
     ICON_SIZE = 30
     LABEL_GAP = 8
     CONTENT_GAP = 6
-    CONTENT_WIDTH = 220
+    CONTENT_PANEL_PAD = 12
+    CONTENT_PANEL_MIN = 100
+    CONTENT_PANEL_MAX = 240
+    CONTENT_TEXT_INNER = 180
 
     def __init__(
         self,
@@ -164,6 +171,8 @@ class GraphNode(QGraphicsItem):
         self.gwf_idtf = gwf_idtf
         self.gwf_element = gwf_element
         self._content_item: QGraphicsTextItem | None = None
+        self._content_pixmap: QGraphicsPixmapItem | None = None
+        self._panel_cache: tuple[tuple, QRectF | None] | None = None
         self.label = GraphNodeLabel(gwf_idtf or identifier, self)
         self.label.setDefaultTextColor(QColor("#d4d4d4"))
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
@@ -204,7 +213,7 @@ class GraphNode(QGraphicsItem):
         return element is not None and element.get("type", "0") != "0"
 
     def _content_viewer_text(self) -> str:
-        """Short text shown under the node for visible content."""
+        """Text put into the expanded content panel for visible content."""
         element = self.content_element()
         if element is None or element.get("type", "0") == "0":
             return ""
@@ -212,14 +221,99 @@ class GraphNode(QGraphicsItem):
         if c_type in {"1", "2", "3"}:
             return (element.text or "").strip()
         file_name = element.get("file_name", "") or "file"
+        if self._content_image() is not None:
+            return ""
         raw = element.text or ""
         padding = int(raw.endswith("==")) + int(raw.endswith("="))
         size = max(0, len(raw) * 3 // 4 - padding)
         return f"📎 {file_name} ({size} B)"
 
+    def _content_image(self) -> QImage | None:
+        """Decoded image for file content whose MIME type is an image."""
+        element = self.content_element()
+        if element is None or element.get("type", "0") != "4":
+            return None
+        if not element.get("mime_type", "").startswith("image/"):
+            return None
+        try:
+            raw = base64.b64decode(element.text or "")
+        except ValueError:
+            return None
+        image = QImage.fromData(raw)
+        return None if image.isNull() else image
+
+    def _content_font(self) -> QFont:
+        font = QFont()
+        font.setPointSizeF(max(7.0, font.pointSizeF() - 1.0))
+        return font
+
+    def _content_panel_rect(self) -> QRectF | None:
+        """Square glyph shown instead of the node body in expanded mode.
+
+        Active only when the scene display mode is expanded (toggled with C)
+        and the content itself is visible according to ``content_visibility``.
+        The size fits the payload: an image is shown as is (scaled to fit),
+        strings and file labels are wrapped at the inner width.
+        """
+        scene = self.scene()
+        if not (isinstance(scene, GraphScene) and scene.content_expanded):
+            return None
+        element = self.content_element()
+        if (
+            element is None
+            or element.get("type", "0") == "0"
+            or element.get("content_visibility", "false") != "true"
+        ):
+            return None
+        key = (
+            element.get("type", "0"),
+            element.get("mime_type", ""),
+            element.get("file_name", ""),
+            element.text or "",
+        )
+        if self._panel_cache is not None and self._panel_cache[0] == key:
+            return self._panel_cache[1]
+        image = self._content_image()
+        side = self._measure_content_side(image)
+        rect = QRectF(-side / 2, -side / 2, side, side)
+        self._panel_cache = (key, rect)
+        return rect
+
+    def _measure_content_side(self, image: QImage | None) -> float:
+        """Square side fitting the payload with matching text wrap width."""
+        if image is not None:
+            return min(
+                max(max(image.width(), image.height()) + 2
+                    * self.CONTENT_PANEL_PAD, self.CONTENT_PANEL_MIN),
+                self.CONTENT_PANEL_MAX,
+            )
+        probe = QTextDocument()
+        probe.setDefaultFont(self._content_font())
+        text = self._content_viewer_text() or " "
+        width = self.CONTENT_TEXT_INNER
+        side = self.CONTENT_PANEL_MIN
+        # two passes: the wrap width follows the panel size and back
+        for _ in range(2):
+            probe.setPlainText(text)
+            probe.setTextWidth(width)
+            side = min(
+                max(
+                    probe.size().height() + 2 * self.CONTENT_PANEL_PAD + 6,
+                    self.CONTENT_PANEL_MIN,
+                ),
+                self.CONTENT_PANEL_MAX,
+            )
+            width = side - 2 * self.CONTENT_PANEL_PAD
+        return side
+
+    def _body_rect(self) -> QRectF:
+        """Glyph square: the expanded content panel or the plain glyph."""
+        return self._content_panel_rect() or self._glyph_rect()
+
     def set_node_content(self, content: ET.Element) -> None:
         """Replace the ``<content>`` subtree of this node."""
         self.prepareGeometryChange()
+        self._panel_cache = None
         if self.gwf_element is None:
             self.gwf_element = ET.Element("node")
         old = self.gwf_element.find("content")
@@ -227,57 +321,86 @@ class GraphNode(QGraphicsItem):
             self.gwf_element.remove(old)
         self.gwf_element.append(deepcopy(content))
         self._refresh_content_viewer()
+        self._position_label()
         self._update_tooltip()
         self.update()
 
+    def refresh_content_display(self) -> None:
+        """Rebuild the content visuals after a scene display mode change."""
+        self.prepareGeometryChange()
+        self._panel_cache = None
+        self._refresh_content_viewer()
+        self._position_label()
+        self.update()
+
     def _refresh_content_viewer(self) -> None:
-        """Show, hide or update the content label under the node."""
-        element = self.content_element()
-        visible = (
-            element is not None
-            and element.get("type", "0") != "0"
-            and element.get("content_visibility", "false") == "true"
-        )
-        text = self._content_viewer_text() if visible else ""
-        if self._content_item is None and not text:
+        """Show, hide or update the content inside the expanded panel."""
+        panel = self._content_panel_rect()
+        if panel is None:
+            if self._content_item is not None:
+                self._content_item.setVisible(False)
+            if self._content_pixmap is not None:
+                self._content_pixmap.setVisible(False)
             return
-        if self._content_item is None:
-            self._content_item = QGraphicsTextItem(self)
-            self._content_item.setDefaultTextColor(QColor("#c9d1d9"))
-            font = self._content_item.font()
-            font.setPointSizeF(font.pointSizeF() - 1.0)
-            self._content_item.setFont(font)
-            self._content_item.setTextWidth(self.CONTENT_WIDTH)
-            self._content_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-            self._content_item.setFlag(
-                QGraphicsItem.GraphicsItemFlag.ItemStacksBehindParent
+        image = self._content_image()
+        inner = panel.width() - 2 * self.CONTENT_PANEL_PAD
+        if image is not None:
+            if self._content_pixmap is None:
+                self._content_pixmap = QGraphicsPixmapItem(self)
+            self._content_pixmap.setPixmap(
+                QPixmap.fromImage(
+                    image.scaled(
+                        int(inner),
+                        int(inner),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
             )
-            self._content_item.document().documentLayout().documentSizeChanged.connect(
-                self._position_content
-            )
-        self._content_item.setVisible(bool(text))
-        if text:
-            self._content_item.setPlainText(text)
+            self._content_pixmap.setVisible(True)
+            if self._content_item is not None:
+                self._content_item.setVisible(False)
+        else:
+            if self._content_item is None:
+                self._content_item = QGraphicsTextItem(self)
+                self._content_item.setDefaultTextColor(QColor("#c9d1d9"))
+                self._content_item.setFont(self._content_font())
+                self._content_item.setAcceptedMouseButtons(
+                    Qt.MouseButton.NoButton
+                )
+                self._content_item.document().documentLayout().documentSizeChanged.connect(
+                    self._position_content
+                )
+            self._content_item.setPlainText(self._content_viewer_text())
+            self._content_item.setTextWidth(inner)
+            self._content_item.setVisible(True)
+            if self._content_pixmap is not None:
+                self._content_pixmap.setVisible(False)
         self._position_content()
 
     def _position_content(self, *_document_size) -> None:
         self.prepareGeometryChange()
-        if self._content_item is None or not self._content_item.isVisible():
+        panel = self._content_panel_rect()
+        if panel is None:
             return
-        bounds = self._content_item.boundingRect()
-        self._content_item.setPos(
-            -bounds.width() / 2,
-            self._glyph_rect().bottom() + self.CONTENT_GAP,
-        )
+        center = panel.center()
+        if self._content_pixmap is not None and self._content_pixmap.isVisible():
+            size = self._content_pixmap.pixmap().size()
+            self._content_pixmap.setZValue(0)
+            self._content_pixmap.setPos(
+                center - QPointF(size.width(), size.height()) / 2
+            )
+        elif (
+            self._content_item is not None
+            and self._content_item.isVisible()
+        ):
+            bounds = self._content_item.boundingRect()
+            self._content_item.setPos(
+                center - QPointF(bounds.width(), bounds.height()) / 2
+            )
 
     def boundingRect(self):
-        bounds = self._glyph_rect().adjusted(-2, -2, 2, 2).united(self._label_rect())
-        if self._content_item is not None and self._content_item.isVisible():
-            bounds = bounds.united(
-                self._content_item.boundingRect().translated(
-                    self._content_item.pos()
-                )
-            )
+        bounds = self._body_rect().adjusted(-2, -2, 2, 2).united(self._label_rect())
         return bounds
 
     def shape(self) -> QPainterPath:
@@ -292,7 +415,7 @@ class GraphNode(QGraphicsItem):
         self.prepareGeometryChange()
         text_rect = self.label.boundingRect()
         self.label.setPos(
-            self.ICON_SIZE / 2 + self.LABEL_GAP,
+            self._body_rect().width() / 2 + self.LABEL_GAP,
             -text_rect.center().y(),
         )
 
@@ -301,6 +424,11 @@ class GraphNode(QGraphicsItem):
         return QRectF(-half_size, -half_size, self.ICON_SIZE, self.ICON_SIZE)
 
     def _glyph_shape(self) -> QPainterPath:
+        panel = self._content_panel_rect()
+        if panel is not None:
+            path = QPainterPath()
+            path.addRoundedRect(panel, 6, 6)
+            return path
         permanence, structure = _node_type_parts(self.gwf_type)
         return scg_painter.node_shape(self._glyph_rect(), permanence, structure)
 
@@ -335,8 +463,16 @@ class GraphNode(QGraphicsItem):
             color = QColor("#e6e6e6")
         if structure == "not_define":
             color = QColor("#d4d4d4")
-        glyph = self._glyph_rect()
+        glyph = self._body_rect()
         painter.save()
+        panel = self._content_panel_rect()
+        if panel is not None:
+            # expanded content form: a square glyph carrying the content
+            painter.setPen(QPen(color, 3))
+            painter.setBrush(QBrush(scg_painter.NODE_FILL))
+            painter.drawRoundedRect(panel, 6, 6)
+            painter.restore()
+            return
         scg_painter.paint_node(painter, glyph, color, permanence, structure)
         painter.restore()
         if self.has_content():
@@ -964,6 +1100,7 @@ class GraphScene(QGraphicsScene):
         self.nodes: dict[str, GraphNode] = {}
         self.edges: list[GraphEdge] = []
         self.aux_objects: list[GraphAuxObject] = []
+        self.content_expanded: bool = False
         self.opaque_lines: list[str] = []
         self.gwf_root_attributes: dict[str, str] = {"version": "2.0"}
         self.gwf_root_extras: list[ET.Element] = []
@@ -1140,6 +1277,22 @@ class GraphScene(QGraphicsScene):
         node.gwf_type = gwf_type
         node.update()
         self.node_moved(node)
+
+    def toggle_content_display(self) -> bool:
+        """Switch content display between the marker and the square form.
+
+        Applies to every node with content; does nothing (returns False)
+        when no node in the graph carries content. This is a display-only
+        change, so the document is not marked as modified.
+        """
+        if not any(node.has_content() for node in self.nodes.values()):
+            return False
+        self.content_expanded = not self.content_expanded
+        for node in self.nodes.values():
+            if node.has_content():
+                node.refresh_content_display()
+        self._update_scene_rect()
+        return True
 
     def set_node_content(self, node: GraphNode, content: ET.Element) -> None:
         """Replace a node's content element and refresh its visuals."""
