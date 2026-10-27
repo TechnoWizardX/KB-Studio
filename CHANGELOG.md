@@ -11,7 +11,9 @@
   independently sized file caption; connectors attach to the square edges. The
   toggle applies to the selected nodes when something is selected (one node if
   it is the only selection; mixed selections expand or collapse together), and
-  to the whole graph when the selection is empty; display-only change.
+  to the whole graph when the selection is empty; display-only change, and
+  connected connectors reroute to the new glyph shape right away (both on
+  collapse and after changing content of an expanded node).
 - Added node content (attachments/links) support in the graph editor, matching
   the KBE GWF conventions: string content (type 1, `content/term`) shows as a
   word-wrapped label under the node when `content_visibility` is true, file

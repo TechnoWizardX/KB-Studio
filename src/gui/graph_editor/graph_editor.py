@@ -1296,6 +1296,9 @@ class GraphScene(QGraphicsScene):
             if node.content_expanded != expand:
                 node.content_expanded = expand
                 node.refresh_content_display()
+                # connectors are anchored to the glyph shape; reroute them
+                # to the square or back to the plain glyph immediately
+                self._refresh_connected_edges(node, set())
                 changed = True
         if changed:
             self._update_scene_rect()
@@ -1306,6 +1309,7 @@ class GraphScene(QGraphicsScene):
         if node.scene() is not self:
             raise ValueError("The node must belong to this graph.")
         node.set_node_content(content)
+        self._refresh_connected_edges(node, set())
         self._update_scene_rect()
         if not self._loading:
             self.model_changed.emit()

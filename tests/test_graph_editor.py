@@ -643,6 +643,33 @@ class GraphSceneTests(unittest.TestCase):
         self.assertFalse(first.content_expanded)
         self.assertFalse(second.content_expanded)
 
+    def test_collapse_reroutes_connectors_to_the_plain_glyph(self):
+        node = self.scene.add_node("term", QPointF(0, 0))
+        target = self.scene.add_node("sink", QPointF(320, 0))
+        self.scene.set_node_content(
+            node,
+            build_content_element("1", "content/term", True, "", "текст вложения"),
+        )
+        edge = self.scene.connect_nodes(node, target, "->")
+        center = node.mapToScene(QPointF(0, 0))
+
+        self.scene.toggle_content_display()
+        expanded_start = edge.mapToScene(edge.path().pointAtPercent(0))
+        self.assertGreaterEqual(
+            (expanded_start - center).manhattanLength(), 45
+        )
+
+        self.scene.toggle_content_display()
+        collapsed_start = edge.mapToScene(edge.path().pointAtPercent(0))
+        expected = node.connection_point(target.mapToScene(QPointF(0, 0)))
+        self.assertLess(
+            (collapsed_start - expected).manhattanLength(), 6
+        )
+        self.assertLess(
+            (collapsed_start - node.mapToScene(QPointF(15, 0))).manhattanLength(),
+            6,
+        )
+
     def test_content_display_key_toggles_with_content(self):
         editor = GraphEditorWidget()
         node = editor.scene.add_node("term")
