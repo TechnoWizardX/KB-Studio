@@ -24,6 +24,7 @@ from PySide6.QtGui import (
     QPen,
     QPixmap,
     QShortcut,
+    QTextCursor,
     QTextDocument,
     QUndoStack,
     QFont,
@@ -112,7 +113,7 @@ class GraphNodeLabel(QGraphicsTextItem):
             Qt.TextInteractionFlag.TextEditorInteraction
         )
         cursor = self.textCursor()
-        cursor.select(Qt.TextCursorSelectionType.Document)
+        cursor.select(QTextCursor.SelectionType.Document)
         self.setTextCursor(cursor)
         self.setFocus(Qt.FocusReason.MouseFocusReason)
 
@@ -636,8 +637,15 @@ class GraphEdge(QGraphicsPathItem):
 
     def _element_point(self, begin: bool) -> QPointF:
         endpoint = self.source if begin else self.target
-        if isinstance(endpoint, (GraphNode, GraphEdge)):
+        if isinstance(endpoint, GraphNode):
             return endpoint.scenePos()
+        if isinstance(endpoint, GraphEdge):
+            # Edge items live in scene coordinates anchored at (0, 0), so
+            # scenePos is meaningless: export the drawn attach point on the
+            # parent connector path (same dot the GWF balance encodes).
+            if endpoint.path().isEmpty():
+                return endpoint.scenePos()
+            return endpoint.cross(self.begin_dot if begin else self.end_dot)
         path = self.path()
         if path.isEmpty():
             return self._endpoint_center(endpoint)
@@ -687,7 +695,11 @@ class GraphEdge(QGraphicsPathItem):
             return None
         for side, percent in (("begin", 0.0), ("end", 1.0)):
             endpoint = self.source if side == "begin" else self.target
-            if not isinstance(endpoint, (GraphEdge, GraphAuxObject)):
+            if not isinstance(endpoint, GraphEdge) and (
+                not isinstance(endpoint, GraphAuxObject)
+                or endpoint.kind != "bus"
+            ):
+                # only endpoints whose dot is honoured on repaint
                 continue
             anchor = line.pointAtPercent(percent)
             if QLineF(point, anchor).length() <= self.DOT_HANDLE_RADIUS:
@@ -1242,8 +1254,15 @@ class GraphScene(QGraphicsScene):
             (connector_type, tag, token)
             for _, connector_type, tag, token in _CONNECTOR_TYPES
         }
-        if (gwf_type, gwf_tag, scs_token) not in allowed:
-            raise ValueError(f"Unsupported SCg connector type: '{gwf_type}'.")
+        if (gwf_type, gwf_tag, scs_token) != (
+            edge.gwf_type,
+            edge.gwf_tag,
+            edge.edge_type,
+        ) and (gwf_type, gwf_tag, scs_token) not in allowed:
+            # спеллинги из загруженных документов могут не входить в таблицу
+            # инструментов; undo обязан уметь их восстановить
+            if not str(gwf_type).startswith(("arc/", "pair/")):
+                raise ValueError(f"Unsupported SCg connector type: '{gwf_type}'.")
         edge.gwf_type = gwf_type
         edge.gwf_tag = gwf_tag
         edge.edge_type = scs_token
@@ -1289,9 +1308,13 @@ class GraphScene(QGraphicsScene):
             self.model_changed.emit()
 
     def set_node_type(self, node: GraphNode, gwf_type: str) -> None:
-        valid_types = {value for _, value in _NODE_TYPES}
-        if gwf_type not in valid_types:
-            raise ValueError(f"Unsupported SCg node type: '{gwf_type}'.")
+        if gwf_type != node.gwf_type:
+            valid_types = {value for _, value in _NODE_TYPES}
+            # типы из загруженных документов могут не входить в таблицу
+            # инструментов; undo обязан уметь их восстановить, поэтому
+            # отклоняем только не-спеллинги
+            if gwf_type not in valid_types and not gwf_type.startswith("node/"):
+                raise ValueError(f"Unsupported SCg node type: '{gwf_type}'.")
         if node.scene() is not self:
             raise ValueError("The node must belong to this graph.")
         node.gwf_type = gwf_type
@@ -1567,13 +1590,13 @@ class GraphScene(QGraphicsScene):
         if not self._loading:
             self.model_changed.emit()
 
-    def _set_dragging(self, active: bool) -> None:
+    def _set_dragging(self, active: bool, changed: bool | None = None) -> None:
         """Item moves in progress: model_changed is deferred to the drag end
         so per-pixel moves do not trigger save-state work each frame."""
         if self._in_drag == active:
             return
         self._in_drag = active
-        if not active:
+        if not active and changed is not False:
             # flush a batch left over from an event whose hook was missed
             self._end_edge_batch()
             self._update_scene_rect()
@@ -1908,6 +1931,11 @@ class _ContentDialog(QDialog):
         )
         self._attached: tuple[str, str, str] | None = None
         self._deleted = False
+        # File content (type 4) is shown with a disabled text field: OK with
+        # an untouched payload must reuse the original data, not drop it.
+        self._original_payload = (
+            element.text or "" if self._c_type == "4" and element is not None else ""
+        )
         visible = self._c_type != "0" and element.get(
             "content_visibility", "false"
         ) == "true"
@@ -2012,6 +2040,13 @@ class _ContentDialog(QDialog):
             return build_content_element("4", mime, visible, file_name, data)
         text = self.text_edit.toPlainText().strip()
         if not text:
+            if self._c_type == "4":
+                # The payload is not editable in this dialog; an empty text
+                # field keeps the attached file data as-is.
+                return build_content_element(
+                    "4", self._mime, visible, self._file_name,
+                    self._original_payload,
+                )
             return empty_content_element()
         c_type, mime = self._string_type(text)
         return build_content_element(c_type, mime, visible, "", text)
@@ -2175,9 +2210,9 @@ class GraphEditorWidget(QFrame):
         self.undo_stack.canUndoChanged.connect(self.undo_button.setEnabled)
         self.undo_stack.canRedoChanged.connect(self.redo_button.setEnabled)
         undo_shortcut = QShortcut(QKeySequence.StandardKey.Undo, self)
-        undo_shortcut.activated.connect(self.undo_stack.undo)
+        undo_shortcut.activated.connect(self._undo_if_not_editing)
         redo_shortcut = QShortcut(QKeySequence.StandardKey.Redo, self)
-        redo_shortcut.activated.connect(self.undo_stack.redo)
+        redo_shortcut.activated.connect(self._redo_if_not_editing)
         save_shortcut = QShortcut(QKeySequence.StandardKey.Save, self)
         save_shortcut.activated.connect(self.save)
 
@@ -2811,6 +2846,23 @@ class GraphEditorWidget(QFrame):
             self.save()
             return not self.is_modified
         return answer == QMessageBox.StandardButton.Discard
+
+    def _label_editor_active(self) -> bool:
+        """True, пока активно inplace-редактирование подписи узла."""
+        focus_item = self.scene.focusItem()
+        return bool(getattr(focus_item, "_editing", False))
+
+    def _undo_if_not_editing(self) -> None:
+        # Ctrl+Z внутри редактируемой подписи должен откатывать текст, а не
+        # исполнения команд сцены.
+        if self._label_editor_active():
+            return
+        self.undo_stack.undo()
+
+    def _redo_if_not_editing(self) -> None:
+        if self._label_editor_active():
+            return
+        self.undo_stack.redo()
 
     def _mark_modified(self, modified: bool = True) -> None:
         self.is_modified = modified

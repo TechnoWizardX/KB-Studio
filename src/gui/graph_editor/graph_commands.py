@@ -142,6 +142,9 @@ class CommandDeleteSelection(_GraphCommand):
         self.removed_aux = [
             item for item in scene.aux_objects if item in removed_aux
         ]
+        # _remove_objects prunes unknown document elements that reference
+        # the removed gwf ids; undo must bring them back.
+        self.extras_snapshot = list(scene.gwf_sector_extras)
 
     def is_empty(self) -> bool:
         return not (self.removed_nodes or self.removed_edges or self.removed_aux)
@@ -155,6 +158,7 @@ class CommandDeleteSelection(_GraphCommand):
         self.scene._restore_objects(
             self.removed_nodes, self.removed_edges, self.removed_aux
         )
+        self.scene.gwf_sector_extras = list(self.extras_snapshot)
 
 
 class CommandSwapConnectorOrientation(_GraphCommand):

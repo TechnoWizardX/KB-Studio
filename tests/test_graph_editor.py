@@ -470,7 +470,11 @@ class GraphSceneTests(unittest.TestCase):
         self.assertAlmostEqual(
             float(arcs[-1].get("dotEBalance")), attribute.end_dot, places=5
         )
-        self.assertEqual((arcs[-1].get("e_x"), arcs[-1].get("e_y")), ("0.0", "0.0"))
+        # arc-to-arc endpoints export the drawn attach point on the parent
+        # connector, not the connector item's (0, 0) origin
+        self.assertEqual(
+            (arcs[-1].get("e_x"), arcs[-1].get("e_y")), ("360.0", "160.0")
+        )
         editor.close()
 
     def test_gwf_loads_scg2_spelled_node_and_pair_types(self):

@@ -137,6 +137,19 @@
   and meta pairs) are rewritten on save onto the builder accepted spellings
   while the editor keeps the extended type vocabulary; saved knowledge bases
   no longer fail with "No matching sc.s-node type".
+- Fixed several editor defects: meta connectors exported as `pair` keep a
+  matching element tag and no longer disappear on save/reload; undo restores
+  node/connector types that came from loaded documents; in-place label
+  editing works again (double click, Backspace/Delete and typing during the
+  edit no longer trigger canvas tools or delete the node); a plain click or
+  rubber-band selection no longer marks the graph modified; contour closing
+  by a snap click no longer leaves a stray vertex; deleting selection
+  restores pruned unknown document elements on undo; connector ending on
+  another connector exports real attach coordinates instead of (0, 0).
+- Fixed SCs editor robustness: parse and auto-save timers are stopped with
+  the tab (armed timers no longer fire into a deleted editor), opening a
+  file does not schedule an auto-save of unchanged content, and a successful
+  parse no longer parses the same text a second time for bracket tokens.
 
 ## [1.4.0] - Unreleased
 

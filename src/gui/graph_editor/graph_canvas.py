@@ -116,10 +116,11 @@ class GraphCanvasView(QGraphicsView):
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.scene()._begin_edge_batch()
         try:
-            self._drag_positions = None
             if event.button() == Qt.MouseButton.MiddleButton or (
                 event.button() == Qt.MouseButton.LeftButton and self._space_pressed
             ):
+                # панирование: прерываем незавершённое слежение за переносом
+                self._drag_positions = None
                 self._pan_button = event.button()
                 self._last_pan_position = event.position()
                 self.setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -127,6 +128,8 @@ class GraphCanvasView(QGraphicsView):
                 return
 
             if event.button() == Qt.MouseButton.LeftButton:
+                # свежий снимок позиций на начало перетаскивания; левый
+                # драг начнётся при следующем переносе
                 self._drag_positions = {
                     item: QPointF(item.pos())
                     for item in self.scene().items()
@@ -148,7 +151,7 @@ class GraphCanvasView(QGraphicsView):
             if self.tool == self.CONTOUR:
                 if self._should_close_contour(scene_position):
                     self._contour_suppress_finish = True
-                    self._finish_contour()
+                    self._finish_contour(suppress_followup=True)
                 else:
                     self._contour_points.append(scene_position)
                     self._update_contour_preview(scene_position)
@@ -224,16 +227,21 @@ class GraphCanvasView(QGraphicsView):
                 self._pan_button = None
                 self._last_pan_position = None
                 self._update_cursor()
+                self._drag_positions = None
                 event.accept()
+                return
+            if event.button() != Qt.MouseButton.LeftButton:
+                # сторонние кнопки не завершают слежение за левым переносом
+                super().mouseReleaseEvent(event)
                 return
             drag_positions = self._drag_positions
             self._drag_positions = None
-            if event.button() != Qt.MouseButton.LeftButton:
-                super().mouseReleaseEvent(event)
-                return
-            self.scene()._set_dragging(False)
+            moved = drag_positions is not None and self._drag_positions_changed(
+                drag_positions
+            )
+            self.scene()._set_dragging(False, changed=moved)
             if self.tool not in {self.CONNECTOR, self.BUS} or self._start_node is None:
-                if drag_positions is not None:
+                if moved:
                     self.commit_move(drag_positions)
                 super().mouseReleaseEvent(event)
                 return
@@ -272,7 +280,7 @@ class GraphCanvasView(QGraphicsView):
                     )
                 else:
                     self.create_bus(start, scene_position)
-            if drag_positions is not None:
+            if moved:
                 self.commit_move(drag_positions)
             event.accept()
         finally:
@@ -323,9 +331,15 @@ class GraphCanvasView(QGraphicsView):
                 self._create_preview(scene_position, scene_position)
             event.accept()
             return
-        event.accept()
+        super().mouseDoubleClickEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        focus_item = self.scene().focusItem() if self.scene() else None
+        if getattr(focus_item, "_editing", False):
+            # активное inplace-редактирование подписи: клавиши текста и
+            # горячие клавиши инструментов должны остаться редактору
+            super().keyPressEvent(event)
+            return
         if event.key() == Qt.Key.Key_Space:
             self._space_pressed = True
             self.setCursor(Qt.CursorShape.OpenHandCursor)
@@ -376,6 +390,13 @@ class GraphCanvasView(QGraphicsView):
         else:
             super().keyPressEvent(event)
 
+    def _drag_positions_changed(self, drag_positions: dict) -> bool:
+        """True, если хотя бы один предмет сместился с начала перетаскивания."""
+        for item, position in drag_positions.items():
+            if item.scene() is not None and item.pos() != position:
+                return True
+        return False
+
     def _create_preview(self, start: QPointF, end: QPointF) -> None:
         self._remove_preview()
         self._preview = QGraphicsLineItem(QLineF(start, end))
@@ -404,13 +425,18 @@ class GraphCanvasView(QGraphicsView):
         self._preview = path_item
         self.scene().addItem(path_item)
 
-    def _finish_contour(self) -> None:
+    def _finish_contour(self, suppress_followup: bool = False) -> None:
         if len(self._contour_points) < 3:
             self.tool_error.emit("A contour needs at least three canvas points.")
             return
         points = self._contour_points.copy()
         self._cancel_creation()
         self.create_contour(points)
+        if suppress_followup:
+            # замыкание кликом по первой вершине притянет за собой
+            # MouseDoubleClick: игнорируем его, чтобы в следующий конструктор
+            # контура не попала случайная точка
+            self._contour_suppress_finish = True
 
     def _remove_preview(self) -> None:
         if self._preview is not None and self._preview.scene() is not None:
@@ -423,6 +449,12 @@ class GraphCanvasView(QGraphicsView):
         self._start_point = None
         self._contour_points.clear()
         self._contour_suppress_finish = False
+
+    def focusOutEvent(self, event) -> None:
+        super().focusOutEvent(event)
+        # фокус может уйти в момент зажатого Space: keyRelease не придёт
+        self._space_pressed = False
+        self._update_cursor()
 
     def keyReleaseEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Space:

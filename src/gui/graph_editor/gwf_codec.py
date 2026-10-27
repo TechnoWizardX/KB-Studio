@@ -218,11 +218,16 @@ def serialize_gwf(scene: GraphScene) -> str:
             if edge.gwf_element is not None
             else ET.Element(edge.gwf_tag)
         )
+        normalized_type = builder_safe_connector_type(edge.gwf_tag, edge.gwf_type)
+        # The normalized type carries the family as its first token; a meta
+        # arc exported as a meta pair must keep tag and type consistent or
+        # the document drops the connector on the next load.
+        element.tag = normalized_type.split("/", 1)[0]
         start = edge.begin_element_point()
         end = edge.end_element_point()
         element.attrib.update(
             {
-                "type": builder_safe_connector_type(edge.gwf_tag, edge.gwf_type),
+                "type": normalized_type,
                 "id": edge.gwf_id,
                 "parent": element.get("parent", "0"),
                 "idtf": element.get("idtf", ""),

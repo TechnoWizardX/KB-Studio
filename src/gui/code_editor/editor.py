@@ -197,6 +197,8 @@ class CodeEditorWorkspace(QTabWidget):
         if not isinstance(editor, CodeEditor):
             return
 
+        editor.parse_timer.stop()
+        editor.save_timer.stop()
         if editor.document().isModified():
             answer = QMessageBox.question(
                 self,
@@ -217,6 +219,8 @@ class CodeEditorWorkspace(QTabWidget):
 
         self.removeTab(index)
         self._persist_open_tabs()
+        editor.parse_timer.stop()
+        editor.save_timer.stop()
         editor.deleteLater()
 
 
@@ -253,14 +257,15 @@ class CodeEditor(QPlainTextEdit):
         self.updateRequest.connect(self.update_line_area)
         self.cursorPositionChanged.connect(self.highlight_current_line)
 
-        self.parse_timer = QTimer()
+        self.parse_timer = QTimer(self)
         self.parse_timer.timeout.connect(self.parse_syntax)
         self.parse_timer.setSingleShot(True)
         self.parse_timer.setInterval(500)
         self.textChanged.connect(self.reset_changed_timer)
         self._parsing_syntax = False
+        self._loading_file = False
 
-        self.save_timer = QTimer()
+        self.save_timer = QTimer(self)
         self.save_timer.timeout.connect(self.save_changes)
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(400)
@@ -353,7 +358,7 @@ class CodeEditor(QPlainTextEdit):
         super().keyPressEvent(event)
 
     def reset_changed_timer(self) -> None:
-        if self._parsing_syntax:
+        if self._parsing_syntax or self._loading_file:
             return
         self.parse_timer.start()
         if self.abs_path is not None and ConfigManager.get("auto_save"):
@@ -412,14 +417,22 @@ class CodeEditor(QPlainTextEdit):
         safe_file = safe_path(get_project_root(), str(file_path))
         text = safe_file.read_text(encoding="utf-8")
         self.abs_path = safe_file
-        self.setPlainText(text)
-        self.document().setModified(False)
+        self._loading_file = True
+        try:
+            self.setPlainText(text)
+            self.document().setModified(False)
+        finally:
+            self._loading_file = False
+        self.parse_timer.start()
+        self.save_timer.stop()
         self.update_line_area_width()
 
     def save_changes(self) -> bool:
         file_path = self.abs_path
         if not file_path:
             return False
+        if not self.document().isModified():
+            return True
         try:
             safe_file = safe_path(get_project_root(), str(file_path))
             safe_file.write_text(self.toPlainText(), encoding="utf-8")
@@ -447,8 +460,7 @@ class CodeEditor(QPlainTextEdit):
         try:
             tree = self.parser.parse(text)
             self._set_syntax_error(None)
-            self.highlighter.clear_errors()
-            self.highlighter.refresh_tokens()
+            self.highlighter.apply_parse_result(tree)
             return tree
         except UnexpectedToken as error:
             line = getattr(error, "line", "?")
@@ -494,10 +506,19 @@ class CodeEditor(QPlainTextEdit):
 
     def _highlight_error_position(self, exception) -> None:
         pos = getattr(exception, "pos_in_stream", None)
-        if pos is not None:
-            self.highlighter.set_error_positions([(pos, pos + 1)])
-        else:
+        if pos is None:
             self.highlighter.clear_errors()
+            return
+        text = self.toPlainText()
+        if pos == len(text):
+            # ошибка в конце ввода: подчёркиваем последний символ, иначе
+            # диапазон он не попадает ни в один блок
+            if text:
+                self.highlighter.set_error_positions(
+                    [(len(text) - 1, len(text))]
+                )
+            return
+        self.highlighter.set_error_positions([(pos, pos + 1)])
 
     def on_theme_changed(self, theme_name: str) -> None:
         self.highlighter.set_theme(theme_name)

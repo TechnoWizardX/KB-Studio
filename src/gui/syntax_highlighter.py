@@ -193,7 +193,9 @@ class SCSHighlighter(QSyntaxHighlighter):
             tree = self.parser.parse(text)
             self._cached_tokens = self._extract_tokens(tree)
         except UnexpectedInput:
-            # Parse error - keep old tokens, errors will be shown via error positions
+            # Parse error: cached tokens belong to the previous text and
+            # must not be drawn on the new one until the next valid parse.
+            self._cached_tokens = []
             self._cached_text = text
         except Exception:
             # Other errors - clear cache
@@ -313,9 +315,32 @@ class SCSHighlighter(QSyntaxHighlighter):
 
             position += 1
 
-    def refresh_tokens(self):
-        """Force token cache refresh - call after text changes."""
+    def refresh_tokens(self, tree=None):
+        """Refresh token cache for highlighting.
+
+        ``tree`` — уже построенное редактором дерево разбора: тогда второй
+        разбор того же текста не выполняется.
+        """
         full_text = self.document().toPlainText()
-        if full_text:
+        if not full_text:
+            return
+        if tree is not None:
+            self._cached_tokens = self._extract_tokens(tree)
+            self._cached_text = full_text
+        else:
             self._update_token_cache(full_text)
-            self.rehighlight()
+        self.rehighlight()
+
+    def apply_parse_result(self, tree=None) -> None:
+        """Обновление кэша токенов и снятие пометок ошибок одним
+        переподсвечиванием документа."""
+        full_text = self.document().toPlainText()
+        self._error_positions = []
+        if not full_text:
+            return
+        if tree is not None:
+            self._cached_tokens = self._extract_tokens(tree)
+            self._cached_text = full_text
+        else:
+            self._update_token_cache(full_text)
+        self.rehighlight()
