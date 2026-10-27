@@ -81,6 +81,32 @@ class CodeEditorBracketCompletionTests(unittest.TestCase):
 
         self.assertEqual(self.editor.toPlainText(), "")
 
+    def test_parse_syntax_does_not_rearm_its_own_debounce_timer(self):
+        """One parse is scheduled per text change: highlight work fires
+        textChanged, and re-arming on those events made the editor re-parse
+        (a ~150ms UI stall) once per second forever, even while idle."""
+        self.editor.setPlainText("(nonexistent-scs-statement")  # parse error path
+        count = 0
+
+        def tick():
+            nonlocal count
+            count += 1
+
+        timer = self.editor.parse_timer
+        timer.timeout.connect(tick)
+        try:
+            self.editor.parse_syntax()
+            # let the debounce fire once (it was armed by the explicit text
+            # change); afterwards the parse must not schedule itself again,
+            # so no further timer ticks arrive during the idle window
+            self.app.processEvents()
+            timer.start()
+            QTest.qWait(1200)
+            self.app.processEvents()
+        finally:
+            timer.timeout.disconnect(tick)
+        self.assertLessEqual(count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

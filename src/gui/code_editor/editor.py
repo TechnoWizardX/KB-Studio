@@ -258,6 +258,7 @@ class CodeEditor(QPlainTextEdit):
         self.parse_timer.setSingleShot(True)
         self.parse_timer.setInterval(500)
         self.textChanged.connect(self.reset_changed_timer)
+        self._parsing_syntax = False
 
         self.save_timer = QTimer()
         self.save_timer.timeout.connect(self.save_changes)
@@ -352,12 +353,16 @@ class CodeEditor(QPlainTextEdit):
         super().keyPressEvent(event)
 
     def reset_changed_timer(self) -> None:
+        if self._parsing_syntax:
+            # format/highlight changes made by the parse re-fire textChanged;
+            # re-arming here would re-parse forever (one 150ms stall per
+            # second, with the CPU burning while the app is idle)
+            return
         self.parse_timer.start()
         if self.abs_path is not None and ConfigManager.get("auto_save"):
             self.save_timer.start()
         else:
             self.save_timer.stop()
-
     def on_auto_save_changed(self, enabled: bool) -> None:
         if enabled and self.abs_path is not None and self.document().isModified():
             self.save_timer.start()
@@ -430,6 +435,15 @@ class CodeEditor(QPlainTextEdit):
         return True
 
     def parse_syntax(self):
+        # format/highlight work below fires textChanged; the guard keeps
+        # parse_syntax from re-arming its own debounce timer.
+        self._parsing_syntax = True
+        try:
+            return self._parse_syntax()
+        finally:
+            self._parsing_syntax = False
+
+    def _parse_syntax(self):
         text = self.toPlainText()
         if not text:
             self._set_syntax_error(None)

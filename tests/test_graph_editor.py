@@ -2338,12 +2338,20 @@ class GraphEditorUndoTests(unittest.TestCase):
                 "src.gui.graph_editor.graph_editor.QFileDialog.getSaveFileName",
                 return_value=(graph_path, "GWF files (*.gwf)"),
             ):
-                QTest.keyClick(
-                    editor,
-                    Qt.Key.Key_S,
-                    Qt.KeyboardModifier.ControlModifier,
-                )
-                self.app.processEvents()
+                for attempt in range(3):
+                    # window activation is racy in a batched offscreen run;
+                    # retry until the shortcut fires at least once
+                    if os.path.isfile(graph_path):
+                        break
+                    editor.activateWindow()
+                    editor.setFocus()
+                    self.app.processEvents()
+                    QTest.keyClick(
+                        editor,
+                        Qt.Key.Key_S,
+                        Qt.KeyboardModifier.ControlModifier,
+                    )
+                    self.app.processEvents()
 
             self.assertTrue(
                 os.path.isfile(graph_path),

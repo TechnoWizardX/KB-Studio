@@ -4,8 +4,6 @@
 
 ### Added
 
-- Added `Ctrl+S` in the graph editor to save the current graph without
-  reaching for the toolbar save button.
 - Added a content display toggle for node attachments on the `C` key: compact
   mode shows only the node glyph with the violet marker, expanded mode replaces
   the glyph with a square form carrying the content inside — string content as
@@ -58,6 +56,16 @@
   connectors attached, and saving keeps the bus reference and attach dots.
 - Added toolbar icons (Lucide SVG assets embedded through the application
   resource bundle) with tooltips for every graph editor action.
+- Added `Ctrl+S` in the graph editor to save the current graph without
+  reaching for the toolbar save button.
+- Added an opt-in Qt event-cost profiler (`KB_CAPTURE_EVENTS=1`): when the
+  QApplication dispatch of a single event takes at least 100 ms, the event
+  type and receiving widget are logged, attributing UI stalls that have no
+  Python frames to their concrete source (used to locate the SCs parse loop
+  fixed below). Normal runs are unaffected.
+
+### Changed
+
 - The graph editor understands SCg 2.0 spelled GWF types: nodes
   (`node/const/perm/general`, `.../group`, `.../relation`, and any other
   `node/<side>/<permanence>/<structure>` form) and connectors
@@ -68,8 +76,6 @@
   that is attached to another connector is selected, circle handles appear at
   its endpoints and can be dragged along the parent connector; the change is
   undoable and is saved back through `dotBBalance`/`dotEBalance`.
-
-### Changed
 
 - Connectors now attach radially: every connector end anchored to a node or a
   contour border aims at the actual attach point reached on the other side
@@ -120,6 +126,16 @@
   variable/temporary connectors and tick marks for negative/fuzzy ones; binary
   pairs are thick hollow lines. Connector types without a distinct visual form
   are signed with their SCs token next to the line.
+
+### Fixed
+
+- Fixed a permanent one-stall-per-second loop in the SCs code editor: the
+  syntax parse changed text formats with its own error/token highlighting,
+  which fired `textChanged` and re-armed the 500 ms parse debounce timer, so
+  every open editor re-parsed itself (a ~150 ms UI stall with large files,
+  the whole UI thread burning CPU) forever, even while the app was idle or
+  the graph editor was used. The parse now never re-arms its own timer; one
+  parse runs per actual text change.
 
 ## [1.4.0] - Unreleased
 
