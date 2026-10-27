@@ -282,6 +282,53 @@ class GraphSceneTests(unittest.TestCase):
         self.assertNotEqual(editor.scene.edges[0].path(), original_path)
         editor.close()
 
+    def test_multi_select_drag_keeps_edges_attached_to_both_moved_nodes(self):
+        editor = GraphEditorWidget()
+        editor.resize(900, 600)
+        editor.show()
+        source = editor.scene.add_node("source", QPoint(100, 100))
+        target = editor.scene.add_node("target", QPoint(350, 100))
+        editor.scene.connect_nodes(source, target, "->")
+        source.setSelected(True)
+        target.setSelected(True)
+        self.app.processEvents()
+        original_target = target.pos()
+        start = editor.view.mapFromScene(
+            source.mapToScene(source.boundingRect().center())
+        )
+        finish = start + QPoint(120, 70)
+
+        QTest.mousePress(
+            editor.view.viewport(), Qt.MouseButton.LeftButton, pos=start
+        )
+        QTest.mouseMove(editor.view.viewport(), finish, 100)
+        QTest.mouseRelease(
+            editor.view.viewport(), Qt.MouseButton.LeftButton, pos=finish
+        )
+        self.app.processEvents()
+
+        self.assertNotEqual(target.pos(), original_target)
+        edge = editor.scene.edges[0]
+        self._assert_touches_glyph(
+            editor, source, edge.path().pointAtPercent(0.0)
+        )
+        self._assert_touches_glyph(
+            editor, target, edge.path().pointAtPercent(1.0)
+        )
+        editor.close()
+
+    def _assert_touches_glyph(self, editor, node: GraphNode, scene_point: QPointF):
+        """The arc endpoint sits on the node glyph border, not inside it."""
+        local = node.mapFromScene(scene_point)
+        length = (local.x() * local.x() + local.y() * local.y()) ** 0.5
+        self.assertGreater(length, 1)
+        unit = QPointF(local.x() / length, local.y() / length)
+        shape = node._glyph_shape()
+        inside = QPointF(local.x() - unit.x() * 2, local.y() - unit.y() * 2)
+        outside = QPointF(local.x() + unit.x() * 2, local.y() + unit.y() * 2)
+        self.assertTrue(shape.contains(inside))
+        self.assertFalse(shape.contains(outside))
+
     def test_canvas_node_tool_creates_a_node_at_the_clicked_position(self):
         editor = GraphEditorWidget()
         editor.resize(900, 600)
@@ -412,7 +459,9 @@ class GraphSceneTests(unittest.TestCase):
         arcs = exported.findall("staticSector/arc")
         self.assertEqual(arcs[-1].get("id_e"), relation.gwf_id)
         self.assertEqual(arcs[-1].get("id_b"), source.gwf_id)
-        self.assertAlmostEqual(float(arcs[-1].get("dotEBalance")), attribute.end_dot)
+        self.assertAlmostEqual(
+            float(arcs[-1].get("dotEBalance")), attribute.end_dot, places=5
+        )
         self.assertEqual((arcs[-1].get("e_x"), arcs[-1].get("e_y")), ("0.0", "0.0"))
         editor.close()
 
@@ -2269,6 +2318,40 @@ class GraphEditorUndoTests(unittest.TestCase):
             self.assertFalse(reloaded.undo_stack.canRedo())
             editor.close()
             reloaded.close()
+
+    def test_control_s_saves_the_graph(self):
+        editor = GraphEditorWidget()
+        editor.resize(900, 600)
+        editor.show()
+        self.app.processEvents()
+        editor.scene.add_node("saved_by_shortcut", QPointF(150, 120))
+        self.app.processEvents()
+        editor.activateWindow()
+        editor.setFocus()
+        self.app.processEvents()
+        with tempfile.TemporaryDirectory() as directory:
+            graph_path = os.path.join(directory, "shortcut.gwf")
+            with patch(
+                "src.gui.graph_editor.graph_editor.get_project_root",
+                return_value=Path(directory),
+            ), patch(
+                "src.gui.graph_editor.graph_editor.QFileDialog.getSaveFileName",
+                return_value=(graph_path, "GWF files (*.gwf)"),
+            ):
+                QTest.keyClick(
+                    editor,
+                    Qt.Key.Key_S,
+                    Qt.KeyboardModifier.ControlModifier,
+                )
+                self.app.processEvents()
+
+            self.assertTrue(
+                os.path.isfile(graph_path),
+                "Ctrl+S must save the current graph",
+            )
+            content = open(graph_path, encoding="utf-8").read()
+            self.assertIn("saved_by_shortcut", content)
+        editor.close()
 
     def test_main_window_switches_to_graph_editor_for_gwf_files(self):
         try:

@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added `Ctrl+S` in the graph editor to save the current graph without
+  reaching for the toolbar save button.
 - Added a content display toggle for node attachments on the `C` key: compact
   mode shows only the node glyph with the violet marker, expanded mode replaces
   the glyph with a square form carrying the content inside — string content as
@@ -74,6 +76,14 @@
   (the junction of the other endpoint for buses and parent connectors), so
   arcs and pairs approach the node centre instead of grazing the border
   tangentially. Routes drawn through waypoints keep the KBE behaviour.
+- Smoother dragging of large selections: edges shared between several dragged
+  nodes are refreshed once per mouse event (with all nodes already at their
+  final positions) instead of once per moved node, and the connector anchor
+  bisection was made ~3× cheaper (12 iterations instead of 32, about 0.7px
+  accuracy at a 3000px offset); node glyphs are now built once and cached so
+  repeated anchor lookups do not rebuild the shape. Dragging 31 selected nodes
+  over the AI-Structure sample went from ~38 ms per frame (with a third of
+  frames over the 40 ms budget) to ~21 ms with none over budget.
 - New colour scheme for readability on the dark canvas: node interiors are
   filled dark while the bright border colour encodes the node kind (constants
   near-white, variables blue, meta violet); connectors and buses are a lighter

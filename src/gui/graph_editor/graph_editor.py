@@ -173,6 +173,7 @@ class GraphNode(QGraphicsItem):
         self._content_item: QGraphicsTextItem | None = None
         self._content_pixmap: QGraphicsPixmapItem | None = None
         self._panel_cache: tuple[tuple, QRectF | None] | None = None
+        self._glyph_shape_cache: tuple | None = None
         self.content_expanded: bool = False
         self.label = GraphNodeLabel(gwf_idtf or identifier, self)
         self.label.setDefaultTextColor(QColor("#d4d4d4"))
@@ -426,11 +427,24 @@ class GraphNode(QGraphicsItem):
     def _glyph_shape(self) -> QPainterPath:
         panel = self._content_panel_rect()
         if panel is not None:
+            key = ("panel", panel.width(), panel.height())
+            if self._glyph_shape_cache is not None and (
+                self._glyph_shape_cache[0] == key
+            ):
+                path = QPainterPath(self._glyph_shape_cache[1])
+                return path
             path = QPainterPath()
             path.addRoundedRect(panel, 6, 6)
+            self._glyph_shape_cache = (key, path)
             return path
+        if self._glyph_shape_cache is not None and (
+            self._glyph_shape_cache[0] == self.gwf_type
+        ):
+            return QPainterPath(self._glyph_shape_cache[1])
         permanence, structure = _node_type_parts(self.gwf_type)
-        return scg_painter.node_shape(self._glyph_rect(), permanence, structure)
+        path = scg_painter.node_shape(self._glyph_rect(), permanence, structure)
+        self._glyph_shape_cache = (self.gwf_type, path)
+        return path
 
     def connection_point(self, target: QPointF) -> QPointF:
         center = QPointF(0, 0)
@@ -441,7 +455,11 @@ class GraphNode(QGraphicsItem):
 
         path = self._glyph_shape()
         low, high = 0.0, 1.0
-        for _ in range(32):
+        # 12 bisections give ~1/4096 precision of the ray (≈0.7px at a
+        # 3000px offset) — imperceptible for arrow anchors, but ~3× cheaper
+        # than the previous 32: during a multi-select drag every edge runs
+        # this twice per frame.
+        for _ in range(12):
             mid = (low + high) / 2
             if path.contains(center + direction * mid):
                 low = mid
@@ -1107,6 +1125,9 @@ class GraphScene(QGraphicsScene):
         self.gwf_sector_extras: list[ET.Element] = []
         self._loading = False
         self._in_drag = False
+        # edges queued for one mouse event during drags: nodes moved by the
+        # same move event flush their edges once, with final positions
+        self._edge_batch: list[GraphEdge] | None = None
         self.setSceneRect(0, 0, 1600, 1000)
         self.setBackgroundBrush(QColor("#1e1e1e"))
 
@@ -1553,8 +1574,28 @@ class GraphScene(QGraphicsScene):
             return
         self._in_drag = active
         if not active:
+            # flush a batch left over from an event whose hook was missed
+            self._end_edge_batch()
             self._update_scene_rect()
             self.model_changed.emit()
+
+    def _begin_edge_batch(self) -> None:
+        """Collect edge refreshes for one mouse event instead of refreshing
+        per moved node: an edge touching several dragged nodes would be
+        recomputed twice per frame (and the first pass with stale
+        endpoints)."""
+        self._edge_batch = []
+
+    def _end_edge_batch(self) -> None:
+        batch = self._edge_batch
+        self._edge_batch = None
+        if not batch:
+            return
+        # insertion order keeps arcs-to-arcs: an arc is queued after its
+        # parent edge, so the parent path is fresh when the child reroutes
+        for edge in batch:
+            if edge.scene() is self:
+                edge.update_path()
 
     def connector_changed(self, edge: GraphEdge) -> None:
         self._refresh_connected_edges(edge, set())
@@ -1605,6 +1646,16 @@ class GraphScene(QGraphicsScene):
     def _refresh_connected_edges(
         self, endpoint: GraphNode | GraphEdge, refreshed: set[GraphEdge]
     ) -> None:
+        if self._in_drag and self._edge_batch is not None:
+            # queue instead of immediate update; the batch flushes once per
+            # mouse event with all nodes already at their final positions
+            for edge in self.edges:
+                if edge.source is not endpoint and edge.target is not endpoint:
+                    continue
+                if edge not in self._edge_batch:
+                    self._edge_batch.append(edge)
+                    self._refresh_connected_edges(edge, refreshed)
+            return
         for edge in self.edges:
             if edge in refreshed or (
                 edge.source is not endpoint and edge.target is not endpoint
@@ -2127,6 +2178,8 @@ class GraphEditorWidget(QFrame):
         undo_shortcut.activated.connect(self.undo_stack.undo)
         redo_shortcut = QShortcut(QKeySequence.StandardKey.Redo, self)
         redo_shortcut.activated.connect(self.undo_stack.redo)
+        save_shortcut = QShortcut(QKeySequence.StandardKey.Save, self)
+        save_shortcut.activated.connect(self.save)
 
         self.zoom_in_button = add_button(
             tools_toolbar, Icons.zoom_in(), "Zoom in", lambda: self.view.zoom_in()

@@ -114,88 +114,96 @@ class GraphCanvasView(QGraphicsView):
         super().wheelEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        self._drag_positions = None
-        if event.button() == Qt.MouseButton.MiddleButton or (
-            event.button() == Qt.MouseButton.LeftButton and self._space_pressed
-        ):
-            self._pan_button = event.button()
-            self._last_pan_position = event.position()
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
-            event.accept()
-            return
+        self.scene()._begin_edge_batch()
+        try:
+            self._drag_positions = None
+            if event.button() == Qt.MouseButton.MiddleButton or (
+                event.button() == Qt.MouseButton.LeftButton and self._space_pressed
+            ):
+                self._pan_button = event.button()
+                self._last_pan_position = event.position()
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                event.accept()
+                return
 
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_positions = {
-                item: QPointF(item.pos())
-                for item in self.scene().items()
-                if item.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsMovable
-            }
-            self.scene()._set_dragging(bool(self._drag_positions))
+            if event.button() == Qt.MouseButton.LeftButton:
+                self._drag_positions = {
+                    item: QPointF(item.pos())
+                    for item in self.scene().items()
+                    if item.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+                }
+                self.scene()._set_dragging(bool(self._drag_positions))
 
-        if event.button() != Qt.MouseButton.LeftButton or self.tool == self.SELECT:
-            super().mousePressEvent(event)
-            return
+            if event.button() != Qt.MouseButton.LeftButton or self.tool == self.SELECT:
+                super().mousePressEvent(event)
+                return
 
-        scene_position = self.mapToScene(event.position().toPoint())
-        if self.tool == self.NODE:
-            if self.itemAt(event.position().toPoint()) is None:
-                self.create_node(scene_position)
-            event.accept()
-            return
+            scene_position = self.mapToScene(event.position().toPoint())
+            if self.tool == self.NODE:
+                if self.itemAt(event.position().toPoint()) is None:
+                    self.create_node(scene_position)
+                event.accept()
+                return
 
-        if self.tool == self.CONTOUR:
-            if self._should_close_contour(scene_position):
-                self._contour_suppress_finish = True
-                self._finish_contour()
-            else:
-                self._contour_points.append(scene_position)
-                self._update_contour_preview(scene_position)
-            event.accept()
-            return
+            if self.tool == self.CONTOUR:
+                if self._should_close_contour(scene_position):
+                    self._contour_suppress_finish = True
+                    self._finish_contour()
+                else:
+                    self._contour_points.append(scene_position)
+                    self._update_contour_preview(scene_position)
+                event.accept()
+                return
 
-        item = self._graph_object_at(event.position().toPoint())
-        if self.tool == self.CONNECTOR:
-            is_valid_start = self._is_connector_start(item)
-        else:
-            is_valid_start = isinstance(item, self.node_class)
-        if not is_valid_start:
+            item = self._graph_object_at(event.position().toPoint())
             if self.tool == self.CONNECTOR:
-                expected = "node, connector, contour or bus"
+                is_valid_start = self._is_connector_start(item)
             else:
-                expected = "node"
-            self.tool_error.emit(f"Start this tool on a {expected}.")
+                is_valid_start = isinstance(item, self.node_class)
+            if not is_valid_start:
+                if self.tool == self.CONNECTOR:
+                    expected = "node, connector, contour or bus"
+                else:
+                    expected = "node"
+                self.tool_error.emit(f"Start this tool on a {expected}.")
+                event.accept()
+                return
+            self._start_node = item
+            self._start_point = scene_position
+            self._create_preview(scene_position, scene_position)
             event.accept()
-            return
-        self._start_node = item
-        self._start_point = scene_position
-        self._create_preview(scene_position, scene_position)
-        event.accept()
+        finally:
+            self.scene()._end_edge_batch()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if self._pan_button is not None and self._last_pan_position is not None:
-            current = event.position()
-            delta = current - self._last_pan_position
-            self._last_pan_position = current
-            self.horizontalScrollBar().setValue(
-                self.horizontalScrollBar().value() - round(delta.x())
-            )
-            self.verticalScrollBar().setValue(
-                self.verticalScrollBar().value() - round(delta.y())
-            )
-            event.accept()
-            return
-        if self._preview is not None and self._start_point is not None:
-            scene_position = self.mapToScene(event.position().toPoint())
-            self._preview.setLine(QLineF(self._start_point, scene_position))
-            event.accept()
-            return
-        if self.tool == self.CONTOUR and self._contour_points:
-            self._update_contour_preview(
-                self.mapToScene(event.position().toPoint())
-            )
-            event.accept()
-            return
-        super().mouseMoveEvent(event)
+        self.scene()._begin_edge_batch()
+        try:
+            if self._pan_button is not None and self._last_pan_position is not None:
+                current = event.position()
+                delta = current - self._last_pan_position
+                self._last_pan_position = current
+                self.horizontalScrollBar().setValue(
+                    self.horizontalScrollBar().value() - round(delta.x())
+                )
+                self.verticalScrollBar().setValue(
+                    self.verticalScrollBar().value() - round(delta.y())
+                )
+                event.accept()
+                return
+            if self._preview is not None and self._start_point is not None:
+                scene_position = self.mapToScene(event.position().toPoint())
+                self._preview.setLine(QLineF(self._start_point, scene_position))
+                event.accept()
+                return
+            if self.tool == self.CONTOUR and self._contour_points:
+                self._update_contour_preview(
+                    self.mapToScene(event.position().toPoint())
+                )
+                event.accept()
+                return
+            super().mouseMoveEvent(event)
+        finally:
+            self.scene()._end_edge_batch()
 
     def _contour_snap_radius(self) -> float:
         scale = abs(self.transform().m11()) or 1.0
@@ -210,59 +218,65 @@ class GraphCanvasView(QGraphicsView):
         )
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if self._pan_button == event.button():
-            self._pan_button = None
-            self._last_pan_position = None
-            self._update_cursor()
-            event.accept()
-            return
-        drag_positions = self._drag_positions
-        self._drag_positions = None
-        if event.button() != Qt.MouseButton.LeftButton:
-            super().mouseReleaseEvent(event)
-            return
-        self.scene()._set_dragging(False)
-        if self.tool not in {self.CONNECTOR, self.BUS} or self._start_node is None:
+        self.scene()._begin_edge_batch()
+        try:
+            if self._pan_button == event.button():
+                self._pan_button = None
+                self._last_pan_position = None
+                self._update_cursor()
+                event.accept()
+                return
+            drag_positions = self._drag_positions
+            self._drag_positions = None
+            if event.button() != Qt.MouseButton.LeftButton:
+                super().mouseReleaseEvent(event)
+                return
+            self.scene()._set_dragging(False)
+            if self.tool not in {self.CONNECTOR, self.BUS} or self._start_node is None:
+                if drag_positions is not None:
+                    self.commit_move(drag_positions)
+                super().mouseReleaseEvent(event)
+                return
+
+            scene_position = self.mapToScene(event.position().toPoint())
+            target = self._graph_object_at(
+                event.position().toPoint(),
+                include_connectors=self.tool == self.CONNECTOR,
+            )
+            start = self._start_node
+            start_point = self._start_point
+            self._remove_preview()
+            self._start_node = None
+            self._start_point = None
+
+            if self.tool == self.CONNECTOR:
+                if not self._is_connector_start(target):
+                    self.tool_error.emit(
+                        "Connectors must end on a node, connector, contour or bus."
+                    )
+                elif target is start:
+                    self.tool_error.emit("Choose two different graph objects.")
+                else:
+                    self.create_connector(
+                        start,
+                        target,
+                        start_point or scene_position,
+                        scene_position,
+                    )
+            else:
+                if start_point is not None and (
+                    scene_position - start_point
+                ).manhattanLength() < 5:
+                    self.tool_error.emit(
+                        "Drag from a node to place the bus endpoint."
+                    )
+                else:
+                    self.create_bus(start, scene_position)
             if drag_positions is not None:
                 self.commit_move(drag_positions)
-            super().mouseReleaseEvent(event)
-            return
-
-        scene_position = self.mapToScene(event.position().toPoint())
-        target = self._graph_object_at(
-            event.position().toPoint(),
-            include_connectors=self.tool == self.CONNECTOR,
-        )
-        start = self._start_node
-        start_point = self._start_point
-        self._remove_preview()
-        self._start_node = None
-        self._start_point = None
-
-        if self.tool == self.CONNECTOR:
-            if not self._is_connector_start(target):
-                self.tool_error.emit(
-                    "Connectors must end on a node, connector, contour or bus."
-                )
-            elif target is start:
-                self.tool_error.emit("Choose two different graph objects.")
-            else:
-                self.create_connector(
-                    start,
-                    target,
-                    start_point or scene_position,
-                    scene_position,
-                )
-        else:
-            if start_point is not None and (
-                scene_position - start_point
-            ).manhattanLength() < 5:
-                self.tool_error.emit("Drag from a node to place the bus endpoint.")
-            else:
-                self.create_bus(start, scene_position)
-        if drag_positions is not None:
-            self.commit_move(drag_positions)
-        event.accept()
+            event.accept()
+        finally:
+            self.scene()._end_edge_batch()
 
     def contextMenuEvent(self, event) -> None:
         item = self._graph_object_at(event.pos().toPoint())
