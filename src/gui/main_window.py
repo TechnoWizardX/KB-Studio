@@ -16,7 +16,6 @@ from pathlib import Path
 from src.utils.config_manager import ConfigManager
 from src.utils.theme_manager import ThemeManager
 
-from src.gui.event_cost_profiler import app_class_for_environment
 from src.gui.directory_view import DirectoryTreeViewWidget
 from src.gui.code_editor_widget import CodeEditorWidget
 from src.gui.graph_editor import GraphEditorWidget
@@ -106,8 +105,7 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 def init_app():
-    app_class = app_class_for_environment()
-    app = app_class(sys.argv)
+    app = QApplication(sys.argv)
     app.setApplicationName("KB Studio")
     app.setOrganizationName("OSTIS")
 

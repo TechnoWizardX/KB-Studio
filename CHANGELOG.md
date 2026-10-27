@@ -58,11 +58,6 @@
   resource bundle) with tooltips for every graph editor action.
 - Added `Ctrl+S` in the graph editor to save the current graph without
   reaching for the toolbar save button.
-- Added an opt-in Qt event-cost profiler (`KB_CAPTURE_EVENTS=1`): when the
-  QApplication dispatch of a single event takes at least 100 ms, the event
-  type and receiving widget are logged, attributing UI stalls that have no
-  Python frames to their concrete source (used to locate the SCs parse loop
-  fixed below). Normal runs are unaffected.
 
 ### Changed
 

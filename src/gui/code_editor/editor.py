@@ -435,8 +435,6 @@ class CodeEditor(QPlainTextEdit):
         return True
 
     def parse_syntax(self):
-        # format/highlight work below fires textChanged; the guard keeps
-        # parse_syntax from re-arming its own debounce timer.
         self._parsing_syntax = True
         try:
             return self._parse_syntax()
