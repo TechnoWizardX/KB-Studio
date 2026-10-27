@@ -354,9 +354,6 @@ class CodeEditor(QPlainTextEdit):
 
     def reset_changed_timer(self) -> None:
         if self._parsing_syntax:
-            # format/highlight changes made by the parse re-fire textChanged;
-            # re-arming here would re-parse forever (one 150ms stall per
-            # second, with the CPU burning while the app is idle)
             return
         self.parse_timer.start()
         if self.abs_path is not None and ConfigManager.get("auto_save"):
