@@ -511,8 +511,6 @@ class CodeEditor(QPlainTextEdit):
             return
         text = self.toPlainText()
         if pos == len(text):
-            # ошибка в конце ввода: подчёркиваем последний символ, иначе
-            # диапазон он не попадает ни в один блок
             if text:
                 self.highlighter.set_error_positions(
                     [(len(text) - 1, len(text))]

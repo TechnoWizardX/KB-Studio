@@ -61,6 +61,13 @@
 
 ### Changed
 
+- The SCg editor is split into modules with single responsibilities under
+  `src/gui/graph_editor/`: `graph_items.py` (scene item classes — node,
+  connector, label, bus, contour), `graph_scene.py` (scene model, drag
+  batching, GWF/SCs round trip), `content_dialog.py` (node content dialog);
+  `graph_editor.py` keeps the editing widget and re-exports the classic names
+  so existing imports keep working.
+
 - The graph editor understands SCg 2.0 spelled GWF types: nodes
   (`node/const/perm/general`, `.../group`, `.../relation`, and any other
   `node/<side>/<permanence>/<structure>` form) and connectors

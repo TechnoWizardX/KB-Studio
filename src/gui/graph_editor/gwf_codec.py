@@ -6,7 +6,7 @@ from copy import deepcopy
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.gui.graph_editor.graph_editor import GraphScene
+    from src.gui.graph_editor.graph_scene import GraphScene
 
 from src.gui.graph_editor.graph_types import (
     builder_safe_connector_type,

@@ -16,7 +16,7 @@ from PySide6.QtGui import QUndoCommand
 from src.gui.graph_editor.gwf_codec import empty_content_element
 
 if TYPE_CHECKING:
-    from src.gui.graph_editor.graph_editor import GraphScene
+    from src.gui.graph_editor.graph_scene import GraphScene
 
 
 class _GraphCommand(QUndoCommand):
