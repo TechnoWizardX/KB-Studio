@@ -8,6 +8,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.gui.graph_editor.graph_editor import GraphScene
 
+from src.gui.graph_editor.graph_types import (
+    builder_safe_connector_type,
+    builder_safe_node_type,
+)
+
 
 from PySide6.QtCore import QMimeDatabase
 
@@ -168,7 +173,7 @@ def serialize_gwf(scene: GraphScene) -> str:
         )
         element.attrib.update(
             {
-                "type": node.gwf_type,
+                "type": builder_safe_node_type(node.gwf_type),
                 "id": node.gwf_id,
                 "parent": element.get("parent", "0"),
                 "idtf": node.gwf_idtf,
@@ -217,7 +222,7 @@ def serialize_gwf(scene: GraphScene) -> str:
         end = edge.end_element_point()
         element.attrib.update(
             {
-                "type": edge.gwf_type,
+                "type": builder_safe_connector_type(edge.gwf_tag, edge.gwf_type),
                 "id": edge.gwf_id,
                 "parent": element.get("parent", "0"),
                 "idtf": element.get("idtf", ""),

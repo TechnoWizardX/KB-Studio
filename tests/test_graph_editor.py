@@ -62,6 +62,14 @@ from src.gui.graph_editor.gwf_codec import (
     empty_content_element,
 )
 from src.gui.graph_editor.scg_painter import ScgEdgeStyle as _ScgEdgeStyle
+from src.gui.graph_editor.graph_types import (
+    CONNECTOR_TYPES,
+    NODE_TYPES,
+    builder_safe_connector_type,
+    builder_safe_node_type,
+    connector_parts,
+    node_type_parts,
+)
 from src.lark_syntax.parser import SCSParser
 
 
@@ -1485,7 +1493,11 @@ class GraphSceneTests(unittest.TestCase):
             self.assertEqual(node.gwf_type, gwf_type)
             self.assertFalse(node.shape().isEmpty())
 
-        self.assertEqual(self.scene.to_gwf().count('type="node/meta/group"'), 1)
+        # The exported spelling is the one the ostis-ai sc-builder accepts:
+        # meta nodes always carry a period segment.
+        self.assertEqual(
+            self.scene.to_gwf().count('type="node/meta/perm/group"'), 1
+        )
 
         self.scene.set_node_type(node, "node/var/not_define")
         # kbe renders var_not_define as a variable (rectangular) node; the
@@ -1518,6 +1530,108 @@ class GraphSceneTests(unittest.TestCase):
             "..>",
         )
         self.assertFalse(any("rail" in gwf_type for _, gwf_type, _, _ in _CONNECTOR_TYPES))
+
+    # Spellings resolved by the ostis-ai sc-builder gwf→scs converter
+    # (sc-tools/sc-builder/src/sc_scg_to_scs_types_converter.cpp); anything
+    # else throws "No matching sc.s-node type" during a kb rebuild.
+    _BUILDER_ACCEPTED_NODES = {
+        "node/-/-/not_define",
+        "node/-/not_define",
+        *(
+            f"node/{side}/{structure}"
+            for side in ("const", "var")
+            for structure in (
+                "general_node", "terminal", "struct", "tuple",
+                "role", "attribute", "relation", "group", "superclass",
+            )
+        ),
+    } | {
+        f"node/{side}/{period}/{structure}"
+        for side in ("const", "var", "meta")
+        for period in ("perm", "temp")
+        for structure in (
+            "general", "general_node", "terminal", "struct", "tuple",
+            "role", "attribute", "relation", "group", "super_group",
+        )
+    }
+    _BUILDER_ACCEPTED_CONNECTORS = {
+        "pair/const/-/perm/noorien", "pair/const/-/perm/orient",
+        "pair/const/-/temp/noorien", "pair/const/-/temp/orient",
+        "pair/var/-/perm/noorien", "pair/var/-/perm/orient",
+        "pair/-/-/-/orient", "pair/-/-/-/noorient",
+        "arc/-/-",
+        "pair/orient", "pair/noorient",
+        "pair/const/orient", "pair/const/noorient", "pair/const/synonym",
+        "pair/var/orient", "pair/var/noorient",
+        *(
+            f"pair/{side}/{polarity}/{period}/orient/membership"
+            for side in ("const", "var")
+            for polarity in ("pos", "neg", "fuz")
+            for period in ("perm", "temp")
+        ),
+        *(
+            f"arc/{side}/{polarity}{period}"
+            for side in ("const", "var")
+            for polarity in ("pos", "neg", "fuz")
+            for period in ("", "/perm", "/temp")
+        ),
+        "pair/var/-/temp/noorien", "pair/var/-/temp/orient",
+        "pair/meta/-/perm/noorien", "pair/meta/-/perm/orient",
+        "pair/meta/-/temp/noorien", "pair/meta/-/temp/orient",
+        *(
+            f"pair/meta/{polarity}/{period}/orient/membership"
+            for polarity in ("pos", "neg", "fuz")
+            for period in ("perm", "temp")
+        ),
+    }
+
+    def test_every_offered_type_serializes_into_a_builder_accepted_spelling(self):
+        for _, gwf_type in NODE_TYPES:
+            with self.subTest(gwf_type=gwf_type):
+                self.assertIn(
+                    builder_safe_node_type(gwf_type), self._BUILDER_ACCEPTED_NODES
+                )
+        for _, gwf_type, tag, _token in CONNECTOR_TYPES:
+            with self.subTest(gwf_type=gwf_type):
+                self.assertIn(
+                    builder_safe_connector_type(tag, gwf_type),
+                    self._BUILDER_ACCEPTED_CONNECTORS,
+                )
+
+    def test_builder_fixes_keep_the_stored_glyphs_on_round_trip(self):
+        for gwf_type in (
+            "node/meta/general_node", "node/meta/atom",
+            "node/meta/not_define", "node/const/not_define",
+            "node/var/not_define", "node/const/symmetry",
+        ):
+            with self.subTest(gwf_type=gwf_type):
+                self.assertEqual(
+                    node_type_parts(builder_safe_node_type(gwf_type)),
+                    node_type_parts(gwf_type),
+                )
+        # The converter aliases "predmet" onto "struct" even for const/var
+        # nodes, so the abstract meta glyph becomes a structure node in the
+        # rebuilt knowledge base the same way.
+        saved = builder_safe_node_type("node/meta/predmet")
+        self.assertEqual(saved, "node/meta/perm/struct")
+        for tag, gwf_type in (
+            ("arc", "arc/meta/pos"), ("arc", "arc/meta/fuz/temp"),
+            ("pair", "pair/meta/noorient"), ("pair", "pair/meta/orient"),
+        ):
+            with self.subTest(gwf_type=gwf_type):
+                saved = builder_safe_connector_type(tag, gwf_type)
+                self.assertEqual(
+                    connector_parts("pair", saved),
+                    connector_parts(tag, gwf_type),
+                )
+
+    def test_builder_fixes_are_idempotent_across_save_cycles(self):
+        for _, gwf_type in NODE_TYPES:
+            fixed = builder_safe_node_type(gwf_type)
+            self.assertEqual(builder_safe_node_type(fixed), fixed)
+        for _, gwf_type, tag, _token in CONNECTOR_TYPES:
+            fixed = builder_safe_connector_type(tag, gwf_type)
+            self.assertEqual(builder_safe_connector_type(tag, fixed), fixed)
 
     def test_new_bus_and_contour_are_serialized_as_editable_gwf_objects(self):
         owner = self.scene.add_node(

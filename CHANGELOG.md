@@ -131,6 +131,12 @@
   the whole UI thread burning CPU) forever, even while the app was idle or
   the graph editor was used. The parse now never re-arms its own timer; one
   parse runs per actual text change.
+- Fixed GWF export compatibility with the ostis-ai sc-builder kb rebuild:
+  legacy KBE spellings that the gwf→scs converter cannot resolve (three-part
+  meta node types, `node/const/symmetry`, `atom`, undefined nodes, meta arcs
+  and meta pairs) are rewritten on save onto the builder accepted spellings
+  while the editor keeps the extended type vocabulary; saved knowledge bases
+  no longer fail with "No matching sc.s-node type".
 
 ## [1.4.0] - Unreleased
 

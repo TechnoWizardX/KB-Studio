@@ -112,6 +112,7 @@ _NODE_STRUCTURE_ALIASES = {
     "predmet": "abstract",
     "abstract": "abstract",
     "material": "material",
+    "terminal": "material",
     "nopredmet": "struct",
     "struct": "struct",
     "symmetry": "tuple",
@@ -123,6 +124,120 @@ _NODE_STRUCTURE_ALIASES = {
     "group": "group",
     "atom": "group",
 }
+
+# The ostis-ai sc-builder gwf→scs converter
+# (sc-tools/sc-builder/src/sc_scg_to_scs_types_converter.cpp) accepts only
+# its own spellings: everything else throws "No matching sc.s-node type".
+# Internal graph types keep the kbe legacy vocabulary; serialisation maps
+# the stored type onto the nearest builder accepted spelling with the help
+# of the tables below.
+_BUILDER_TYPE_FIXES = {
+    # "node/const/not_define" has no entry in the converter; KBE itself
+    # aliases the constant undefined node onto "node/-/not_define".
+    "node/const/not_define": "node/-/not_define",
+    # "node/var/not_define" is likewise missing; the variable general node
+    # produces the same sc_node and keeps the editor glyph on round trip.
+    "node/var/not_define": "node/var/general_node",
+    # Meta undefined nodes are not in any converter table either; the
+    # sideless undefined node paints identically.
+    "node/meta/not_define": "node/-/not_define",
+    # Only "node/var/symmetry" is listed among legacy aliases.
+    "node/const/symmetry": "node/const/tuple",
+    # "atom" is absent from every converter table; KBE treats it as a group.
+    "node/const/atom": "node/const/group",
+    "node/var/atom": "node/var/group",
+    # Meta arcs do not exist in the converter; KBE itself turns the
+    # sc-meta membership arc into a meta pair.
+    "arc/meta/pos": "pair/meta/pos/perm/orient/membership",
+    "arc/meta/neg": "pair/meta/neg/perm/orient/membership",
+    "arc/meta/fuz": "pair/meta/fuz/perm/orient/membership",
+    "arc/meta/pos/temp": "pair/meta/pos/temp/orient/membership",
+    "arc/meta/neg/temp": "pair/meta/neg/temp/orient/membership",
+    "arc/meta/fuz/temp": "pair/meta/fuz/temp/orient/membership",
+    # Three-part meta pairs are unknown; the converter supports the full
+    # "pair/meta/-/<period>/<orientation>" spellings.
+    "pair/meta/noorient": "pair/meta/-/perm/noorien",
+    "pair/meta/orient": "pair/meta/-/perm/orient",
+}
+
+# Legacy structure names may appear in types loaded from kbe documents;
+# they are rewritten onto the canonical converter structures.
+_BUILDER_NODE_STRUCTURES = {
+    "general": "general_node",
+    "predmet": "struct",
+    "nopredmet": "struct",
+    "material": "terminal",
+    "symmetry": "tuple",
+    "asymmetry": "tuple",
+    "atom": "group",
+    "relop": "relation",
+    "super_group": "superclass",
+}
+
+# Spelled ("node/<side>/<period>/<structure>") types accept the same
+# structure tokens as the unsupported converter table, where "general"
+# and "super_group" are the spelled forms and "superclass" is unknown.
+_BUILDER_SPELLED_NODE_STRUCTURES = {
+    "predmet": "struct",
+    "nopredmet": "struct",
+    "material": "terminal",
+    "symmetry": "tuple",
+    "asymmetry": "tuple",
+    "atom": "group",
+    "superclass": "super_group",
+}
+
+_BUILDER_META_CONNECTOR_ORIENTATIONS = {
+    "orient": "orient",
+    "membership": "orient",
+    "noorien": "noorien",
+    "noorient": "noorien",
+    "synonym": "noorien",
+}
+
+
+def builder_safe_node_type(gwf_type: str) -> str:
+    """Maps a stored node type onto a spelling the sc-builder accepts."""
+    fixed = _BUILDER_TYPE_FIXES.get(gwf_type, gwf_type)
+    parts = fixed.split("/")
+    if not parts or parts[0] != "node" or len(parts) < 3:
+        return fixed
+    if len(parts) == 3:
+        structure = _BUILDER_NODE_STRUCTURES.get(parts[2], parts[2])
+        if parts[1] == "meta":
+            # Meta nodes must be spelled with an explicit period segment.
+            return f"node/meta/perm/{structure}"
+        return f"{parts[0]}/{parts[1]}/{structure}"
+    if len(parts) > 4:
+        return fixed
+    structure = _BUILDER_SPELLED_NODE_STRUCTURES.get(parts[3], parts[3])
+    if structure == "not_define":
+        return "node/-/not_define"
+    return f"{parts[0]}/{parts[1]}/{parts[2]}/{structure}"
+
+
+def builder_safe_connector_type(tag: str, gwf_type: str) -> str:
+    """Maps a stored connector type onto a spelling the sc-builder accepts."""
+    fixed = _BUILDER_TYPE_FIXES.get(gwf_type, gwf_type)
+    parts = fixed.split("/")
+    if len(parts) > 2 and parts[0] == tag and parts[1] == "meta":
+        filtered = [
+            segment for segment in parts[2:] if segment not in {"perm", "temp"}
+        ]
+        polarity = next(
+            (token for token in ("pos", "neg", "fuz") if token in filtered),
+            "",
+        )
+        orientation = (
+            _BUILDER_META_CONNECTOR_ORIENTATIONS.get(filtered[-1], "orient")
+            if filtered
+            else "orient"
+        )
+        period = "temp" if "temp" in parts[2:] else "perm"
+        if polarity:
+            return f"pair/meta/{polarity}/{period}/orient/membership"
+        return f"pair/meta/-/{period}/{orientation}"
+    return fixed
 
 
 def node_type_parts(gwf_type: str) -> tuple[str, str]:
@@ -192,8 +307,8 @@ def connector_parts(tag: str, gwf_type: str) -> tuple[str, bool] | None:
         return prefix, rest[0] != "noorient" if rest else True
     # pair: последний сегмент задаёт направленность.
     orientation = rest[-1] if rest else "orient"
-    oriented = orientation in {"orient", "noorien", "membership"}
-    if not oriented and orientation not in {"noorient", "synonym"}:
+    oriented = orientation in {"orient", "membership"}
+    if not oriented and orientation not in {"noorient", "noorien", "synonym"}:
         return None
     return prefix, oriented
 
