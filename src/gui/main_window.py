@@ -16,12 +16,13 @@ from pathlib import Path
 from src.utils.config_manager import ConfigManager
 from src.utils.theme_manager import ThemeManager
 
-from src.gui.directory_view import DirectoryTreeViewWidget
 from src.gui.code_editor_widget import CodeEditorWidget
 from src.gui.graph_editor import GraphEditorWidget
-from src.gui.ai_chat import ChatBot
-from src.gui.settings import Settings
 
+from src.gui.left_sidebar_widget import LeftSidebarWidget
+from src.gui.right_sidebar_widget import RightSidebarWidget
+
+from src.gui.toolbar import ToolBar
 from src.core.signals import signals
 
 class MainWindow(QMainWindow):
@@ -38,41 +39,31 @@ class MainWindow(QMainWindow):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
-        self.top_bar_layout = QHBoxLayout()
-        self.top_bar_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.topbar = ToolBar(self._select_editor)
+        self.main_layout.addWidget(self.topbar)
 
-        self.settings = Settings(self)
-        self.settings_button = self.settings.call_button
-        self.settings_button.clicked.connect(self.settings.exec)
-
-        self.editor_selector = QComboBox()
-        self.editor_selector.addItem("SCs text editor")
-        self.editor_selector.addItem("SCg graph editor")
-        self.editor_selector.setToolTip("Select editor")
-        self.editor_selector.currentIndexChanged.connect(self._select_editor)
-        self.top_bar_layout.addWidget(self.editor_selector)
-        self.top_bar_layout.addWidget(self.settings_button)
-        self.top_bar_layout.addStretch()
-
-        self.main_layout.addLayout(self.top_bar_layout)
-
-        self.last_project = ConfigManager.get("project_dir")
-        self.dir_view = DirectoryTreeViewWidget(root_path=self.last_project)
+        self.editor_stack = QStackedWidget()
         self.code_editor = CodeEditorWidget()
         self.graph_editor = GraphEditorWidget()
-        self.editor_stack = QStackedWidget()
         self.editor_stack.addWidget(self.code_editor)
         self.editor_stack.addWidget(self.graph_editor)
         self._select_editor(0)
-        self.chat_bot = ChatBot()
+
+        show_left_bar = ConfigManager.get("show_left_bar")
+        show_right_bar = ConfigManager.get("show_right_bar")
+        self.last_project = ConfigManager.get("project_dir")
+        self.left_bar = LeftSidebarWidget(root_path=self.last_project, show = show_left_bar)
+        self.right_bar = RightSidebarWidget(show = show_right_bar)
 
         self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setObjectName("mainSplitter")
         self.main_splitter.setHandleWidth(5)
         self.main_layout.addWidget(self.main_splitter)
-        
-        self.main_splitter.addWidget(self.dir_view)
+
+        self.main_splitter.addWidget(self.left_bar)
         self.main_splitter.addWidget(self.editor_stack)
-        self.main_splitter.addWidget(self.chat_bot)
+        self.main_splitter.addWidget(self.right_bar)
         self.main_splitter.setSizes([200, 500, 200])
 
         signals.error_occured.connect(self.show_error)
@@ -80,7 +71,7 @@ class MainWindow(QMainWindow):
 
     def _on_file_selected(self, file_path: str) -> None:
         if Path(str(file_path)).suffix.lower() == ".gwf":
-            self.editor_selector.setCurrentIndex(1)
+            self.topbar.editor_selector.setCurrentIndex(1)
 
     def _select_editor(self, index: int) -> None:
         self.editor_stack.setCurrentIndex(index)
@@ -91,7 +82,7 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "ERROR", error)
 
     def closeEvent(self, event):
-        if not self.chat_bot.shutdown():
+        if not self.right_bar.panel.shutdown():
             QMessageBox.warning(
                 self,
                 "AI request is still running",

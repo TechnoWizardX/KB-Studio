@@ -9,6 +9,7 @@ class Settings(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.call_button = QPushButton()
+        self.call_button.setObjectName("IconButton")
         self.call_button.setIcon(Icons.settings())
         self.call_button.setToolTip("Settings")
         self.call_button.setIconSize(QSize(30, 30))

@@ -20,4 +20,8 @@ class Signals(QObject):
     auto_save_changed = Signal(bool)
 
     error_occured = Signal(str)
+
+    show_left_bar = Signal(bool)
+    show_bottom_bar = Signal(bool)
+    show_right_bar = Signal(bool)
 signals = Signals()

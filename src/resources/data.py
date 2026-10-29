@@ -1,4 +1,7 @@
 DEFAULT_CONFIG = {
+    "show_bottom_bar" : True,
+    "show_left_bar" : True,
+    "show_right_bar" : True,
     "project_dir": "",
     "selected_dir" : "",
     "selected_file" : "",

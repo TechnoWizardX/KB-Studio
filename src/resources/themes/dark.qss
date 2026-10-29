@@ -11,6 +11,10 @@ QMainWindow, QWidget {
     font-size: 12pt;
 }
 
+QSplitter#mainSplitter {
+    background-color : transparent;
+    border: transparent;
+}
 /* ---- Line Number Area ------------------------------------- */
 QWidget#lineNumberArea {
     background-color: {{number_line_bg}};
