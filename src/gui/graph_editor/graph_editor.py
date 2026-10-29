@@ -16,7 +16,6 @@ from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import (
-    QColor,
     QImage,
     QKeySequence,
     QPainter,
@@ -40,6 +39,7 @@ from PySide6.QtWidgets import (
 
 from src.core.signals import signals
 from src.resources.icons import Icons
+from src.gui.graph_editor import graph_theme
 from src.gui.graph_editor.graph_canvas import GraphCanvasView
 from src.gui.graph_editor.graph_commands import (
     CommandConnectorDotsChange,
@@ -304,6 +304,7 @@ class GraphEditorWidget(QFrame):
         self.scene.rename_requested.connect(self._on_rename_requested)
         self.scene.waypoints_changed.connect(self._on_waypoints_changed)
         self.scene.dots_changed.connect(self._on_dots_changed)
+        signals.theme_changed.connect(self._on_theme_changed)
         self.node_type_combo.currentIndexChanged.connect(self._apply_selected_node_type)
         self.edge_type_combo.currentIndexChanged.connect(
             self._apply_selected_connector_type
@@ -311,6 +312,12 @@ class GraphEditorWidget(QFrame):
         signals.selected_new_file.connect(self.apply_file)
         self._mark_modified(False)
         self.status_label.setText("Create a graph or open a .gwf file.")
+
+    def _on_theme_changed(self, theme_name: str) -> None:
+        """Restyle the canvas: QSS covers the widgets, the scene paints
+        itself from the graph palette."""
+        self.scene.refresh_theme()
+        self.view.viewport().update()
 
     def apply_file(self, file_path: str | Path) -> None:
         if not self.is_active:
@@ -771,7 +778,7 @@ class GraphEditorWidget(QFrame):
             max(1, math.ceil(bounds.height())),
             QImage.Format.Format_ARGB32_Premultiplied,
         )
-        image.fill(QColor("#1e1e1e"))
+        image.fill(graph_theme.color("canvas_bg"))
         painter = QPainter(image)
         self.scene.render(painter, QRectF(image.rect()), bounds)
         painter.end()

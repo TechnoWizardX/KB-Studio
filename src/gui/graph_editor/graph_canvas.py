@@ -4,7 +4,6 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QLineF, QPointF, Qt, Signal
 from PySide6.QtGui import (
-    QColor,
     QKeyEvent,
     QMouseEvent,
     QPainter,
@@ -20,6 +19,8 @@ from PySide6.QtWidgets import (
     QGraphicsView,
     QWidget,
 )
+
+from src.gui.graph_editor import graph_theme
 
 CONTOUR_SNAP_RADIUS_PX = 12.0
 
@@ -400,7 +401,7 @@ class GraphCanvasView(QGraphicsView):
     def _create_preview(self, start: QPointF, end: QPointF) -> None:
         self._remove_preview()
         self._preview = QGraphicsLineItem(QLineF(start, end))
-        self._preview.setPen(QColor(Qt.GlobalColor.cyan))
+        self._preview.setPen(graph_theme.color("preview_fg"))
         self._preview.setZValue(10_000)
         self.scene().addItem(self._preview)
 
@@ -417,9 +418,9 @@ class GraphCanvasView(QGraphicsView):
         for point in points[1:]:
             path.lineTo(point)
         path_item.setPath(path)
-        pen = QPen(QColor(Qt.GlobalColor.cyan), 0)
+        pen = QPen(graph_theme.color("preview_fg"), 0)
         if snapping:
-            pen = QPen(QColor("#44dd66"), 2)
+            pen = QPen(graph_theme.color("preview_snapping"), 2)
         path_item.setPen(pen)
         path_item.setZValue(10_000)
         self._preview = path_item

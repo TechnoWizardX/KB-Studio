@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QGraphicsTextItem,
 )
 
-from src.gui.graph_editor import scg_painter
+from src.gui.graph_editor import graph_theme, scg_painter
 from src.gui.graph_editor.graph_types import (
     node_type_parts as _node_type_parts,
 )
@@ -128,7 +128,7 @@ class GraphNode(QGraphicsItem):
         self._glyph_shape_cache: tuple | None = None
         self.content_expanded: bool = False
         self.label = GraphNodeLabel(gwf_idtf or identifier, self)
-        self.label.setDefaultTextColor(QColor("#d4d4d4"))
+        self.label.setDefaultTextColor(graph_theme.color("label_fg"))
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self.label.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         self.label.document().documentLayout().documentSizeChanged.connect(
@@ -316,7 +316,9 @@ class GraphNode(QGraphicsItem):
         else:
             if self._content_item is None:
                 self._content_item = QGraphicsTextItem(self)
-                self._content_item.setDefaultTextColor(QColor("#c9d1d9"))
+                self._content_item.setDefaultTextColor(
+                    graph_theme.color("content_fg")
+                )
                 self._content_item.setFont(self._content_font())
                 self._content_item.setAcceptedMouseButtons(
                     Qt.MouseButton.NoButton
@@ -421,25 +423,14 @@ class GraphNode(QGraphicsItem):
 
     def paint(self, painter: QPainter, _option, _widget=None) -> None:
         permanence, structure = _node_type_parts(self.gwf_type)
-        # border colour encodes the constancy side, like sc-web themes do:
-        # constants are near white, variables blue-violet, meta violet
-        if self.isSelected():
-            color = QColor("#ffa657")
-        elif self.gwf_type.startswith("node/meta"):
-            color = QColor("#d2a8ff")
-        elif self.gwf_type.startswith("node/var"):
-            color = QColor("#79c0ff")
-        else:
-            color = QColor("#e6e6e6")
-        if structure == "not_define":
-            color = QColor("#d4d4d4")
+        color = self._node_color(structure)
         glyph = self._body_rect()
         painter.save()
         panel = self._content_panel_rect()
         if panel is not None:
             # expanded content form: a square glyph carrying the content
             painter.setPen(QPen(color, 3))
-            painter.setBrush(QBrush(scg_painter.NODE_FILL))
+            painter.setBrush(QBrush(graph_theme.color("node_fill")))
             painter.drawRoundedRect(panel, 6, 6)
             painter.restore()
             return
@@ -447,10 +438,33 @@ class GraphNode(QGraphicsItem):
         painter.restore()
         if self.has_content():
             painter.save()
-            painter.setBrush(QBrush(QColor("#cc66ff")))
+            painter.setBrush(QBrush(graph_theme.color("content_marker")))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRect(QRectF(glyph.right() - 5, glyph.bottom() - 5, 5, 5))
             painter.restore()
+
+    def _node_color(self, structure: str) -> QColor:
+        # border colour encodes the constancy side, like sc-web themes do
+        if structure == "not_define":
+            return graph_theme.color("node_undefined")
+        if self.isSelected():
+            return graph_theme.color("selection_fg")
+        if self.gwf_type.startswith("node/meta"):
+            return graph_theme.color("node_meta")
+        if self.gwf_type.startswith("node/var"):
+            return graph_theme.color("node_var")
+        return graph_theme.color("node_const")
+
+    def apply_theme(self) -> None:
+        """Live palette refresh: static colours are stored on child items,
+        paint-time colours follow the palette automatically."""
+        self.label.setDefaultTextColor(graph_theme.color("label_fg"))
+        if self._content_item is not None:
+            self._content_item.setDefaultTextColor(
+                graph_theme.color("content_fg")
+            )
+        self._panel_cache = None
+        self.update()
 
     def set_identifier(self, identifier: str) -> None:
         self.prepareGeometryChange()
@@ -829,11 +843,18 @@ class GraphEdge(QGraphicsPathItem):
     def _edge_style(self) -> scg_painter.ScgEdgeStyle:
         return scg_painter.ScgEdgeStyle.from_connector(self.gwf_tag, self.gwf_type)
 
+    def apply_theme(self) -> None:
+        # connector colours are resolved at paint time; repaint on the
+        # shared scene palette change
+        self.update()
+
     def paint(self, painter: QPainter, _option, _widget=None) -> None:
         line = self.path()
         if line.isEmpty():
             return
-        color = QColor("#ffa657") if self.isSelected() else QColor("#c9d1d9")
+        color = graph_theme.color(
+            "selection_fg" if self.isSelected() else "edge_fg"
+        )
         style = self._edge_style()
         painter.save()
         scg_painter.paint_edge(painter, line, style, color)
@@ -842,15 +863,15 @@ class GraphEdge(QGraphicsPathItem):
             # Connector types without their own SCg form carry their SCs token
             # next to the line instead.
             painter.save()
-            painter.setPen(QColor("#d4d4d4"))
+            painter.setPen(graph_theme.color("edge_token_fg"))
             painter.drawText(
                 line.pointAtPercent(0.5) + QPointF(5, -5), self.edge_type
             )
             painter.restore()
         if self.isSelected():
-            pen = QPen(QColor("#ffa657"), 1)
+            pen = QPen(graph_theme.color("selection_fg"), 1)
             painter.setPen(pen)
-            painter.setBrush(QBrush(QColor("#ffffff")))
+            painter.setBrush(QBrush(graph_theme.color("waypoint_fill")))
             half = self.WAYPOINT_HANDLE_HALF
             for waypoint in self.waypoints:
                 painter.drawRect(
@@ -902,12 +923,23 @@ class GraphAuxObject(QGraphicsPathItem):
                     path.lineTo(point)
                 path.closeSubpath()
         self.setPath(path)
-        if kind == "bus":
-            # solid and clearly visible, as the kbe bus (a 5 px solid line)
-            self.setPen(QPen(QColor("#c9d1d9"), 2))
-        else:
-            self.setPen(QPen(QColor("#8b949e"), 1, Qt.PenStyle.DashLine))
+        self._apply_theme()
         self.setBrush(Qt.BrushStyle.NoBrush)
+
+    def _apply_theme(self) -> None:
+        if self.kind == "bus":
+            # solid and clearly visible, as the kbe bus (a 5 px solid line)
+            self.setPen(QPen(graph_theme.color("bus_fg"), 2))
+        else:
+            self.setPen(
+                QPen(
+                    graph_theme.color("contour_fg"),
+                    1,
+                    Qt.PenStyle.DashLine,
+                )
+            )
+
+    apply_theme = _apply_theme
 
     def is_contour(self) -> bool:
         return self.kind == "contour"

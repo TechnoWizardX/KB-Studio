@@ -4,6 +4,16 @@
 
 ### Added
 
+- Added live theme support for the SCg graph editor: the canvas, node glyphs
+  (border colours for constant/variable/meta/undefined sides, the node
+  interior), labels, content panels and markers, connectors (including the fat
+  pair core and waypoint handles), buses and contours, creation previews and
+  the PNG export background are resolved from a graph palette
+  (`src/gui/graph_editor/graph_theme.py`) that follows the application theme
+  (dark keeps the reference canvas values, light provides adjusted contrast);
+  switching the theme in settings restyles the whole editor immediately
+  (`theme_changed` → scene-wide refresh), including already created nodes.
+
 - Added a content display toggle for node attachments on the `C` key: compact
   mode shows only the node glyph with the violet marker, expanded mode replaces
   the glyph with a square form carrying the content inside — string content as

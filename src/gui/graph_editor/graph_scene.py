@@ -9,9 +9,10 @@ import xml.etree.ElementTree as ET
 from copy import deepcopy
 
 from PySide6.QtCore import QPointF, QRectF, Signal
-from PySide6.QtGui import QColor, QPainterPath
+from PySide6.QtGui import QPainterPath
 from PySide6.QtWidgets import QGraphicsScene, QWidget
 
+from src.gui.graph_editor import graph_theme
 from src.gui.graph_editor.graph_items import (
     GraphAuxObject,
     GraphEdge,
@@ -57,7 +58,18 @@ class GraphScene(QGraphicsScene):
         # same move event flush their edges once, with final positions
         self._edge_batch: list[GraphEdge] | None = None
         self.setSceneRect(0, 0, 1600, 1000)
-        self.setBackgroundBrush(QColor("#1e1e1e"))
+        self.setBackgroundBrush(graph_theme.color("canvas_bg"))
+
+    def refresh_theme(self) -> None:
+        """Restyle the whole canvas after a theme change."""
+        graph_theme.reset_cache()
+        self.setBackgroundBrush(graph_theme.color("canvas_bg"))
+        for node in self.nodes.values():
+            node.apply_theme()
+        for edge in self.edges:
+            edge.apply_theme()
+        for item in self.aux_objects:
+            item.apply_theme()
 
     def add_node(
         self,

@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 
+from src.gui.graph_editor import graph_theme
+
 # Line widths, in item units (kbe: LINE_* defines).
 LINE_THIN_WIDTH = 2.0
 LINE_FAT_WIDTH = 7.0
@@ -36,9 +38,6 @@ MARK_PERIOD = 28.0
 MARK_OFFSET = 22.0
 
 NODE_OUTLINE_WIDTH = 4.0
-# dark interior: the bright border reads clearly against the dark canvas,
-# so node types (by border colour) stay recognisable
-NODE_FILL = QColor("#2b313a")
 GLYPH_WIDTH = 2.5
 HATCH_WIDTH = 1.0
 
@@ -194,7 +193,7 @@ def paint_node(
         painter.drawEllipse(shape.boundingRect())
         painter.restore()
         return
-    painter.setBrush(QBrush(NODE_FILL, Qt.BrushStyle.SolidPattern))
+    painter.setBrush(QBrush(graph_theme.color("node_fill"), Qt.BrushStyle.SolidPattern))
 
     # the outline stroke covers half of its width inwards; the glyph must be
     # clipped to the shape inside the border (kbe clips to bound.adjusted(1,1))
@@ -429,7 +428,7 @@ def _paint_fat_pair(
 
     inset_pattern = DASH_FAT_VAR_INSET if style.variable else None
     inset_pen = cached_pen(
-        QColor("#1e1e1e"),
+        graph_theme.color("canvas_bg"),
         LINE_FAT_IN_WIDTH,
         dash_pattern=inset_pattern,
         dash_offset=20 if style.variable else 0.0,

@@ -30,7 +30,9 @@ from PySide6.QtGui import QPainter, QPainterPath
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QComboBox, QMessageBox
 
+from src.core.signals import signals
 from src.gui.graph_editor import scg_painter
+from src.gui.graph_editor import graph_theme
 from src.gui.graph_editor.graph_commands import (
     CommandConnectorDotsChange,
     CommandConnectorTypeChange,
@@ -70,6 +72,7 @@ from src.gui.graph_editor.graph_types import (
     connector_parts,
     node_type_parts,
 )
+from src.utils.theme_manager import ThemeManager
 from src.lark_syntax.parser import SCSParser
 
 
@@ -2496,6 +2499,88 @@ class GraphEditorUndoTests(unittest.TestCase):
         self.assertEqual(window.editor_selector.currentIndex(), 1)
         window._on_file_selected("/project/code.scs")
         self.assertEqual(window.editor_selector.currentIndex(), 1)
+
+
+class GraphEditorThemeTests(unittest.TestCase):
+    """Live palette: the canvas restyles itself on the theme change signal."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.editor = GraphEditorWidget()
+        self.editor.scene.add_node("theme_probe")
+        self.app.processEvents()
+        self.original_theme = ThemeManager.last_used_theme
+
+    def tearDown(self):
+        ThemeManager.last_used_theme = self.original_theme
+        ThemeManager.colors = {}
+        signals.theme_changed.emit("dark")
+        self.editor.close()
+
+    def _switch(self, name):
+        ThemeManager.last_used_theme = name
+        signals.theme_changed.emit(name)
+        self.app.processEvents()
+
+    def test_dark_theme_keeps_the_reference_canvas_values(self):
+        scene = self.editor.scene
+        node = scene.nodes["theme_probe"]
+        self.assertEqual(
+            scene.backgroundBrush().color().name(), "#1e1e1e"
+        )
+        self.assertEqual(node.label.defaultTextColor().name(), "#d4d4d4")
+        self.assertEqual(
+            graph_theme.color("node_fill").name().upper(), "#2B313A"
+        )
+        self.assertEqual(
+            int(node._node_color("define").red()), 230
+        )
+
+    def test_switching_to_light_restyles_scene_nodes_and_aux(self):
+        scene = self.editor.scene
+        node = scene.nodes["theme_probe"]
+        contour = scene.add_contour(
+            [QPointF(0, 0), QPointF(100, 0), QPointF(100, 100)]
+        )
+        dark_bg = scene.backgroundBrush().color().name()
+
+        self._switch("light")
+
+        self.assertNotEqual(
+            scene.backgroundBrush().color().name(), dark_bg
+        )
+        self.assertEqual(
+            scene.backgroundBrush().color().name(), "#f3f3f3"
+        )
+        self.assertEqual(node.label.defaultTextColor().name(), "#1e1e1e")
+        self.assertEqual(
+            contour.pen().color().name(), "#6a6a6a"
+        )
+        self.assertEqual(
+            graph_theme.color("selection_fg").name(), "#b85c00"
+        )
+        self.assertEqual(
+            node._node_color("not_define").name(), "#9a9a9a"
+        )
+        self.assertEqual(
+            node._node_color("define").name(), "#3c3f44"
+        )
+
+    def test_canvas_bg_follows_the_theme_color_token(self):
+        scene = self.editor.scene
+        ThemeManager.colors = {"bg_alt": "#abcdef"}
+
+        self._switch("dark")
+
+        self.assertEqual(scene.backgroundBrush().color().name(), "#abcdef")
+
+    def test_theme_change_without_a_file_keeps_save_state(self):
+        before = self.editor.is_modified
+        self._switch("light")
+        self.assertEqual(self.editor.is_modified, before)
 
 
 if __name__ == "__main__":
