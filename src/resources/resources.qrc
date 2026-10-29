@@ -13,6 +13,12 @@
     <file>icons/folder_add.svg</file>
     <file>icons/folder_search.svg</file>
     <file>icons/new_graph.svg</file>
+    <file>icons/panel-bottom-fill.svg</file>
+    <file>icons/panel-bottom.svg</file>
+    <file>icons/panel-left-fill.svg</file>
+    <file>icons/panel-left.svg</file>
+    <file>icons/panel-right-fill.svg</file>
+    <file>icons/panel-right.svg</file>
     <file>icons/plus.svg</file>
     <file>icons/redo.svg</file>
     <file>icons/rename.svg</file>

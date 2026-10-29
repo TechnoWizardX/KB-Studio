@@ -39,6 +39,30 @@ class Icons:
         return cls._cache[name]
 
     @classmethod
+    def panel_bottom_fill(cls) -> QIcon:
+        return cls._get("panel-bottom-fill", ":/icons/panel-bottom-fill.svg")
+
+    @classmethod
+    def panel_bottom(cls) -> QIcon:
+        return cls._get("panel-bottom", ":/icons/panel-bottom.svg")
+    
+    @classmethod
+    def panel_left_fill(cls) -> QIcon:
+        return cls._get("panel-left-fill", ":/icons/panel-left-fill.svg")
+    
+    @classmethod
+    def panel_left(cls) -> QIcon:
+        return cls._get("panel-left", ":/icons/panel-left.svg")
+    
+    @classmethod
+    def panel_right_fill(cls) -> QIcon:
+        return cls._get("panel-right-fill", ":/icons/panel-right-fill.svg")
+    
+    @classmethod
+    def panel_right(cls) -> QIcon:
+        return cls._get("panel-right", ":/icons/panel-right.svg")
+    
+    @classmethod
     def file_add(cls) -> QIcon:
         return cls._get("file_add", ":/icons/file_add.svg")
 
