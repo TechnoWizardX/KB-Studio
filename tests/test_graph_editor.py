@@ -2729,6 +2729,21 @@ class GraphEditorContextMenuTests(unittest.TestCase):
         }
         self.assertEqual(selected, {"alpha", "beta"})
 
+    def test_select_related_nodes_includes_buses(self):
+        left = self.editor.scene.add_node("left")
+        right = self.editor.scene.add_node("right")
+        unrelated = self.editor.scene.add_node("unrelated")
+        self.editor.scene.connect_nodes(left, right, "->")
+        bus_left = self.editor.scene.add_bus(left, QPointF(90, 60))
+        bus_right = self.editor.scene.add_bus(right, QPointF(110, 60))
+        bus_unrelated = self.editor.scene.add_bus(unrelated, QPointF(140, 60))
+
+        self.editor._select_related_nodes(left)
+
+        self.assertIn(bus_left, self.editor.scene.selectedItems())
+        self.assertIn(bus_right, self.editor.scene.selectedItems())
+        self.assertNotIn(bus_unrelated, self.editor.scene.selectedItems())
+
     def test_connector_menu_groups(self):
         connector = self.editor.scene.connect_nodes(
             self.editor.scene.add_node("a"),

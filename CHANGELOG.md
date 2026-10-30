@@ -30,6 +30,9 @@
   is a node picked from the active selection and the closure gets
   highlighted before copying; the selection menu also adds Delete and
   Wrap in contour — a contour built around the selection bounds.
+  "Select all incoming/outgoing nodes" takes the buses of the node and its
+  neighbours into the selection too, and Delete (the keyboard one included)
+  removes selected canvas notes along with the graph objects.
 
 - Added copy/paste of the selected graph objects (nodes, connectors, buses,
   contours) in the SCg editor: Ctrl+C/Ctrl+X/Ctrl+V shortcuts, context menu

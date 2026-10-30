@@ -704,6 +704,7 @@ class GraphEditorWidget(QFrame):
                 item.setSelected(True)
             self._fill_connector_menu(menu, item)
         elif isinstance(item, GraphNote):
+            menu = QMenu(self)
             self._fill_note_menu(menu, item)
         else:
             menu = QMenu(self)
@@ -854,8 +855,16 @@ class GraphEditorWidget(QFrame):
         for related_node in related:
             related_node.setSelected(True)
         node.setSelected(True)
+        selected = {node, *related}
+        buses = [
+            item
+            for item in self.scene.aux_objects
+            if item.kind == "bus" and item.owner in selected
+        ]
+        for bus in buses:
+            bus.setSelected(True)
         self.status_label.setText(
-            f"Selected {len(related)} incoming/outgoing nodes."
+            f"Selected {len(related)} incoming/outgoing nodes and {len(buses)} buses."
         )
 
     def _wrap_selection_in_contour(self) -> None:
@@ -1041,10 +1050,33 @@ class GraphEditorWidget(QFrame):
             QMessageBox.warning(self, "Invalid node name", str(error))
 
     def remove_selected(self) -> None:
-        command = CommandDeleteSelection(self.scene, self.scene.selectedItems())
-        if command.is_empty():
+        notes = [
+            item
+            for item in self.scene.selectedItems()
+            if isinstance(item, GraphNote)
+        ]
+        note_command = (
+            CommandDeleteNotes(self.scene, notes) if notes else None
+        )
+        command = CommandDeleteSelection(
+            self.scene,
+            [
+                item
+                for item in self.scene.selectedItems()
+                if not isinstance(item, GraphNote)
+            ],
+        )
+        if command.is_empty() and note_command is None:
             return
-        self.undo_stack.push(command)
+        if note_command is None:
+            self.undo_stack.push(command)
+        elif command.is_empty():
+            self.undo_stack.push(note_command)
+        else:
+            self.undo_stack.beginMacro("Delete selection")
+            self.undo_stack.push(command)
+            self.undo_stack.push(note_command)
+            self.undo_stack.endMacro()
 
     def _selected_graph_objects(self) -> list:
         return [
