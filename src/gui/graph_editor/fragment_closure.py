@@ -1,21 +1,21 @@
-"""Preserved "whole linked fragment" copy strategy (temporarily off).
+"""Closure copy of the whole linked fragment.
 
-Not reachable from the UI right now: regular copy/paste moves only the
-selected objects (``GraphScene.copy_fragment``), dropping relationships
-that point outside the selection. This module keeps the older automating
-variant for future use — it expands the selection into a closure, so any
-connector touching a copied object is copied together with the objects at
-its other end (recursively), and buses pull their owner.
+The regular clipboard copy (``GraphScene.copy_fragment``) moves only the
+selected objects and drops relationships that point outside the selection.
+This module provides the older automating variant used by the
+"Copy all incoming/outgoing nodes" context-menu actions: it expands the
+selection into a closure, so any connector touching a copied object is
+copied together with the objects at its other end (recursively), and buses
+pull their owner.
 
-Wiring it back in means calling ``copy_fragment_closure(scene, selected)``
-instead of ``scene.copy_fragment(...)`` and parsing/inserting the result
-the same way (``parse_gwf_document`` + ``prepare_paste_fragment`` +
-``insert_fragment``). Refs keep the source ids; the pasting side
-resolves collisions.
+Drop into a clipboard fragment with ``copy_fragment_closure(scene, selected)``
+and read the closure size with ``copy_closure(scene, selected)``; paste the
+result the usual way (``parse_gwf_document`` + ``prepare_paste_fragment`` +
+``insert_fragment``). Refs keep the source ids; the pasting side resolves
+collisions.
 """
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 from copy import deepcopy
 from typing import TYPE_CHECKING
 
@@ -63,6 +63,9 @@ def copy_closure(scene: GraphScene, selected: set) -> set:
             for endpoint in (edge.source, edge.target):
                 if endpoint not in grown:
                     grown.add(endpoint)
+        for item in scene.aux_objects:
+            if item.kind == "bus" and item.owner in objects:
+                grown.add(item)
         if grown == objects:
             break
         objects = grown

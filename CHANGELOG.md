@@ -4,6 +4,21 @@
 
 ### Added
 
+- Added the structured SCg editor context menu with divider-separated
+  groups: the canvas menu offers a creation block (Add new node — a standard
+  permanent node, Add nrel node and Add rrel node — relation nodes with
+  matching `nrel_`/`rrel_` identifiers, Add var node) plus Paste here and
+  Save (enabled while there are unsaved changes); the connector menu offers
+  Change connector type and Delete connector; the node menu offers
+  Rename, Change node type, Add/Edit content, Select all incoming/outgoing
+  nodes and Delete node, then Copy/Cut/Paste and "Copy all incoming/outgoing
+  nodes" — a whole linked-fragment copy (the node, its neighbours across
+  connectors, nested connectors and buses) placed into the clipboard through
+  `fragment_closure.py`, in the selection menu the closure anchor is a node
+  picked from the active selection and the closure gets highlighted before
+  copying; the same Copy/Cut/Paste/Closure group is shown for right-clicks
+  over an active selection (Delete in the first block).
+
 - Added copy/paste of the selected graph objects (nodes, connectors, buses,
   contours) in the SCg editor: Ctrl+C/Ctrl+X/Ctrl+V shortcuts, context menu
   commands (Copy/Cut for the selection, "Paste here" for a canvas position,

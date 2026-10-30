@@ -29,7 +29,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtGui import QPainter, QPainterPath
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QComboBox, QMessageBox
+from PySide6.QtWidgets import QApplication, QComboBox, QMenu, QMessageBox
 
 from src.core.signals import signals
 from src.gui.graph_editor import scg_painter
@@ -2644,6 +2644,133 @@ class GraphEditorClipboardTests(unittest.TestCase):
 
         self.assertEqual(editor.scene.nodes, {})
         self.assertIn("Cannot paste", editor.status_label.text())
+
+
+class GraphEditorContextMenuTests(unittest.TestCase):
+    """Context menus are grouped into blocks separated by dividers."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.editor = GraphEditorWidget()
+        self.editor.new_graph()
+
+    @staticmethod
+    def _texts(menu: QMenu) -> list[str]:
+        return [action.text() for action in menu.actions() if action.text()]
+
+    def test_canvas_menu_groups_creation_and_file_items(self):
+        menu = QMenu(self.editor)
+        self.editor._fill_canvas_menu(menu, QPointF(10, 10))
+        self.assertEqual(
+            self._texts(menu),
+            [
+                "Add new node",
+                "Add nrel node",
+                "Add rrel node",
+                "Add var node",
+                "Paste here",
+                "Save",
+            ],
+        )
+        # wait — separator index between creation and file blocks
+        self.assertEqual(menu.actions()[4].text(), "")
+        save_action = menu.actions()[-1]
+        self.assertTrue(save_action.isEnabled())
+        self.editor._mark_modified(False)
+        menu = QMenu(self.editor)
+        self.editor._fill_canvas_menu(menu, QPointF(10, 10))
+        self.assertFalse(menu.actions()[-1].isEnabled())
+
+    def test_node_menu_groups_and_object_actions(self):
+        node = self.editor.scene.add_node("alpha")
+        menu = QMenu(self.editor)
+        self.editor._fill_node_menu(menu, node, QPointF(0, 0))
+        self.assertEqual(
+            self._texts(menu),
+            [
+                "Rename",
+                "Change node type",
+                "Add content…",
+                "Select all incoming/outgoing nodes",
+                "Delete node",
+                "Copy",
+                "Cut",
+                "Paste",
+                "Copy all incoming/outgoing nodes",
+            ],
+        )
+        self.assertEqual(menu.actions()[4].text(), "")
+        self.assertEqual(menu.actions()[6].text(), "")
+
+        other = self.editor.scene.add_node("beta")
+        self.editor.scene.connect_nodes(node, other, "=>")
+        self.editor._select_related_nodes(node)
+        selected = {
+            item.identifier
+            for item in self.editor.scene.selectedItems()
+            if isinstance(item, GraphNode)
+        }
+        self.assertEqual(selected, {"alpha", "beta"})
+
+    def test_connector_menu_groups(self):
+        connector = self.editor.scene.connect_nodes(
+            self.editor.scene.add_node("a"),
+            self.editor.scene.add_node("b"),
+            "->",
+        )
+        menu = QMenu(self.editor)
+        self.editor._fill_connector_menu(menu, connector)
+        self.assertEqual(
+            self._texts(menu), ["Change connector type", "Delete connector"]
+        )
+        submenu = menu.actions()[0].menu()
+        self.assertGreater(len(submenu.actions()), 10)
+
+    def test_closure_select_and_copy_actions(self):
+        left = self.editor.scene.add_node("left")
+        right = self.editor.scene.add_node("right")
+        self.editor.scene.connect_nodes(left, right, "->")
+        self.editor.scene.add_bus(left, QPointF(80, 90))
+
+        self.editor._copy_closed_fragment(left)
+        _, sector, _ = parse_gwf_document(QGuiApplication.clipboard().text())
+        self.assertEqual(len(sector.findall("node")), 2)
+        self.assertEqual(len(sector.findall("bus")), 1)
+        self.assertEqual(len(sector.findall("arc")), 1)
+
+        left.setSelected(True)
+        right.setSelected(True)
+        self.editor.scene.add_bus(right, QPointF(80, 90))
+        self.editor._copy_closed_fragment_of_selection()
+        _, sector, _ = parse_gwf_document(QGuiApplication.clipboard().text())
+        self.assertEqual(len(sector.findall("node")), 2)
+        self.assertEqual(len(sector.findall("bus")), 2)
+        self.assertEqual(len(self.editor.scene.selectedItems()), 5)
+
+    def test_context_node_creation_entries_make_unique_identifiers(self):
+        self.editor._create_node_at(
+            QPointF(0, 0), "node/const/perm/relation", "nrel"
+        )
+        self.editor._create_node_at(
+            QPointF(5, 5), "node/const/perm/relation", "rrel"
+        )
+        self.editor._create_node_at(
+            QPointF(10, 10), "node/var/general_node"
+        )
+        self.assertEqual(
+            list(self.editor.scene.nodes), ["nrel_1", "rrel_1", "node_1"]
+        )
+        self.assertEqual(
+            self.editor.scene.nodes["nrel_1"].gwf_type,
+            "node/const/perm/relation",
+        )
+        self.assertEqual(
+            self.editor.scene.nodes["node_1"].gwf_type,
+            "node/var/general_node",
+        )
 
 
 class GraphEditorThemeTests(unittest.TestCase):

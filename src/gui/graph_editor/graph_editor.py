@@ -73,6 +73,10 @@ from src.gui.graph_editor.graph_items import (
 )
 from src.gui.graph_editor.graph_scene import GraphScene
 from src.gui.graph_editor.content_dialog import _ContentDialog
+from src.gui.graph_editor.fragment_closure import (
+    copy_closure,
+    copy_fragment_closure,
+)
 from src.gui.graph_editor.graph_types import (
     CONNECTOR_TYPES as _CONNECTOR_TYPES,
     EDGE_TYPES as _EDGE_TYPES,
@@ -383,18 +387,22 @@ class GraphEditorWidget(QFrame):
         self.undo_stack.clear()
         self.status_label.setText("New graph — save it as a .gwf file.")
 
-    def _create_node_at(self, position: QPointF) -> None:
-        index = len(self.scene.nodes) + 1
-        while f"node_{index}" in self.scene.nodes:
+    def _create_node_at(
+        self,
+        position: QPointF,
+        gwf_type: str | None = None,
+        prefix: str = "node",
+    ) -> None:
+        if gwf_type is None:
+            gwf_type = self.node_type_combo.currentData()
+        index = 1
+        identifier = f"{prefix}_{index}"
+        while identifier in self.scene.nodes:
             index += 1
+            identifier = f"{prefix}_{index}"
         try:
             self.undo_stack.push(
-                CommandCreateNode(
-                    self.scene,
-                    f"node_{index}",
-                    position,
-                    self.node_type_combo.currentData(),
-                )
+                CommandCreateNode(self.scene, identifier, position, gwf_type)
             )
         except ValueError as error:
             self._show_tool_error(str(error))
@@ -671,70 +679,191 @@ class GraphEditorWidget(QFrame):
             self._show_tool_error(str(error))
 
     def _show_context_menu(self, scene_pos: QPointF, item, global_pos) -> None:
-        menu = QMenu(self)
         if item is None:
-            paste_action = menu.addAction("Paste here")
-            add_action = menu.addAction("Add node here")
-            chosen = menu.exec(global_pos)
-            if chosen is add_action:
-                self._create_node_at(scene_pos)
-            elif chosen is paste_action:
-                self.paste_at(scene_pos)
-            return
-
-        if not item.isSelected():
-            self.scene.clearSelection()
-            item.setSelected(True)
-
-        rename_action = None
-        content_action = None
-        type_menu = None
-        if isinstance(item, GraphNode):
-            rename_action = menu.addAction("Rename")
-            content_action = menu.addAction(
-                "Edit content…" if item.has_content() else "Add content…"
-            )
-            type_menu = menu.addMenu("Node type")
-            for label, gwf_type in _NODE_TYPES:
-                type_action = type_menu.addAction(label)
-                type_action.triggered.connect(
-                    lambda checked=False,
-                    node=item,
-                    node_type=gwf_type: self._set_node_type(node, node_type)
-                )
+            menu = QMenu(self)
+            if self.scene.selectedItems():
+                self._fill_selection_menu(menu, scene_pos)
+            else:
+                self._fill_canvas_menu(menu, scene_pos)
+        elif isinstance(item, GraphNode):
+            menu = QMenu(self)
+            if not item.isSelected():
+                self.scene.clearSelection()
+                item.setSelected(True)
+            self._fill_node_menu(menu, item, scene_pos)
         elif isinstance(item, GraphEdge):
-            if item.gwf_tag == "pair":
-                menu.addAction("Reverse direction").triggered.connect(
-                    lambda checked=False: self._swap_connector(item)
-                )
-            type_menu = menu.addMenu("Connector type")
-            for label, gwf_type, gwf_tag, edge_type in _CONNECTOR_TYPES:
-                type_action = type_menu.addAction(label)
-                type_action.triggered.connect(
-                    lambda checked=False,
-                    connector=item,
-                    connector_type=gwf_type,
-                    connector_tag=gwf_tag,
-                    connector_token=edge_type: self._set_connector_type(
-                        connector, connector_type, connector_tag, connector_token
-                    )
-                )
-        copy_action = menu.addAction("Copy")
-        cut_action = menu.addAction("Cut")
-        delete_action = menu.addAction("Delete")
-        chosen = menu.exec(global_pos)
-        if chosen is not None and chosen is delete_action:
-            self.remove_selected()
-        elif chosen is copy_action:
-            self.copy_selection()
-        elif chosen is cut_action:
-            self.cut_selection()
-        elif rename_action is not None and chosen is rename_action:
-            QTimer.singleShot(0, item.label.start_editing)
-        elif content_action is not None and chosen is content_action:
-            QTimer.singleShot(
-                0, lambda node=item: self._open_content_editor(node)
+            menu = QMenu(self)
+            if not item.isSelected():
+                self.scene.clearSelection()
+                item.setSelected(True)
+            self._fill_connector_menu(menu, item)
+        else:
+            # contour or bus: work with the current selection
+            menu = QMenu(self)
+            self._fill_selection_menu(menu, scene_pos)
+        menu.exec(global_pos)
+
+    def _fill_canvas_menu(self, menu: QMenu, scene_pos: QPointF) -> None:
+        menu.addAction("Add new node").triggered.connect(
+            lambda checked=False, position=scene_pos: self._create_node_at(
+                position, "node/const/perm/general"
             )
+        )
+        menu.addAction("Add nrel node").triggered.connect(
+            lambda checked=False, position=scene_pos: self._create_node_at(
+                position, "node/const/perm/relation", "nrel"
+            )
+        )
+        menu.addAction("Add rrel node").triggered.connect(
+            lambda checked=False, position=scene_pos: self._create_node_at(
+                position, "node/const/perm/relation", "rrel"
+            )
+        )
+        menu.addAction("Add var node").triggered.connect(
+            lambda checked=False, position=scene_pos: self._create_node_at(
+                position, "node/var/general_node"
+            )
+        )
+        menu.addSeparator()
+        menu.addAction("Paste here").triggered.connect(
+            lambda checked=False, position=scene_pos: self.paste_at(position)
+        )
+        save_action = menu.addAction("Save")
+        save_action.setEnabled(self.is_modified)
+        save_action.triggered.connect(self.save)
+
+    def _fill_node_menu(
+        self, menu: QMenu, node: GraphNode, scene_pos: QPointF
+    ) -> None:
+        rename_action = menu.addAction("Rename")
+        rename_action.triggered.connect(
+            lambda checked=False: QTimer.singleShot(0, node.label.start_editing)
+        )
+        type_menu = menu.addMenu("Change node type")
+        for label, gwf_type in _NODE_TYPES:
+            type_action = type_menu.addAction(label)
+            type_action.triggered.connect(
+                lambda checked=False,
+                node=node,
+                node_type=gwf_type: self._set_node_type(node, node_type)
+            )
+        content_action = menu.addAction(
+            "Edit content…" if node.has_content() else "Add content…"
+        )
+        content_action.triggered.connect(
+            lambda checked=False: QTimer.singleShot(
+                0, lambda target=node: self._open_content_editor(target)
+            )
+        )
+        menu.addAction("Select all incoming/outgoing nodes").triggered.connect(
+            lambda checked=False, node=node: self._select_related_nodes(node)
+        )
+        menu.addSeparator()
+        menu.addAction("Delete node").triggered.connect(self.remove_selected)
+        menu.addSeparator()
+        menu.addAction("Copy").triggered.connect(self.copy_selection)
+        menu.addAction("Cut").triggered.connect(self.cut_selection)
+        menu.addAction("Paste").triggered.connect(
+            lambda checked=False, position=scene_pos: self.paste_at(position)
+        )
+        menu.addAction("Copy all incoming/outgoing nodes").triggered.connect(
+            lambda checked=False, node=node: self._copy_closed_fragment(node)
+        )
+
+    def _fill_connector_menu(self, menu: QMenu, connector: GraphEdge) -> None:
+        type_menu = menu.addMenu("Change connector type")
+        for label, gwf_type, gwf_tag, edge_type in _CONNECTOR_TYPES:
+            type_action = type_menu.addAction(label)
+            type_action.triggered.connect(
+                lambda checked=False,
+                connector=connector,
+                connector_type=gwf_type,
+                connector_tag=gwf_tag,
+                connector_token=edge_type: self._set_connector_type(
+                    connector, connector_type, connector_tag, connector_token
+                )
+            )
+        if connector.gwf_tag == "pair":
+            menu.addAction("Reverse direction").triggered.connect(
+                lambda checked=False, connector=connector: self._swap_connector(
+                    connector
+                )
+            )
+        menu.addSeparator()
+        menu.addAction("Delete connector").triggered.connect(self.remove_selected)
+
+    def _fill_selection_menu(self, menu: QMenu, scene_pos: QPointF) -> None:
+        menu.addAction("Delete").triggered.connect(self.remove_selected)
+        menu.addSeparator()
+        menu.addAction("Copy").triggered.connect(self.copy_selection)
+        menu.addAction("Cut").triggered.connect(self.cut_selection)
+        menu.addAction("Paste").triggered.connect(
+            lambda checked=False, position=scene_pos: self.paste_at(position)
+        )
+        menu.addAction("Copy all incoming/outgoing nodes").triggered.connect(
+            self._copy_closed_fragment_of_selection
+        )
+
+    def _select_related_nodes(self, node: GraphNode) -> None:
+        related = []
+        for edge in self.scene.edges:
+            if edge.source is node:
+                candidate = edge.target
+            elif edge.target is node:
+                candidate = edge.source
+            else:
+                continue
+            if isinstance(candidate, GraphNode) and candidate not in related:
+                related.append(candidate)
+        self.scene.clearSelection()
+        for related_node in related:
+            related_node.setSelected(True)
+        node.setSelected(True)
+        self.status_label.setText(
+            f"Selected {len(related)} incoming/outgoing nodes."
+        )
+
+    def _copy_closed_fragment(self, anchor: GraphNode) -> None:
+        closure = copy_closure(self.scene, {anchor})
+        fragment = copy_fragment_closure(self.scene, [anchor])
+        if not fragment:
+            self.status_label.setText("Nothing to copy.")
+            return
+        self._put_fragment_in_clipboard(fragment)
+        self.status_label.setText(f"Copied {len(closure)} linked objects.")
+
+    def _copy_closed_fragment_of_selection(self) -> None:
+        anchor = next(
+            (
+                item
+                for item in self.scene.selectedItems()
+                if isinstance(item, GraphNode)
+            ),
+            None,
+        )
+        if anchor is None:
+            self.status_label.setText(
+                "Select a node to copy its incoming/outgoing links."
+            )
+            return
+        closure = copy_closure(self.scene, {anchor})
+        self.scene.clearSelection()
+        for item in closure:
+            item.setSelected(True)
+        fragment = copy_fragment_closure(self.scene, [anchor])
+        if not fragment:
+            self.status_label.setText("Nothing to copy.")
+            return
+        self._put_fragment_in_clipboard(fragment)
+        self.status_label.setText(f"Copied {len(closure)} linked objects.")
+
+    def _put_fragment_in_clipboard(self, fragment: str) -> None:
+        mime = QMimeData()
+        mime.setData(GRAPH_MIME, QByteArray(fragment.encode("utf-8")))
+        # text/plain carries the same GWF document, so pasting into other
+        # GWF-aware tools (or back from them) works through the same parser
+        mime.setText(fragment)
+        QGuiApplication.clipboard().setMimeData(mime)
 
     def _open_content_editor(self, node: GraphNode) -> None:
         dialog = _ContentDialog(node, self)
@@ -862,12 +991,7 @@ class GraphEditorWidget(QFrame):
                 "Nothing to copy — a connector needs both ends in the selection."
             )
             return
-        mime = QMimeData()
-        mime.setData(GRAPH_MIME, QByteArray(fragment.encode("utf-8")))
-        # text/plain carries the same GWF document, so pasting into other
-        # GWF-aware tools (or back from them) works through the same parser
-        mime.setText(fragment)
-        QGuiApplication.clipboard().setMimeData(mime)
+        self._put_fragment_in_clipboard(fragment)
         self.status_label.setText(f"Copied {len(selected)} objects.")
 
     def cut_selection(self) -> None:
@@ -881,10 +1005,7 @@ class GraphEditorWidget(QFrame):
                 "Nothing to cut — a connector needs both ends in the selection."
             )
             return
-        mime = QMimeData()
-        mime.setData(GRAPH_MIME, QByteArray(fragment.encode("utf-8")))
-        mime.setText(fragment)
-        QGuiApplication.clipboard().setMimeData(mime)
+        self._put_fragment_in_clipboard(fragment)
         self.remove_selected()
         self.status_label.setText(f"Cut {len(selected)} objects.")
 
