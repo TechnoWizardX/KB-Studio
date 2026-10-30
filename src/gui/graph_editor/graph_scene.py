@@ -816,19 +816,28 @@ class GraphScene(QGraphicsScene):
         return built_nodes, built_edges, built_aux
 
     def copy_fragment(self, selected) -> str:
-        """Full GWF document with a copy of the given selection.
-
-        The selection closes over dependent objects: any connector touching
-        a copied object is copied with the objects at its other end, buses
-        pull their owner. Ids stay as in the source document, the pasting
-        side resolves collisions."""
-        closure = self._copy_closure(set(selected))
+        """Full GWF document with exactly the given selection (no dependency
+        closure): a connector is copied only when both of its ends are in
+        the selection, a bus only when its owner is. Relationships reaching
+        outside the selection are ignored, so the fragment has no dangling
+        references. Returns ``""`` when nothing copyable is selected.
+        Ids stay as in the source document, the pasting side resolves
+        collisions. The older whole-linked-fragment variant lives in
+        ``fragment_closure.py`` for future use."""
+        included = {
+            item
+            for item in selected
+            if isinstance(item, (GraphNode, GraphEdge, GraphAuxObject))
+        }
+        if not included:
+            return ""
         temp = GraphScene()
         temp._loading = True
+        copied_count = 0
         try:
             node_map: dict[GraphNode, GraphNode] = {}
             for node in self.nodes.values():
-                if node not in closure["objects"]:
+                if node not in included:
                     continue
                 clone = temp.add_node(
                     node.identifier,
@@ -839,9 +848,10 @@ class GraphScene(QGraphicsScene):
                     gwf_element=deepcopy(node.gwf_element),
                 )
                 node_map[node] = clone
+                copied_count += 1
             aux_map: dict = {}
             for item in self.aux_objects:
-                if item not in closure["objects"]:
+                if item not in included:
                     continue
                 owner = (
                     node_map.get(item.owner) if item.owner is not None else None
@@ -852,18 +862,16 @@ class GraphScene(QGraphicsScene):
                 temp.addItem(clone)
                 temp.aux_objects.append(clone)
                 aux_map[item] = clone
+                copied_count += 1
             endpoint_map: dict = {}
             endpoint_map.update(node_map)
             endpoint_map.update(aux_map)
-            edge_map: dict = {}
             for edge in self.edges:
-                if edge not in closure["objects"]:
-                    continue
                 source = endpoint_map.get(edge.source)
                 target = endpoint_map.get(edge.target)
                 if source is None or target is None:
                     continue
-                clone = temp.connect_nodes(
+                temp.connect_nodes(
                     source,
                     target,
                     edge.edge_type,
@@ -873,36 +881,10 @@ class GraphScene(QGraphicsScene):
                     gwf_element=deepcopy(edge.gwf_element),
                     waypoints=[QPointF(point) for point in edge.waypoints],
                 )
-                edge_map[edge] = clone
-            endpoint_map.update(edge_map)
+                copied_count += 1
         finally:
             temp._loading = False
-        return temp.to_gwf()
-
-    def _copy_closure(self, selected: set) -> dict:
-        """Expand the selection: connector ends, bus owners, dependent edges."""
-        objects = {
-            item for item in selected if isinstance(
-                item, (GraphNode, GraphEdge, GraphAuxObject)
-            )
-        }
-        while True:
-            grown = set(objects)
-            for edge in self.edges:
-                if not (
-                    edge in objects
-                    or edge.source in objects
-                    or edge.target in objects
-                ):
-                    continue
-                grown.add(edge)
-                for endpoint in (edge.source, edge.target):
-                    if endpoint not in grown:
-                        grown.add(endpoint)
-            if grown == objects:
-                break
-            objects = grown
-        return {"objects": objects}
+        return temp.to_gwf() if copied_count else ""
 
     def insert_fragment(
         self, sector: ET.Element

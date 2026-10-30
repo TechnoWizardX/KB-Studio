@@ -288,7 +288,7 @@ class GraphCanvasView(QGraphicsView):
             self.scene()._end_edge_batch()
 
     def contextMenuEvent(self, event) -> None:
-        item = self._graph_object_at(event.pos().toPoint())
+        item = self._graph_object_at(event.pos())
         self.build_context_menu(
             self.mapToScene(event.pos()),
             item,

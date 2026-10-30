@@ -4,18 +4,22 @@
 
 ### Added
 
-- Added copy/paste of selected graph objects (nodes, connectors, buses,
+- Added copy/paste of the selected graph objects (nodes, connectors, buses,
   contours) in the SCg editor: Ctrl+C/Ctrl+X/Ctrl+V shortcuts, context menu
   commands (Copy/Cut for the selection, "Paste here" for a canvas position,
   pasting from the clipboard lands at the drop/viewport-centre point), and
   the system clipboard carries a GWF document (custom
   `application/x-kbstudio-gwf` plus the same text as `text/plain`), so
-  fragments copied from external GWF documents can be pasted too. Copying a
-  connector automatically pulls its unselected endpoints and their buses;
-  pasting produces fresh GWF ids (references rewritten consistently) and
-  disambiguates identifiers (`name_1`, `name_2`, …) against the current
-  graph; the whole fragment is shifted as a unit. Paste is undoable
-  (Ctrl+Z/Ctrl+Shift+Z) and reselects the inserted objects on redo.
+  fragments copied from external GWF documents can be pasted too. Copy moves
+  exactly the selected objects: relationships reaching outside the selection
+  are ignored (a connector is kept only when both of its ends are selected,
+  a bus only when its owner is), while relationships between the selected
+  objects travel with them; the older whole-linked-fragment copy variant is
+  preserved aside in `fragment_closure.py` for future use. Pasting produces
+  fresh GWF ids (references rewritten consistently) and disambiguates
+  identifiers (`name_1`, `name_2`, …) against the current graph; the whole
+  fragment is shifted as a unit. Paste is undoable (Ctrl+Z/Ctrl+Shift+Z) and
+  reselects the inserted objects on redo.
 
 - Added live theme support for the SCg graph editor: the canvas, node glyphs
   (border colours for constant/variable/meta/undefined sides, the node

@@ -851,31 +851,42 @@ class GraphEditorWidget(QFrame):
             if isinstance(item, (GraphNode, GraphEdge, GraphAuxObject))
         ]
 
-    def _copy_to_clipboard(self, selected: list) -> int:
+    def copy_selection(self) -> None:
+        selected = self._selected_graph_objects()
+        if not selected:
+            self.status_label.setText("Select objects to copy.")
+            return
         fragment = self.scene.copy_fragment(selected)
+        if not fragment:
+            self.status_label.setText(
+                "Nothing to copy — a connector needs both ends in the selection."
+            )
+            return
         mime = QMimeData()
         mime.setData(GRAPH_MIME, QByteArray(fragment.encode("utf-8")))
         # text/plain carries the same GWF document, so pasting into other
         # GWF-aware tools (or back from them) works through the same parser
         mime.setText(fragment)
         QGuiApplication.clipboard().setMimeData(mime)
-        return len(selected)
-
-    def copy_selection(self) -> None:
-        selected = self._selected_graph_objects()
-        if not selected:
-            self.status_label.setText("Select objects to copy.")
-            return
-        self.status_label.setText(f"Copied {self._copy_to_clipboard(selected)} objects.")
+        self.status_label.setText(f"Copied {len(selected)} objects.")
 
     def cut_selection(self) -> None:
         selected = self._selected_graph_objects()
         if not selected:
             self.status_label.setText("Select objects to cut.")
             return
-        count = self._copy_to_clipboard(selected)
+        fragment = self.scene.copy_fragment(selected)
+        if not fragment:
+            self.status_label.setText(
+                "Nothing to cut — a connector needs both ends in the selection."
+            )
+            return
+        mime = QMimeData()
+        mime.setData(GRAPH_MIME, QByteArray(fragment.encode("utf-8")))
+        mime.setText(fragment)
+        QGuiApplication.clipboard().setMimeData(mime)
         self.remove_selected()
-        self.status_label.setText(f"Cut {count} objects.")
+        self.status_label.setText(f"Cut {len(selected)} objects.")
 
     def paste_at(self, scene_pos: QPointF | None = None) -> None:
         mime = QGuiApplication.clipboard().mimeData()

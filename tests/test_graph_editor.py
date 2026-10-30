@@ -2565,15 +2565,30 @@ class GraphEditorClipboardTests(unittest.TestCase):
         self.assertTrue(all(item.isSelected() for item in pasted_nodes))
         self.assertTrue(pasted_edge.isSelected())
 
-    def test_copy_connector_pulls_unselected_endpoints(self):
-        source = self.scene.add_node("source")
-        target = self.scene.add_node("target")
-        edge = self.scene.connect_nodes(source, target, "->")
+    def test_copy_keeps_only_relationships_inside_the_selection(self):
+        left = self.scene.add_node("left", QPointF(0, 0))
+        right = self.scene.add_node("right", QPointF(60, 0))
+        outside = self.scene.add_node("outside", QPointF(120, 0))
+        internal = self.scene.connect_nodes(left, right, "->")
+        external = self.scene.connect_nodes(right, outside, "->")
 
-        _, sector, _ = parse_gwf_document(self.scene.copy_fragment([edge]))
+        _, pair_fragment, _ = parse_gwf_document(
+            self.scene.copy_fragment([left, right])
+        )
+        self.assertEqual(len(pair_fragment.findall("node")), 2)
+        self.assertEqual(len(pair_fragment.findall(internal.gwf_tag)), 1)
 
-        self.assertEqual(len(sector.findall("node")), 2)
-        self.assertEqual(len(sector.findall(edge.gwf_tag)), 1)
+        _, node_fragment, _ = parse_gwf_document(self.scene.copy_fragment([left]))
+        self.assertEqual(len(node_fragment.findall("node")), 1)
+        self.assertEqual(node_fragment.findall("arc"), [])
+        self.assertEqual(node_fragment.findall("pair"), [])
+
+        # a selected connector with unselected ends brings nothing over,
+        # and a bus whose owner is unselected is ignored too
+        bus = self.scene.add_bus(outside, QPointF(140, 60))
+        self.assertEqual(self.scene.copy_fragment([external]), "")
+        self.assertEqual(self.scene.copy_fragment([internal]), "")
+        self.assertEqual(self.scene.copy_fragment([bus]), "")
 
     def test_paste_from_foreign_document_disambiguates_identifiers(self):
         self.scene.add_node("existing")
