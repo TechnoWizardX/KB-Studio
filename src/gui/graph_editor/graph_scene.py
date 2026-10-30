@@ -694,101 +694,320 @@ class GraphScene(QGraphicsScene):
                 and child.get("owner") not in known_node_ids
             ]
 
-            element_ids: dict[str, GraphNode | GraphEdge | GraphAuxObject] = {}
-            node_ids: dict[str, GraphNode] = {}
-            for element in sector.findall("node"):
-                gwf_id = element.get("id", "")
-                if not gwf_id or gwf_id in element_ids:
-                    raise ValueError("GWF nodes must have unique, non-empty ids.")
-                idtf = element.get("idtf", "")
-                identifier = idtf if _IDENTIFIER.fullmatch(idtf) else ""
-                if not identifier or identifier in self.nodes:
-                    identifier = f"node_{len(self.nodes) + 1}"
-                    while identifier in self.nodes:
-                        identifier += "_"
-                position = QPointF(
-                    _gwf_number(element, "x", f"GWF node {gwf_id}"),
-                    _gwf_number(element, "y", f"GWF node {gwf_id}"),
-                )
-                node = self.add_node(
-                    identifier,
-                    position,
-                    gwf_id=gwf_id,
-                    gwf_type=element.get("type", "node/const/not_define"),
-                    gwf_idtf=idtf,
-                    gwf_element=deepcopy(element),
-                )
-                element_ids[gwf_id] = node
-                node_ids[gwf_id] = node
-
-            # buses and contours are loaded before connectors so connectors
-            # can reference contours as their endpoints
-            for tag in ("bus", "contour"):
-                for element in sector.findall(tag):
-                    if (
-                        tag == "bus"
-                        and element.get("owner", "") not in node_ids
-                    ):
-                        continue
-                    owner = (
-                        node_ids.get(element.get("owner", ""))
-                        if tag == "bus"
-                        else None
-                    )
-                    item = GraphAuxObject(tag, element, owner)
-                    self.addItem(item)
-                    self.aux_objects.append(item)
-                    # contours and buses provide element ids for connectors
-                    element_ids[item.gwf_id] = item
-
-            pending_connectors = [
-                element
-                for tag in ("arc", "pair")
-                for element in sector.findall(tag)
-                if _connector_parts(tag, element.get("type", "")) is not None
-                and element.get("id_b") != element.get("id_e")
-            ]
-            while pending_connectors:
-                remaining: list[ET.Element] = []
-                loaded_connector = False
-                for element in pending_connectors:
-                    source_id = element.get("id_b", "")
-                    target_id = element.get("id_e", "")
-                    source_object = element_ids.get(source_id)
-                    target_object = element_ids.get(target_id)
-                    if source_object is None or target_object is None:
-                        remaining.append(element)
-                        continue
-                    tag = element.tag
-                    connector = self.connect_nodes(
-                        source_object,
-                        target_object,
-                        _relation_for_gwf(tag, element.get("type", "")),
-                        gwf_id=element.get("id", ""),
-                        gwf_type=element.get("type", "arc/-/-"),
-                        gwf_tag=tag,
-                        gwf_element=deepcopy(element),
-                        waypoints=[
-                            QPointF(
-                                float(point.get("x", "0")),
-                                float(point.get("y", "0")),
-                            )
-                            for point in element.findall("./points/point")
-                        ],
-                    )
-                    connector.gwf_document_order = edges_in_document_order.get(
-                        connector.gwf_id
-                    )
-                    element_ids[connector.gwf_id] = connector
-                    loaded_connector = True
-                if not loaded_connector:
-                    self.gwf_sector_extras.extend(
-                        deepcopy(item) for item in remaining
-                    )
-                    break
-                pending_connectors = remaining
+            self._build_from_sector(sector)
         finally:
             self._loading = False
+
+    def _build_from_sector(
+        self, sector: ET.Element
+    ) -> tuple[list[GraphNode], list[GraphEdge], list[GraphAuxObject]]:
+        """Create graph objects for known elements of a sector (load and
+        paste path). Caller owns the ``_loading`` guard; ids must already be
+        unique within this scene."""
+        edges_in_document_order: dict[str, int] = {}
+        document_edge_index = 0
+        for connector in sector:
+            if connector.tag in {"arc", "pair"} and connector.get("id"):
+                edges_in_document_order[
+                    connector.get("id", "")
+                ] = document_edge_index
+                document_edge_index += 1
+
+        built_nodes: list[GraphNode] = []
+        built_edges: list[GraphEdge] = []
+        built_aux: list[GraphAuxObject] = []
+        element_ids: dict[str, GraphNode | GraphEdge | GraphAuxObject] = {}
+        node_ids: dict[str, GraphNode] = {}
+        for element in sector.findall("node"):
+            gwf_id = element.get("id", "")
+            if not gwf_id or gwf_id in element_ids:
+                raise ValueError("GWF nodes must have unique, non-empty ids.")
+            idtf = element.get("idtf", "")
+            identifier = idtf if _IDENTIFIER.fullmatch(idtf) else ""
+            if not identifier or identifier in self.nodes:
+                identifier = f"node_{len(self.nodes) + 1}"
+                while identifier in self.nodes:
+                    identifier += "_"
+            position = QPointF(
+                _gwf_number(element, "x", f"GWF node {gwf_id}"),
+                _gwf_number(element, "y", f"GWF node {gwf_id}"),
+            )
+            node = self.add_node(
+                identifier,
+                position,
+                gwf_id=gwf_id,
+                gwf_type=element.get("type", "node/const/not_define"),
+                gwf_idtf=idtf,
+                gwf_element=deepcopy(element),
+            )
+            built_nodes.append(node)
+            element_ids[gwf_id] = node
+            node_ids[gwf_id] = node
+
+        # buses and contours are loaded before connectors so connectors
+        # can reference contours as their endpoints
+        for tag in ("bus", "contour"):
+            for element in sector.findall(tag):
+                if (
+                    tag == "bus"
+                    and element.get("owner", "") not in node_ids
+                ):
+                    continue
+                owner = (
+                    node_ids.get(element.get("owner", ""))
+                    if tag == "bus"
+                    else None
+                )
+                item = GraphAuxObject(tag, deepcopy(element), owner)
+                self.addItem(item)
+                self.aux_objects.append(item)
+                built_aux.append(item)
+                # contours and buses provide element ids for connectors
+                element_ids[item.gwf_id] = item
+
+        pending_connectors = [
+            element
+            for tag in ("arc", "pair")
+            for element in sector.findall(tag)
+            if _connector_parts(tag, element.get("type", "")) is not None
+            and element.get("id_b") != element.get("id_e")
+        ]
+        while pending_connectors:
+            remaining: list[ET.Element] = []
+            loaded_connector = False
+            for element in pending_connectors:
+                source_id = element.get("id_b", "")
+                target_id = element.get("id_e", "")
+                source_object = element_ids.get(source_id)
+                target_object = element_ids.get(target_id)
+                if source_object is None or target_object is None:
+                    remaining.append(element)
+                    continue
+                tag = element.tag
+                connector = self.connect_nodes(
+                    source_object,
+                    target_object,
+                    _relation_for_gwf(tag, element.get("type", "")),
+                    gwf_id=element.get("id", ""),
+                    gwf_type=element.get("type", "arc/-/-"),
+                    gwf_tag=tag,
+                    gwf_element=deepcopy(element),
+                    waypoints=[
+                        QPointF(
+                            float(point.get("x", "0")),
+                            float(point.get("y", "0")),
+                        )
+                        for point in element.findall("./points/point")
+                    ],
+                )
+                connector.gwf_document_order = edges_in_document_order.get(
+                    connector.gwf_id
+                )
+                built_edges.append(connector)
+                element_ids[connector.gwf_id] = connector
+                loaded_connector = True
+            if not loaded_connector:
+                # dangling connectors stay as opaque document elements
+                self.gwf_sector_extras.extend(
+                    deepcopy(item) for item in remaining
+                )
+                break
+            pending_connectors = remaining
+        return built_nodes, built_edges, built_aux
+
+    def copy_fragment(self, selected) -> str:
+        """Full GWF document with a copy of the given selection.
+
+        The selection closes over dependent objects: any connector touching
+        a copied object is copied with the objects at its other end, buses
+        pull their owner. Ids stay as in the source document, the pasting
+        side resolves collisions."""
+        closure = self._copy_closure(set(selected))
+        temp = GraphScene()
+        temp._loading = True
+        try:
+            node_map: dict[GraphNode, GraphNode] = {}
+            for node in self.nodes.values():
+                if node not in closure["objects"]:
+                    continue
+                clone = temp.add_node(
+                    node.identifier,
+                    node.pos(),
+                    gwf_id=node.gwf_id,
+                    gwf_type=node.gwf_type,
+                    gwf_idtf=node.gwf_idtf,
+                    gwf_element=deepcopy(node.gwf_element),
+                )
+                node_map[node] = clone
+            aux_map: dict = {}
+            for item in self.aux_objects:
+                if item not in closure["objects"]:
+                    continue
+                owner = (
+                    node_map.get(item.owner) if item.owner is not None else None
+                )
+                if item.kind == "bus" and owner is None:
+                    continue
+                clone = GraphAuxObject(item.kind, deepcopy(item.gwf_element), owner)
+                temp.addItem(clone)
+                temp.aux_objects.append(clone)
+                aux_map[item] = clone
+            endpoint_map: dict = {}
+            endpoint_map.update(node_map)
+            endpoint_map.update(aux_map)
+            edge_map: dict = {}
+            for edge in self.edges:
+                if edge not in closure["objects"]:
+                    continue
+                source = endpoint_map.get(edge.source)
+                target = endpoint_map.get(edge.target)
+                if source is None or target is None:
+                    continue
+                clone = temp.connect_nodes(
+                    source,
+                    target,
+                    edge.edge_type,
+                    gwf_id=edge.gwf_id,
+                    gwf_type=edge.gwf_type,
+                    gwf_tag=edge.gwf_tag,
+                    gwf_element=deepcopy(edge.gwf_element),
+                    waypoints=[QPointF(point) for point in edge.waypoints],
+                )
+                edge_map[edge] = clone
+            endpoint_map.update(edge_map)
+        finally:
+            temp._loading = False
+        return temp.to_gwf()
+
+    def _copy_closure(self, selected: set) -> dict:
+        """Expand the selection: connector ends, bus owners, dependent edges."""
+        objects = {
+            item for item in selected if isinstance(
+                item, (GraphNode, GraphEdge, GraphAuxObject)
+            )
+        }
+        while True:
+            grown = set(objects)
+            for edge in self.edges:
+                if not (
+                    edge in objects
+                    or edge.source in objects
+                    or edge.target in objects
+                ):
+                    continue
+                grown.add(edge)
+                for endpoint in (edge.source, edge.target):
+                    if endpoint not in grown:
+                        grown.add(endpoint)
+            if grown == objects:
+                break
+            objects = grown
+        return {"objects": objects}
+
+    def insert_fragment(
+        self, sector: ET.Element
+    ) -> tuple[list[GraphNode], list[GraphEdge], list[GraphAuxObject]]:
+        """Create graph objects from a sector prepared by
+        ``prepare_paste_fragment`` (fresh unique ids)."""
+        self._loading = True
+        try:
+            nodes, edges, aux = self._build_from_sector(sector)
+        finally:
+            self._loading = False
+        self._update_scene_rect()
+        self.model_changed.emit()
+        return nodes, edges, aux
+
+    def prepare_paste_fragment(
+        self, sector: ET.Element, move_to: QPointF | None = None
+    ) -> ET.Element:
+        """Rewrite a clipboard sector for pasting into this scene.
+
+        Known object elements only, fresh unique ids (all cross references
+        follow), identifiers disambiguated against the current graph and the
+        whole fragment shifted so its top-left corner lands at ``move_to``.
+        """
+        fragment = ET.Element("staticSector", dict(sector.attrib))
+        known_tags = {"node", "arc", "pair", "bus", "contour"}
+        id_map: dict[str, str] = {}
+        dx = dy = 0.0
+        if move_to is not None:
+            origins = [
+                point
+                for element in sector
+                if element.tag in known_tags
+                and (point := self._fragment_origin(element)) is not None
+            ]
+            if origins:
+                dx = move_to.x() - min(point.x() for point in origins)
+                dy = move_to.y() - min(point.y() for point in origins)
+        # ids must be assigned for the whole fragment before refs are rewritten
+        taken_ids = self._existing_gwf_ids()
+        for element in sector:
+            if element.tag in known_tags and element.get("id"):
+                id_map[element.get("id", "")] = self._fresh_gwf_id(
+                    "paste", taken_ids
+                )
+        used_identifiers = set(self.nodes)
+        for element in sector:
+            if element.tag not in known_tags:
+                continue
+            clone = deepcopy(element)
+            if clone.get("id"):
+                clone.set("id", id_map[clone.get("id", "")])
+            for reference in ("id_b", "id_e", "owner"):
+                value = clone.get(reference)
+                if value in id_map:
+                    clone.set(reference, id_map[value])
+            if clone.tag == "node":
+                self._paste_disambiguate_identifier(clone, used_identifiers)
+                idtf = clone.get("idtf", "")
+                if _IDENTIFIER.fullmatch(idtf):
+                    used_identifiers.add(idtf)
+            self._shift_geometry(clone, dx, dy)
+            fragment.append(clone)
+        return fragment
+
+    def _fragment_origin(self, element: ET.Element) -> QPointF | None:
+        for pair in (("x", "y"), ("b_x", "b_y")):
+            if element.get(pair[0]) is not None and element.get(pair[1]) is not None:
+                return QPointF(
+                    float(element.get(pair[0], "0")),
+                    float(element.get(pair[1], "0")),
+                )
+        point = element.find("./points/point")
+        if point is not None:
+            return QPointF(float(point.get("x", "0")), float(point.get("y", "0")))
+        return None
+
+    def _paste_disambiguate_identifier(
+        self, element: ET.Element, used: set[str]
+    ) -> None:
+        idtf = element.get("idtf", "")
+        if not _IDENTIFIER.fullmatch(idtf) or idtf not in used:
+            return
+        suffix = 1
+        candidate = f"{idtf}_{suffix}"
+        while candidate in used:
+            suffix += 1
+            candidate = f"{idtf}_{suffix}"
+        element.set("idtf", candidate)
+
+    def _shift_geometry(self, element: ET.Element, dx: float, dy: float) -> None:
+        if not dx and not dy:
+            return
+        for attribute in ("x", "y", "b_x", "b_y", "e_x", "e_y"):
+            value = element.get(attribute)
+            if value is None:
+                continue
+            shifted = float(value) + (dx if attribute.endswith("x") else dy)
+            element.set(attribute, str(round(shifted, 3)))
+        for point in element.findall("./points/point"):
+            for axis, delta in (("x", dx), ("y", dy)):
+                value = point.get(axis)
+                if value is None:
+                    continue
+                point.set(axis, str(round(float(value) + delta, 3)))
 
     def to_scs(self) -> str:
         output = "".join(self.opaque_lines)
@@ -818,11 +1037,18 @@ class GraphScene(QGraphicsScene):
         return serialize_gwf(self)
 
     def _next_gwf_id(self, prefix: str) -> str:
-        identifiers = self._existing_gwf_ids()
+        return self._fresh_gwf_id(prefix, self._existing_gwf_ids())
+
+    def _fresh_gwf_id(self, prefix: str, taken: set[str]) -> str:
+        """Fresh id against ``taken``; the id is added to the set, so
+        batch generation (paste preparation) keeps every id unique."""
         index = 1
-        while f"KBStudio{prefix.title()}{index}" in identifiers:
+        fresh = f"KBStudio{prefix.title()}{index}"
+        while fresh in taken:
             index += 1
-        return f"KBStudio{prefix.title()}{index}"
+            fresh = f"KBStudio{prefix.title()}{index}"
+        taken.add(fresh)
+        return fresh
 
     def _existing_gwf_ids(self) -> set[str]:
         item_ids = {

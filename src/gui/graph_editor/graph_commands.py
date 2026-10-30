@@ -127,6 +127,34 @@ class CommandCreateContour(_GraphCommand):
         self.scene._remove_aux_instance(self.contour)
 
 
+class CommandPasteObjects(_GraphCommand):
+    """Paste a prepared clipboard fragment into the scene.
+
+    ``sector`` is a fragment produced by ``GraphScene.prepare_paste_fragment``
+    (fresh unique ids, no mutations happen at construction time). The first
+    ``redo`` builds the objects; later cycles reuse the same instances and
+    keep the pasted objects selected.
+    """
+
+    def __init__(self, scene: GraphScene, sector: ET.Element):
+        super().__init__(scene, "Paste objects")
+        self.sector = deepcopy(sector)
+        self._built: tuple[list, list, list] | None = None
+
+    def redo(self) -> None:
+        if self._built is None:
+            self._built = self.scene.insert_fragment(self.sector)
+        else:
+            self.scene._restore_objects(*self._built)
+        self.scene.clearSelection()
+        for item in (*self._built[0], *self._built[1], *self._built[2]):
+            item.setSelected(True)
+
+    def undo(self) -> None:
+        nodes, edges, aux = self._built
+        self.scene._remove_objects(set(nodes), set(edges), set(aux))
+
+
 class CommandDeleteSelection(_GraphCommand):
     def __init__(self, scene: GraphScene, selected):
         super().__init__(scene, "Delete selection")

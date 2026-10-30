@@ -14,8 +14,17 @@ import threading
 import time as _time
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
+from PySide6.QtCore import (
+    QByteArray,
+    QMimeData,
+    QPointF,
+    QRectF,
+    QSize,
+    Qt,
+    QTimer,
+)
 from PySide6.QtGui import (
+    QGuiApplication,
     QImage,
     QKeySequence,
     QPainter,
@@ -52,6 +61,7 @@ from src.gui.graph_editor.graph_commands import (
     CommandMoveObjects,
     CommandNodeContentChange,
     CommandNodeTypeChange,
+    CommandPasteObjects,
     CommandRenameNode,
     CommandSwapConnectorOrientation,
     CommandWaypointsChange,
@@ -73,8 +83,12 @@ from src.gui.graph_editor.graph_types import (
 from src.gui.graph_editor.gwf_codec import (
     content_elements_equal,
     empty_content_element,
+    parse_gwf_document,
 )
 from src.utils.security import get_project_root, safe_path
+
+GRAPH_MIME = "application/x-kbstudio-gwf"
+
 
 def _install_stall_recorder(canvas: "GraphEditorWidget") -> None:
     """Opt-in stall profiler (``KB_CAPTURE_STALLS=1``).
@@ -270,6 +284,16 @@ class GraphEditorWidget(QFrame):
         self.view.tool_changed.connect(self._show_tool)
         layout.addWidget(self.view)
         _install_stall_recorder(self)
+
+        copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self.view)
+        copy_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        copy_shortcut.activated.connect(self._copy_if_not_editing)
+        cut_shortcut = QShortcut(QKeySequence.StandardKey.Cut, self.view)
+        cut_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        cut_shortcut.activated.connect(self._cut_if_not_editing)
+        paste_shortcut = QShortcut(QKeySequence.StandardKey.Paste, self.view)
+        paste_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        paste_shortcut.activated.connect(self._paste_if_not_editing)
 
         self.tool_group = QButtonGroup(self)
         self.tool_group.setExclusive(True)
@@ -649,10 +673,13 @@ class GraphEditorWidget(QFrame):
     def _show_context_menu(self, scene_pos: QPointF, item, global_pos) -> None:
         menu = QMenu(self)
         if item is None:
+            paste_action = menu.addAction("Paste here")
             add_action = menu.addAction("Add node here")
             chosen = menu.exec(global_pos)
             if chosen is add_action:
                 self._create_node_at(scene_pos)
+            elif chosen is paste_action:
+                self.paste_at(scene_pos)
             return
 
         if not item.isSelected():
@@ -692,10 +719,16 @@ class GraphEditorWidget(QFrame):
                         connector, connector_type, connector_tag, connector_token
                     )
                 )
+        copy_action = menu.addAction("Copy")
+        cut_action = menu.addAction("Cut")
         delete_action = menu.addAction("Delete")
         chosen = menu.exec(global_pos)
         if chosen is not None and chosen is delete_action:
             self.remove_selected()
+        elif chosen is copy_action:
+            self.copy_selection()
+        elif chosen is cut_action:
+            self.cut_selection()
         elif rename_action is not None and chosen is rename_action:
             QTimer.singleShot(0, item.label.start_editing)
         elif content_action is not None and chosen is content_action:
@@ -810,6 +843,79 @@ class GraphEditorWidget(QFrame):
         if command.is_empty():
             return
         self.undo_stack.push(command)
+
+    def _selected_graph_objects(self) -> list:
+        return [
+            item
+            for item in self.scene.selectedItems()
+            if isinstance(item, (GraphNode, GraphEdge, GraphAuxObject))
+        ]
+
+    def _copy_to_clipboard(self, selected: list) -> int:
+        fragment = self.scene.copy_fragment(selected)
+        mime = QMimeData()
+        mime.setData(GRAPH_MIME, QByteArray(fragment.encode("utf-8")))
+        # text/plain carries the same GWF document, so pasting into other
+        # GWF-aware tools (or back from them) works through the same parser
+        mime.setText(fragment)
+        QGuiApplication.clipboard().setMimeData(mime)
+        return len(selected)
+
+    def copy_selection(self) -> None:
+        selected = self._selected_graph_objects()
+        if not selected:
+            self.status_label.setText("Select objects to copy.")
+            return
+        self.status_label.setText(f"Copied {self._copy_to_clipboard(selected)} objects.")
+
+    def cut_selection(self) -> None:
+        selected = self._selected_graph_objects()
+        if not selected:
+            self.status_label.setText("Select objects to cut.")
+            return
+        count = self._copy_to_clipboard(selected)
+        self.remove_selected()
+        self.status_label.setText(f"Cut {count} objects.")
+
+    def paste_at(self, scene_pos: QPointF | None = None) -> None:
+        mime = QGuiApplication.clipboard().mimeData()
+        source = ""
+        if mime is not None:
+            if mime.hasFormat(GRAPH_MIME):
+                source = bytes(mime.data(GRAPH_MIME)).decode(
+                    "utf-8", errors="replace"
+                )
+            elif mime.hasText():
+                source = mime.text()
+        if not source.strip():
+            self.status_label.setText("Clipboard has no graph fragment.")
+            return
+        try:
+            _, sector, _ = parse_gwf_document(source)
+        except ValueError as error:
+            self.status_label.setText(f"Cannot paste: {error}")
+            return
+        if scene_pos is None:
+            scene_pos = self.view.mapToScene(self.view.viewport().rect().center())
+        prepared = self.scene.prepare_paste_fragment(sector, scene_pos)
+        count = len(prepared)
+        if not count:
+            self.status_label.setText("Clipboard has no supported graph objects.")
+            return
+        self.undo_stack.push(CommandPasteObjects(self.scene, prepared))
+        self.status_label.setText(f"Pasted {count} objects.")
+
+    def _copy_if_not_editing(self) -> None:
+        if not self._label_editor_active():
+            self.copy_selection()
+
+    def _cut_if_not_editing(self) -> None:
+        if not self._label_editor_active():
+            self.cut_selection()
+
+    def _paste_if_not_editing(self) -> None:
+        if not self._label_editor_active():
+            self.paste_at()
 
     def save(self) -> None:
         if self.file_path is None:

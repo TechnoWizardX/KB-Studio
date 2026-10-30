@@ -21,6 +21,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
+    QGuiApplication,
     QImage,
     QKeyEvent,
     QMouseEvent,
@@ -44,6 +45,7 @@ from src.gui.graph_editor.graph_commands import (
     CommandMoveObjects,
     CommandNodeContentChange,
     CommandNodeTypeChange,
+    CommandPasteObjects,
     CommandRenameNode,
     CommandSwapConnectorOrientation,
     CommandWaypointsChange,
@@ -62,6 +64,7 @@ from src.gui.graph_editor.gwf_codec import (
     build_content_element,
     content_elements_equal,
     empty_content_element,
+    parse_gwf_document,
 )
 from src.gui.graph_editor.scg_painter import ScgEdgeStyle as _ScgEdgeStyle
 from src.gui.graph_editor.graph_types import (
@@ -2485,20 +2488,147 @@ class GraphEditorUndoTests(unittest.TestCase):
     def test_main_window_switches_to_graph_editor_for_gwf_files(self):
         try:
             from src.gui.main_window import MainWindow
+            from src.gui.toolbar import ToolBar
         except ModuleNotFoundError as error:
             self.skipTest(f"main_window dependency missing: {error}")
 
         window = MainWindow.__new__(MainWindow)
-        window.editor_selector = QComboBox()
-        window.editor_selector.addItem("SCs text editor")
-        window.editor_selector.addItem("SCg graph editor")
-        window.editor_selector.setCurrentIndex(0)
+        window.topbar = ToolBar(lambda _index: None)
+        window.topbar.editor_selector.setCurrentIndex(0)
 
         window._on_file_selected("/project/diagram.gwf")
 
-        self.assertEqual(window.editor_selector.currentIndex(), 1)
+        self.assertEqual(window.topbar.editor_selector.currentIndex(), 1)
         window._on_file_selected("/project/code.scs")
-        self.assertEqual(window.editor_selector.currentIndex(), 1)
+        self.assertEqual(window.topbar.editor_selector.currentIndex(), 1)
+
+
+class GraphEditorClipboardTests(unittest.TestCase):
+    """Copy/paste of the selection through the system clipboard."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.scene = GraphScene()
+        self.stack = QUndoStack()
+
+    def _paste(self, fragment: str, move_to: QPointF | None = None):
+        _, sector, _ = parse_gwf_document(fragment)
+        command = CommandPasteObjects(
+            self.scene, self.scene.prepare_paste_fragment(sector, move_to)
+        )
+        self.stack.push(command)
+        return command
+
+    def test_copy_paste_node_gets_new_id_and_unique_identifier(self):
+        node = self.scene.add_node("alpha", QPointF(10, 20))
+        clone_id = node.gwf_id
+
+        self._paste(self.scene.copy_fragment([node]), QPointF(110, 120))
+
+        clone = next(item for item in self.scene.nodes.values() if item is not node)
+        self.assertEqual(clone.identifier, "alpha_1")
+        self.assertNotEqual(clone.gwf_id, clone_id)
+        self.assertEqual(clone.pos(), QPointF(110, 120))
+        self.assertTrue(clone.isSelected())
+        self.assertFalse(node.isSelected())
+
+    def test_paste_undo_redo_keeps_instances_and_reselects(self):
+        source = self.scene.add_node("source", QPointF(0, 0))
+        target = self.scene.add_node("target", QPointF(60, 40))
+        self.scene.connect_nodes(source, target, "->", waypoints=[QPointF(40, 5)])
+        edge = self.scene.edges[0]
+
+        self._paste(
+            self.scene.copy_fragment([source, target, edge]), QPointF(120, 60)
+        )
+
+        pasted_nodes = [
+            item
+            for item in self.scene.nodes.values()
+            if item not in (source, target)
+        ]
+        pasted_edge = next(item for item in self.scene.edges if item is not edge)
+        self.assertEqual(len(pasted_nodes), 2)
+        delta = pasted_nodes[0].pos() - source.pos()
+        self.assertEqual(
+            pasted_edge.waypoints[0], QPointF(40, 5) + QPointF(delta.x(), delta.y())
+        )
+
+        self.stack.undo()
+        self.assertEqual(len(self.scene.nodes), 2)
+        self.assertEqual(len(self.scene.edges), 1)
+
+        self.stack.redo()
+        self.assertTrue(all(item.isSelected() for item in pasted_nodes))
+        self.assertTrue(pasted_edge.isSelected())
+
+    def test_copy_connector_pulls_unselected_endpoints(self):
+        source = self.scene.add_node("source")
+        target = self.scene.add_node("target")
+        edge = self.scene.connect_nodes(source, target, "->")
+
+        _, sector, _ = parse_gwf_document(self.scene.copy_fragment([edge]))
+
+        self.assertEqual(len(sector.findall("node")), 2)
+        self.assertEqual(len(sector.findall(edge.gwf_tag)), 1)
+
+    def test_paste_from_foreign_document_disambiguates_identifiers(self):
+        self.scene.add_node("existing")
+        foreign = """<GWF version="2.0"><staticSector>
+          <node type="node/const/general_node" idtf="existing" id="n1" x="1" y="2"/>
+          <node type="node/const/general_node" idtf="existing" id="n2" x="3" y="4"/>
+        </staticSector></GWF>"""
+
+        self._paste(foreign)
+
+        self.assertEqual(
+            set(self.scene.nodes), {"existing", "existing_1", "existing_2"}
+        )
+        pasted_ids = [
+            item.gwf_id
+            for item in self.scene.nodes.values()
+            if item.identifier != "existing"
+        ]
+        self.assertEqual(len(set(pasted_ids)), 2)
+        self.assertTrue(all(gwf_id.startswith("KBStudio") for gwf_id in pasted_ids))
+
+    def test_widget_copy_paste_cut_through_system_clipboard(self):
+        editor = GraphEditorWidget()
+        editor.new_graph()
+        editor.scene.add_node("alpha")
+
+        editor.scene.nodes["alpha"].setSelected(True)
+        editor.copy_selection()
+        self.assertIn("<GWF", QGuiApplication.clipboard().text())
+
+        editor.paste_at(QPointF(40, 40))
+        self.assertEqual(len(editor.scene.nodes), 2)
+        clone = next(
+            item for item in editor.scene.nodes.values() if item.gwf_id
+            != editor.scene.nodes["alpha"].gwf_id
+        )
+        self.assertEqual(clone.identifier, "alpha_1")
+        self.assertEqual(editor.status_label.text(), "Pasted 1 objects.")
+
+        editor.scene.nodes["alpha"].setSelected(True)
+        editor.cut_selection()
+        self.assertNotIn("alpha", editor.scene.nodes)
+
+        editor.paste_at()
+        self.assertIn("alpha", editor.scene.nodes)
+
+    def test_widget_paste_rejects_invalid_text_without_changes(self):
+        editor = GraphEditorWidget()
+        editor.new_graph()
+
+        QGuiApplication.clipboard().setText("just some text")
+        editor.paste_at(QPointF(0, 0))
+
+        self.assertEqual(editor.scene.nodes, {})
+        self.assertIn("Cannot paste", editor.status_label.text())
 
 
 class GraphEditorThemeTests(unittest.TestCase):
