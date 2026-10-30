@@ -17,6 +17,7 @@ from src.gui.graph_editor.graph_items import (
     GraphAuxObject,
     GraphEdge,
     GraphNode,
+    GraphNote,
     _is_connector_endpoint,
 )
 from src.gui.graph_editor.graph_types import (
@@ -48,6 +49,7 @@ class GraphScene(QGraphicsScene):
         self.edges: list[GraphEdge] = []
         self.aux_objects: list[GraphAuxObject] = []
         self.opaque_lines: list[str] = []
+        self.notes: list[GraphNote] = []
         self.gwf_root_attributes: dict[str, str] = {"version": "2.0"}
         self.gwf_root_extras: list[ET.Element] = []
         self.gwf_sector_attributes: dict[str, str] = {}
@@ -518,6 +520,34 @@ class GraphScene(QGraphicsScene):
         if not self._loading:
             self.model_changed.emit()
 
+    def add_note(self, position: QPointF, text: str) -> GraphNote:
+        """Canvas-only comment; notes never touch the GWF model or the
+        modified state, so no `model_changed` is emitted."""
+        note = GraphNote(text, position)
+        self.addItem(note)
+        self.notes.append(note)
+        self._update_scene_rect()
+        return note
+
+    def _insert_note_instance(self, note: GraphNote) -> None:
+        if note.scene() is self:
+            return
+        self.addItem(note)
+        if note not in self.notes:
+            self.notes.append(note)
+        self._update_scene_rect()
+
+    def _remove_note_instance(self, note: GraphNote) -> None:
+        if note not in self.notes:
+            return
+        self.notes.remove(note)
+        self.removeItem(note)
+        self._update_scene_rect()
+
+    def _set_note_text(self, note: GraphNote, text: str) -> None:
+        note.setText(text)
+        self._update_scene_rect()
+
     def _set_dragging(self, active: bool, changed: bool | None = None) -> None:
         """Item moves in progress: model_changed is deferred to the drag end
         so per-pixel moves do not trigger save-state work each frame."""
@@ -623,6 +653,7 @@ class GraphScene(QGraphicsScene):
             self.nodes.clear()
             self.edges.clear()
             self.aux_objects.clear()
+            self.notes.clear()
             self.opaque_lines = []
             self.gwf_root_attributes = {"version": "2.0"}
             self.gwf_root_extras.clear()
@@ -666,6 +697,7 @@ class GraphScene(QGraphicsScene):
             self.nodes.clear()
             self.edges.clear()
             self.aux_objects.clear()
+            self.notes.clear()
             self.opaque_lines.clear()
             self.gwf_root_attributes = dict(root.attrib)
             self.gwf_root_extras = [

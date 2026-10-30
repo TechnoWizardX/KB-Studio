@@ -49,11 +49,13 @@ class GraphCanvasView(QGraphicsView):
         delete_selection: Callable[[], None],
         parent: QWidget | None = None,
         contour_class: type | None = None,
+        note_class: type | None = None,
     ):
         super().__init__(scene, parent)
         self.node_class = node_class
         self.connector_class = connector_class
         self.contour_class = contour_class
+        self.note_class = note_class
         self.create_node = create_node
         self.create_connector = create_connector
         self.create_bus = create_bus
@@ -477,17 +479,24 @@ class GraphCanvasView(QGraphicsView):
         self, position, *, include_connectors: bool = True
     ) -> QGraphicsItem | None:
         """Topmost allowed graph object at ``position`` (viewport coords)."""
-        allowed = (
-            (self.node_class, self.connector_class, self.contour_class)
-            if include_connectors and self.contour_class
-            else (self.node_class, self.connector_class)
-            if include_connectors
-            else (self.node_class,)
+        allowed_classes = (
+            (self.node_class,)
+            if not include_connectors
+            else tuple(
+                klass
+                for klass in (
+                    self.node_class,
+                    self.connector_class,
+                    self.contour_class,
+                    self.note_class,
+                )
+                if klass is not None
+            )
         )
         for item in self.items(position):
             candidate = item
             while candidate is not None:
-                if isinstance(candidate, allowed):
+                if isinstance(candidate, allowed_classes):
                     return candidate
                 candidate = candidate.parentItem()
         return None

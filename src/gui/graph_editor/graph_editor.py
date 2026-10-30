@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLineEdit,
     QMenu,
     QMessageBox,
@@ -57,10 +58,13 @@ from src.gui.graph_editor.graph_commands import (
     CommandCreateContour,
     CommandCreateConnector,
     CommandCreateNode,
+    CommandCreateNote,
+    CommandDeleteNotes,
     CommandDeleteSelection,
     CommandMoveObjects,
     CommandNodeContentChange,
     CommandNodeTypeChange,
+    CommandNoteTextChange,
     CommandPasteObjects,
     CommandRenameNode,
     CommandSwapConnectorOrientation,
@@ -70,6 +74,7 @@ from src.gui.graph_editor.graph_items import (
     GraphAuxObject,
     GraphEdge,
     GraphNode,
+    GraphNote,
 )
 from src.gui.graph_editor.graph_scene import GraphScene
 from src.gui.graph_editor.content_dialog import _ContentDialog
@@ -283,6 +288,7 @@ class GraphEditorWidget(QFrame):
             self._show_context_menu,
             self.remove_selected,
             contour_class=GraphAuxObject,
+            note_class=GraphNote,
         )
         self.view.tool_error.connect(self._show_tool_error)
         self.view.tool_changed.connect(self._show_tool)
@@ -697,11 +703,23 @@ class GraphEditorWidget(QFrame):
                 self.scene.clearSelection()
                 item.setSelected(True)
             self._fill_connector_menu(menu, item)
+        elif isinstance(item, GraphNote):
+            self._fill_note_menu(menu, item)
         else:
-            # contour or bus: work with the current selection
             menu = QMenu(self)
             self._fill_selection_menu(menu, scene_pos)
         menu.exec(global_pos)
+
+    def _fill_note_menu(self, menu: QMenu, note: GraphNote) -> None:
+        menu.addAction("Edit note…").triggered.connect(
+            lambda checked=False, target=note: self._edit_note(target)
+        )
+        menu.addSeparator()
+        menu.addAction("Delete note").triggered.connect(
+            lambda checked=False, target=note: self.undo_stack.push(
+                CommandDeleteNotes(self.scene, [target])
+            )
+        )
 
     def _fill_canvas_menu(self, menu: QMenu, scene_pos: QPointF) -> None:
         menu.addAction("Add new node").triggered.connect(
@@ -725,8 +743,15 @@ class GraphEditorWidget(QFrame):
             )
         )
         menu.addSeparator()
+        menu.addAction("Note here…").triggered.connect(
+            lambda checked=False, position=scene_pos: self._add_note_at(position)
+        )
+        menu.addSeparator()
         menu.addAction("Paste here").triggered.connect(
             lambda checked=False, position=scene_pos: self.paste_at(position)
+        )
+        menu.addAction("Paste in place").triggered.connect(
+            lambda checked=False: self.paste_at(in_place=True)
         )
         save_action = menu.addAction("Save")
         save_action.setEnabled(self.is_modified)
@@ -766,6 +791,9 @@ class GraphEditorWidget(QFrame):
         menu.addAction("Paste").triggered.connect(
             lambda checked=False, position=scene_pos: self.paste_at(position)
         )
+        menu.addAction("Paste in place").triggered.connect(
+            lambda checked=False: self.paste_at(in_place=True)
+        )
         menu.addAction("Copy all incoming/outgoing nodes").triggered.connect(
             lambda checked=False, node=node: self._copy_closed_fragment(node)
         )
@@ -795,10 +823,17 @@ class GraphEditorWidget(QFrame):
     def _fill_selection_menu(self, menu: QMenu, scene_pos: QPointF) -> None:
         menu.addAction("Delete").triggered.connect(self.remove_selected)
         menu.addSeparator()
+        menu.addAction("Wrap in contour").triggered.connect(
+            self._wrap_selection_in_contour
+        )
+        menu.addSeparator()
         menu.addAction("Copy").triggered.connect(self.copy_selection)
         menu.addAction("Cut").triggered.connect(self.cut_selection)
         menu.addAction("Paste").triggered.connect(
             lambda checked=False, position=scene_pos: self.paste_at(position)
+        )
+        menu.addAction("Paste in place").triggered.connect(
+            lambda checked=False: self.paste_at(in_place=True)
         )
         menu.addAction("Copy all incoming/outgoing nodes").triggered.connect(
             self._copy_closed_fragment_of_selection
@@ -822,6 +857,44 @@ class GraphEditorWidget(QFrame):
         self.status_label.setText(
             f"Selected {len(related)} incoming/outgoing nodes."
         )
+
+    def _wrap_selection_in_contour(self) -> None:
+        selected = self._selected_graph_objects()
+        if not selected:
+            return
+        bounds = QRectF()
+        for item in selected:
+            bounds = bounds.united(item.sceneBoundingRect())
+        margin = 30.0
+        points = [
+            bounds.topLeft() + QPointF(-margin, -margin),
+            bounds.topRight() + QPointF(margin, -margin),
+            bounds.bottomRight() + QPointF(margin, margin),
+            bounds.bottomLeft() + QPointF(-margin, margin),
+        ]
+        try:
+            self.undo_stack.push(CommandCreateContour(self.scene, points))
+        except ValueError as error:
+            self._show_tool_error(str(error))
+            return
+        self.status_label.setText(f"Created a contour around {len(selected)} objects.")
+
+    def _add_note_at(self, position: QPointF) -> None:
+        text = QInputDialog.getMultiLineText(
+            self, "Canvas note", "Note text:", ""
+        )[0].strip()
+        if not text:
+            return
+        self.undo_stack.push(CommandCreateNote(self.scene, position, text))
+        self.status_label.setText("Added a canvas note.")
+
+    def _edit_note(self, note: GraphNote) -> None:
+        text = QInputDialog.getMultiLineText(
+            self, "Canvas note", "Note text:", note.note_text
+        )[0].strip()
+        if not text or text == note.note_text:
+            return
+        self.undo_stack.push(CommandNoteTextChange(self.scene, note, text))
 
     def _copy_closed_fragment(self, anchor: GraphNode) -> None:
         closure = copy_closure(self.scene, {anchor})
@@ -1009,7 +1082,9 @@ class GraphEditorWidget(QFrame):
         self.remove_selected()
         self.status_label.setText(f"Cut {len(selected)} objects.")
 
-    def paste_at(self, scene_pos: QPointF | None = None) -> None:
+    def paste_at(
+        self, scene_pos: QPointF | None = None, in_place: bool = False
+    ) -> None:
         mime = QGuiApplication.clipboard().mimeData()
         source = ""
         if mime is not None:
@@ -1027,9 +1102,16 @@ class GraphEditorWidget(QFrame):
         except ValueError as error:
             self.status_label.setText(f"Cannot paste: {error}")
             return
-        if scene_pos is None:
-            scene_pos = self.view.mapToScene(self.view.viewport().rect().center())
-        prepared = self.scene.prepare_paste_fragment(sector, scene_pos)
+        if in_place:
+            # no geometry shift: the fragment keeps its source coordinates
+            target = None
+        else:
+            if scene_pos is None:
+                scene_pos = self.view.mapToScene(
+                    self.view.viewport().rect().center()
+                )
+            target = scene_pos
+        prepared = self.scene.prepare_paste_fragment(sector, target)
         count = len(prepared)
         if not count:
             self.status_label.setText("Clipboard has no supported graph objects.")

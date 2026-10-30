@@ -2535,6 +2535,16 @@ class GraphEditorClipboardTests(unittest.TestCase):
         self.assertTrue(clone.isSelected())
         self.assertFalse(node.isSelected())
 
+    def test_paste_in_place_keeps_source_coordinates(self):
+        node = self.scene.add_node("alpha", QPointF(10, 20))
+        fragment = self.scene.copy_fragment([node])
+        _, sector, _ = parse_gwf_document(fragment)
+        prepared = self.scene.prepare_paste_fragment(sector, None)
+        self.stack.push(CommandPasteObjects(self.scene, prepared))
+        clone = next(item for item in self.scene.nodes.values() if item is not node)
+        self.assertEqual(clone.pos(), QPointF(10, 20))
+        self.assertEqual(clone.identifier, "alpha_1")
+
     def test_paste_undo_redo_keeps_instances_and_reselects(self):
         source = self.scene.add_node("source", QPointF(0, 0))
         target = self.scene.add_node("target", QPointF(60, 40))
@@ -2671,12 +2681,15 @@ class GraphEditorContextMenuTests(unittest.TestCase):
                 "Add nrel node",
                 "Add rrel node",
                 "Add var node",
+                "Note here…",
                 "Paste here",
+                "Paste in place",
                 "Save",
             ],
         )
-        # wait — separator index between creation and file blocks
+        # separators between the creation and file blocks
         self.assertEqual(menu.actions()[4].text(), "")
+        self.assertEqual(menu.actions()[6].text(), "")
         save_action = menu.actions()[-1]
         self.assertTrue(save_action.isEnabled())
         self.editor._mark_modified(False)
@@ -2699,6 +2712,7 @@ class GraphEditorContextMenuTests(unittest.TestCase):
                 "Copy",
                 "Cut",
                 "Paste",
+                "Paste in place",
                 "Copy all incoming/outgoing nodes",
             ],
         )
@@ -2749,6 +2763,57 @@ class GraphEditorContextMenuTests(unittest.TestCase):
         self.assertEqual(len(sector.findall("node")), 2)
         self.assertEqual(len(sector.findall("bus")), 2)
         self.assertEqual(len(self.editor.scene.selectedItems()), 5)
+
+    def test_wrap_in_contour_uses_selection_bounds(self):
+        left = self.editor.scene.add_node("left", QPointF(0, 0))
+        right = self.editor.scene.add_node("right", QPointF(100, 60))
+        left.setSelected(True)
+        right.setSelected(True)
+
+        self.editor._wrap_selection_in_contour()
+
+        self.assertEqual(len(self.editor.scene.aux_objects), 1)
+        contour = self.editor.scene.aux_objects[0]
+        self.assertEqual(contour.kind, "contour")
+        bounds = QRectF()
+        for item in (left, right):
+            bounds = bounds.united(item.sceneBoundingRect())
+        outer = contour.sceneBoundingRect().adjusted(-31, -31, 31, 31)
+        self.assertTrue(outer.contains(bounds))
+
+        editor_undo = self.editor.undo_stack
+        editor_undo.undo()
+        self.assertEqual(self.editor.scene.aux_objects, [])
+
+    def test_canvas_notes_live_outside_the_gwf_model(self):
+        from src.gui.graph_editor.graph_commands import (
+            CommandCreateNote,
+            CommandDeleteNotes,
+            CommandNoteTextChange,
+        )
+        from PySide6.QtCore import QPointF as _QPointF
+
+        position, text = _QPointF(20, 30), "Первая заметка"
+        undo_stack = self.editor.undo_stack
+        undo_stack.push(CommandCreateNote(self.editor.scene, position, text))
+        note, = self.editor.scene.notes
+        self.assertAlmostEqual(note.pos().x(), 20.0)
+        self.assertEqual(note.note_text, "Первая заметка")
+        scene = self.editor.scene
+        self.assertNotIn(note.note_text, scene.to_gwf())
+        self.assertIs(note.scene(), scene)
+
+        undo_stack.push(CommandNoteTextChange(scene, note, "изменённая"))
+        self.assertEqual(note.note_text, "изменённая")
+        undo_stack.undo()
+        self.assertEqual(note.note_text, "Первая заметка")
+
+        undo_stack.push(CommandDeleteNotes(scene, [note]))
+        self.assertEqual(scene.notes, [])
+        undo_stack.undo()
+        note_id = id(note)
+        self.assertEqual(len(scene.notes), 1)
+        self.assertEqual(id(scene.notes[0]), note_id)
 
     def test_context_node_creation_entries_make_unique_identifiers(self):
         self.editor._create_node_at(

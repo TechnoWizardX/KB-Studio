@@ -4,20 +4,32 @@
 
 ### Added
 
+- Added canvas notes in the SCg editor: comment "sticky note" blocks created
+  from the canvas menu ("Note here…" opens a multiline text prompt), edited
+  and deleted through their own context menu. Notes are selectable and
+  movable canvas-only objects (`GraphNote`) — they never enter the GWF model
+  (not serialized on save, not copied with fragments) and do not mark the
+  document dirty on their own; creating, editing and removing them is
+  undoable through dedicated commands.
+- Added paste actions for the SCg editor contact points: "Paste here"
+  (context menu paste at the click point), "Paste in place" (the fragment
+  keeps its source coordinates — useful between documents), and Ctrl+V
+  pastes into the viewport centre.
 - Added the structured SCg editor context menu with divider-separated
   groups: the canvas menu offers a creation block (Add new node — a standard
   permanent node, Add nrel node and Add rrel node — relation nodes with
-  matching `nrel_`/`rrel_` identifiers, Add var node) plus Paste here and
-  Save (enabled while there are unsaved changes); the connector menu offers
-  Change connector type and Delete connector; the node menu offers
-  Rename, Change node type, Add/Edit content, Select all incoming/outgoing
-  nodes and Delete node, then Copy/Cut/Paste and "Copy all incoming/outgoing
+  matching `nrel_`/`rrel_` identifiers, Add var node, Note here…) plus
+  Paste here, Paste in place and Save (enabled while there are unsaved
+  changes); the connector menu offers Change connector type and Delete
+  connector; the node menu offers Rename, Change node type, Add/Edit
+  content, Select all incoming/outgoing nodes and Delete node, then
+  Copy/Cut/Paste (plus Paste in place) and "Copy all incoming/outgoing
   nodes" — a whole linked-fragment copy (the node, its neighbours across
-  connectors, nested connectors and buses) placed into the clipboard through
-  `fragment_closure.py`, in the selection menu the closure anchor is a node
-  picked from the active selection and the closure gets highlighted before
-  copying; the same Copy/Cut/Paste/Closure group is shown for right-clicks
-  over an active selection (Delete in the first block).
+  connectors, nested connectors and buses) placed into the clipboard
+  through `fragment_closure.py`, in the selection menu the closure anchor
+  is a node picked from the active selection and the closure gets
+  highlighted before copying; the selection menu also adds Delete and
+  Wrap in contour — a contour built around the selection bounds.
 
 - Added copy/paste of the selected graph objects (nodes, connectors, buses,
   contours) in the SCg editor: Ctrl+C/Ctrl+X/Ctrl+V shortcuts, context menu

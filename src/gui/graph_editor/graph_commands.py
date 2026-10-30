@@ -127,6 +127,54 @@ class CommandCreateContour(_GraphCommand):
         self.scene._remove_aux_instance(self.contour)
 
 
+class CommandCreateNote(_GraphCommand):
+    def __init__(self, scene: GraphScene, position: QPointF, text: str):
+        super().__init__(scene, "Add canvas note")
+        self.position = QPointF(position)
+        self.text = text
+        self.note = None
+
+    def redo(self) -> None:
+        if self.note is None:
+            self.note = self.scene.add_note(self.position, self.text)
+        else:
+            self.scene._insert_note_instance(self.note)
+
+    def undo(self) -> None:
+        self.scene._remove_note_instance(self.note)
+
+
+class CommandDeleteNotes(_GraphCommand):
+    """Canvas notes are not graph objects, so a dedicated removal command."""
+
+    def __init__(self, scene: GraphScene, notes):
+        notes = list(notes)
+        super().__init__(scene, f"Delete {len(notes)} notes" if len(notes) != 1 else "Delete note")
+        self.notes = notes
+
+    def redo(self) -> None:
+        for note in self.notes:
+            self.scene._remove_note_instance(note)
+
+    def undo(self) -> None:
+        for note in self.notes:
+            self.scene._insert_note_instance(note)
+
+
+class CommandNoteTextChange(_GraphCommand):
+    def __init__(self, scene: GraphScene, note, text: str):
+        super().__init__(scene, "Edit canvas note")
+        self.note = note
+        self.old_text = note.note_text
+        self.new_text = text
+
+    def redo(self) -> None:
+        self.scene._set_note_text(self.note, self.new_text)
+
+    def undo(self) -> None:
+        self.scene._set_note_text(self.note, self.old_text)
+
+
 class CommandPasteObjects(_GraphCommand):
     """Paste a prepared clipboard fragment into the scene.
 

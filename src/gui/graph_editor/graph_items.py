@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsPathItem,
     QGraphicsPixmapItem,
+    QGraphicsRectItem,
     QGraphicsTextItem,
 )
 
@@ -1100,3 +1101,52 @@ def _scene_path_cross(scene_path: QPainterPath, dot: float) -> QPointF:
 def _is_connector_endpoint(item: object) -> bool:
     """Connectors may attach to nodes, other connectors, contours and buses."""
     return isinstance(item, (GraphNode, GraphEdge, GraphAuxObject))
+
+
+class GraphNote(QGraphicsRectItem):
+    """Canvas-only comment block with text.
+
+    Notes never enter the GWF model: they are not serialized, do not
+    participate in copy/paste and do not mark the document dirty."""
+
+    MARGIN = 8.0
+    PADDING = 12.0
+
+    def __init__(self, text: str, position: QPointF | None = None):
+        super().__init__()
+        self.note_text = text
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsPanel)
+        self.setZValue(-2)
+        if position is not None:
+            self.setPos(position)
+
+        self._text_item = QGraphicsTextItem(self)
+        self._text_item.setDefaultTextColor(QColor("#1f1f1f"))
+        self.setText(text)
+
+    def setText(self, text: str) -> None:
+        self.note_text = text
+        self._text_item.setPlainText(text)
+        self._text_item.setTextWidth(-1)
+        text_bounds = self._text_item.boundingRect()
+        width = self.MARGIN * 2 + text_bounds.width() + self.PADDING
+        height = self.MARGIN * 2 + text_bounds.height() + self.PADDING
+        self.setRect(0, 0, max(width, 90.0), height)
+        self._text_item.setPos(
+            (self.rect().width() - text_bounds.width()) / 2,
+            (self.rect().height() - text_bounds.height()) / 2,
+        )
+
+    def paint(self, painter, option, widget=None) -> None:
+        painter.save()
+        painter.setBrush(QColor(255, 246, 183, 170))
+        outline = QColor("#b58500") if not self.isSelected() else QColor("#7f6000")
+        pen = QPen(outline)
+        pen.setCosmetic(True)
+        if self.isSelected():
+            pen.setStyle(Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.drawRoundedRect(self.rect(), 6, 6)
+        painter.restore()
