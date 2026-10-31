@@ -2765,6 +2765,134 @@ class GraphEditorContextMenuTests(unittest.TestCase):
         self.assertIn(bus_right, self.editor.scene.selectedItems())
         self.assertNotIn(bus_unrelated, self.editor.scene.selectedItems())
 
+    def test_context_menu_actions_carry_shortcut_hints(self):
+        node = self.editor.scene.add_node("alpha")
+        other = self.editor.scene.add_node("beta")
+        arc = self.editor.scene.connect_nodes(node, other, "->")
+        pair = self.editor.scene.connect_nodes(
+            node, other, "=>", gwf_type="pair/orient", gwf_tag="pair"
+        )
+        note = self.editor.scene.add_note(QPointF(10, 10), "note")
+
+        def hints(fill, *args):
+            menu = QMenu(self.editor)
+            fill(menu, *args)
+            return {
+                action.text(): action.shortcut().toString()
+                for action in menu.actions()
+                if action.text()
+            }
+
+        canvas = hints(self.editor._fill_canvas_menu, QPointF(0, 0))
+        self.assertEqual(canvas["Add new node"], "Ctrl+N")
+        self.assertEqual(canvas["Add nrel node"], "Ctrl+Shift+N")
+        self.assertEqual(canvas["Add rrel node"], "Ctrl+Alt+N")
+        self.assertEqual(canvas["Add var node"], "Ctrl+Alt+V")
+        self.assertEqual(canvas["Note here…"], "Ctrl+Shift+M")
+        self.assertEqual(canvas["Paste here"], "Ctrl+V")
+        self.assertEqual(canvas["Paste in place"], "Ctrl+Shift+V")
+        self.assertEqual(canvas["Save"], "Ctrl+S")
+
+        node_hints = hints(self.editor._fill_node_menu, node, QPointF(0, 0))
+        self.assertEqual(node_hints["Rename"], "F2")
+        self.assertEqual(node_hints["Add content…"], "Ctrl+E")
+        self.assertEqual(
+            node_hints["Select all incoming/outgoing nodes"], "Ctrl+Shift+A"
+        )
+        self.assertEqual(node_hints["Delete node"], "Del")
+        self.assertEqual(node_hints["Copy"], "Ctrl+C")
+        self.assertEqual(node_hints["Cut"], "Ctrl+X")
+        self.assertEqual(node_hints["Paste"], "Ctrl+V")
+        self.assertEqual(node_hints["Paste in place"], "Ctrl+Shift+V")
+        self.assertEqual(
+            node_hints["Copy all incoming/outgoing nodes"], "Ctrl+Shift+C"
+        )
+
+        arc_hints = hints(self.editor._fill_connector_menu, arc)
+        self.assertNotIn("Reverse direction", arc_hints)
+        self.assertEqual(arc_hints["Delete connector"], "Del")
+        pair_hints = hints(self.editor._fill_connector_menu, pair)
+        self.assertEqual(pair_hints["Reverse direction"], "Ctrl+R")
+
+        selection = hints(self.editor._fill_selection_menu, QPointF(0, 0))
+        self.assertEqual(selection["Delete"], "Del")
+        self.assertEqual(selection["Wrap in contour"], "Ctrl+G")
+
+        note_hints = hints(self.editor._fill_note_menu, note)
+        self.assertEqual(note_hints["Edit note…"], "F2")
+        self.assertEqual(note_hints["Delete note"], "Del")
+
+    def test_editor_shortcuts_trigger_the_actions(self):
+        editor = self.editor
+        editor.resize(900, 600)
+        editor.show()
+        editor.activateWindow()
+        editor.view.setFocus()
+        self.app.processEvents()
+        QTest.qWait(20)
+        self.app.processEvents()
+
+        def press(key, modifiers=Qt.KeyboardModifier.NoModifier):
+            QTest.keyClick(editor.view, key, modifiers)
+            self.app.processEvents()
+
+        press(Qt.Key.Key_N, Qt.KeyboardModifier.ControlModifier)
+        self.assertEqual(len(editor.scene.nodes), 1)
+        node = editor.scene.nodes["node_1"]
+        self.assertEqual(node.gwf_type, "node/const/perm/general")
+
+        other = editor.scene.add_node("beta")
+        editor.scene.connect_nodes(node, other, "->")
+        editor.scene.clearSelection()
+        node.setSelected(True)
+        press(
+            Qt.Key.Key_A,
+            Qt.KeyboardModifier.ControlModifier
+            | Qt.KeyboardModifier.ShiftModifier,
+        )
+        self.assertEqual(
+            {
+                item.identifier
+                for item in editor.scene.selectedItems()
+                if isinstance(item, GraphNode)
+            },
+            {"node_1", "beta"},
+        )
+
+        press(Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)
+        self.assertEqual(len(editor.scene.aux_objects), 1)
+
+        editor.scene.clearSelection()
+        node.setSelected(True)
+        editor.copy_selection()
+        count = len(editor.scene.nodes)
+        press(
+            Qt.Key.Key_V,
+            Qt.KeyboardModifier.ControlModifier
+            | Qt.KeyboardModifier.ShiftModifier,
+        )
+        self.assertEqual(len(editor.scene.nodes), count + 1)
+        editor.close()
+
+    def test_f2_shortcut_starts_inplace_label_editing(self):
+        editor = self.editor
+        editor.resize(900, 600)
+        editor.show()
+        editor.activateWindow()
+        node = editor.scene.add_node("alpha")
+        editor.scene.clearSelection()
+        node.setSelected(True)
+        editor.view.setFocus()
+        self.app.processEvents()
+        QTest.qWait(20)
+        self.app.processEvents()
+
+        QTest.keyClick(editor.view, Qt.Key.Key_F2)
+        self.app.processEvents()
+
+        self.assertTrue(node.label._editing)
+        editor.close()
+
     def test_connector_menu_groups(self):
         connector = self.editor.scene.connect_nodes(
             self.editor.scene.add_node("a"),

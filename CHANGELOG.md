@@ -38,6 +38,16 @@
   rubber-band selecting over the label no longer selects the node. The label
   still stays inside the item geometry (`boundingRect`), so painting and PNG
   export keep long identifiers unclipped.
+- Added keyboard shortcuts for the SCg editor and showed them next to the
+  matching context-menu items: Ctrl+C/Ctrl+X/Ctrl+V copy, cut and paste,
+  Ctrl+Shift+V paste in place, Del delete, F2 rename a node or edit a note,
+  Ctrl+E add/edit node content, Ctrl+Shift+A select the incoming/outgoing
+  nodes, Ctrl+Shift+C copy the incoming/outgoing fragment, Ctrl+G wrap the
+  selection in a contour, Ctrl+R reverse a pair connector, Ctrl+N /
+  Ctrl+Shift+N / Ctrl+Alt+N / Ctrl+Alt+V create a general, nrel, rrel or var
+  node at the last pointer position, Ctrl+Shift+M add a note there and
+  Ctrl+S save. The creation shortcuts fall back to the viewport centre
+  before the pointer enters the canvas.
 
 - Added copy/paste of the selected graph objects (nodes, connectors, buses,
   contours) in the SCg editor: Ctrl+C/Ctrl+X/Ctrl+V shortcuts, context menu

@@ -98,6 +98,28 @@ from src.utils.security import get_project_root, safe_path
 
 GRAPH_MIME = "application/x-kbstudio-gwf"
 
+# One source of truth for the editor shortcuts: the same sequences are bound
+# as widget shortcuts and shown next to the matching context-menu items.
+# Plain strings keep the module importable before QApplication exists
+# (QKeySequence(StandardKey) needs a running GUI application).
+COPY_SHORTCUT = "Ctrl+C"
+CUT_SHORTCUT = "Ctrl+X"
+PASTE_SHORTCUT = "Ctrl+V"
+SAVE_SHORTCUT = "Ctrl+S"
+DELETE_SHORTCUT = "Del"
+RENAME_SHORTCUT = "F2"
+CONTENT_SHORTCUT = "Ctrl+E"
+RELATED_SHORTCUT = "Ctrl+Shift+A"
+CLOSURE_SHORTCUT = "Ctrl+Shift+C"
+CONTOUR_SHORTCUT = "Ctrl+G"
+REVERSE_SHORTCUT = "Ctrl+R"
+NODE_SHORTCUT = "Ctrl+N"
+NREL_SHORTCUT = "Ctrl+Shift+N"
+RREL_SHORTCUT = "Ctrl+Alt+N"
+VAR_SHORTCUT = "Ctrl+Alt+V"
+NOTE_SHORTCUT = "Ctrl+Shift+M"
+PASTE_IN_PLACE_SHORTCUT = "Ctrl+Shift+V"
+
 
 def _install_stall_recorder(canvas: "GraphEditorWidget") -> None:
     """Opt-in stall profiler (``KB_CAPTURE_STALLS=1``).
@@ -295,15 +317,30 @@ class GraphEditorWidget(QFrame):
         layout.addWidget(self.view)
         _install_stall_recorder(self)
 
-        copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self.view)
-        copy_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        copy_shortcut.activated.connect(self._copy_if_not_editing)
-        cut_shortcut = QShortcut(QKeySequence.StandardKey.Cut, self.view)
-        cut_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        cut_shortcut.activated.connect(self._cut_if_not_editing)
-        paste_shortcut = QShortcut(QKeySequence.StandardKey.Paste, self.view)
-        paste_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        paste_shortcut.activated.connect(self._paste_if_not_editing)
+        self.shortcuts: list[QShortcut] = []
+        for sequence, handler in (
+            (COPY_SHORTCUT, self._copy_if_not_editing),
+            (CUT_SHORTCUT, self._cut_if_not_editing),
+            (PASTE_SHORTCUT, self._paste_if_not_editing),
+            (PASTE_IN_PLACE_SHORTCUT, self._paste_in_place),
+            (RENAME_SHORTCUT, self._edit_selected_object),
+            (CONTENT_SHORTCUT, self._edit_selected_content),
+            (RELATED_SHORTCUT, self._select_related_selected),
+            (CLOSURE_SHORTCUT, self._copy_closure_of_selection),
+            (CONTOUR_SHORTCUT, self._wrap_selection_shortcut),
+            (REVERSE_SHORTCUT, self._reverse_selected_connector),
+            (NODE_SHORTCUT, self._create_general_node_shortcut),
+            (NREL_SHORTCUT, self._create_nrel_node_shortcut),
+            (RREL_SHORTCUT, self._create_rrel_node_shortcut),
+            (VAR_SHORTCUT, self._create_var_node_shortcut),
+            (NOTE_SHORTCUT, self._add_note_shortcut),
+        ):
+            shortcut = QShortcut(QKeySequence(sequence), self.view)
+            shortcut.setContext(
+                Qt.ShortcutContext.WidgetWithChildrenShortcut
+            )
+            shortcut.activated.connect(handler)
+            self.shortcuts.append(shortcut)
 
         self.tool_group = QButtonGroup(self)
         self.tool_group.setExclusive(True)
@@ -684,6 +721,15 @@ class GraphEditorWidget(QFrame):
         except ValueError as error:
             self._show_tool_error(str(error))
 
+    @staticmethod
+    def _add_menu_action(menu: QMenu, text: str, shortcut, slot):
+        """Menu entry with the shortcut hint; the hint is also the real key."""
+        action = menu.addAction(text)
+        if shortcut is not None:
+            action.setShortcut(QKeySequence(shortcut))
+        action.triggered.connect(slot)
+        return action
+
     def _show_context_menu(self, scene_pos: QPointF, item, global_pos) -> None:
         if item is None:
             menu = QMenu(self)
@@ -705,6 +751,9 @@ class GraphEditorWidget(QFrame):
             self._fill_connector_menu(menu, item)
         elif isinstance(item, GraphNote):
             menu = QMenu(self)
+            if not item.isSelected():
+                self.scene.clearSelection()
+                item.setSelected(True)
             self._fill_note_menu(menu, item)
         else:
             menu = QMenu(self)
@@ -712,58 +761,88 @@ class GraphEditorWidget(QFrame):
         menu.exec(global_pos)
 
     def _fill_note_menu(self, menu: QMenu, note: GraphNote) -> None:
-        menu.addAction("Edit note…").triggered.connect(
-            lambda checked=False, target=note: self._edit_note(target)
+        self._add_menu_action(
+            menu,
+            "Edit note…",
+            RENAME_SHORTCUT,
+            lambda checked=False, target=note: self._edit_note(target),
         )
         menu.addSeparator()
-        menu.addAction("Delete note").triggered.connect(
+        self._add_menu_action(
+            menu,
+            "Delete note",
+            DELETE_SHORTCUT,
             lambda checked=False, target=note: self.undo_stack.push(
                 CommandDeleteNotes(self.scene, [target])
-            )
+            ),
         )
 
     def _fill_canvas_menu(self, menu: QMenu, scene_pos: QPointF) -> None:
-        menu.addAction("Add new node").triggered.connect(
+        self._add_menu_action(
+            menu,
+            "Add new node",
+            NODE_SHORTCUT,
             lambda checked=False, position=scene_pos: self._create_node_at(
                 position, "node/const/perm/general"
-            )
+            ),
         )
-        menu.addAction("Add nrel node").triggered.connect(
+        self._add_menu_action(
+            menu,
+            "Add nrel node",
+            NREL_SHORTCUT,
             lambda checked=False, position=scene_pos: self._create_node_at(
                 position, "node/const/perm/relation", "nrel"
-            )
+            ),
         )
-        menu.addAction("Add rrel node").triggered.connect(
+        self._add_menu_action(
+            menu,
+            "Add rrel node",
+            RREL_SHORTCUT,
             lambda checked=False, position=scene_pos: self._create_node_at(
                 position, "node/const/perm/relation", "rrel"
-            )
+            ),
         )
-        menu.addAction("Add var node").triggered.connect(
+        self._add_menu_action(
+            menu,
+            "Add var node",
+            VAR_SHORTCUT,
             lambda checked=False, position=scene_pos: self._create_node_at(
                 position, "node/var/general_node"
-            )
+            ),
         )
         menu.addSeparator()
-        menu.addAction("Note here…").triggered.connect(
-            lambda checked=False, position=scene_pos: self._add_note_at(position)
+        self._add_menu_action(
+            menu,
+            "Note here…",
+            NOTE_SHORTCUT,
+            lambda checked=False, position=scene_pos: self._add_note_at(position),
         )
         menu.addSeparator()
-        menu.addAction("Paste here").triggered.connect(
-            lambda checked=False, position=scene_pos: self.paste_at(position)
+        self._add_menu_action(
+            menu,
+            "Paste here",
+            PASTE_SHORTCUT,
+            lambda checked=False, position=scene_pos: self.paste_at(position),
         )
-        menu.addAction("Paste in place").triggered.connect(
-            lambda checked=False: self.paste_at(in_place=True)
+        self._add_menu_action(
+            menu,
+            "Paste in place",
+            PASTE_IN_PLACE_SHORTCUT,
+            lambda checked=False: self.paste_at(in_place=True),
         )
-        save_action = menu.addAction("Save")
+        save_action = self._add_menu_action(
+            menu, "Save", SAVE_SHORTCUT, self.save
+        )
         save_action.setEnabled(self.is_modified)
-        save_action.triggered.connect(self.save)
 
     def _fill_node_menu(
         self, menu: QMenu, node: GraphNode, scene_pos: QPointF
     ) -> None:
-        rename_action = menu.addAction("Rename")
-        rename_action.triggered.connect(
-            lambda checked=False: QTimer.singleShot(0, node.label.start_editing)
+        self._add_menu_action(
+            menu,
+            "Rename",
+            RENAME_SHORTCUT,
+            lambda checked=False: QTimer.singleShot(0, node.label.start_editing),
         )
         type_menu = menu.addMenu("Change node type")
         for label, gwf_type in _NODE_TYPES:
@@ -773,30 +852,44 @@ class GraphEditorWidget(QFrame):
                 node=node,
                 node_type=gwf_type: self._set_node_type(node, node_type)
             )
-        content_action = menu.addAction(
-            "Edit content…" if node.has_content() else "Add content…"
-        )
-        content_action.triggered.connect(
+        self._add_menu_action(
+            menu,
+            "Edit content…" if node.has_content() else "Add content…",
+            CONTENT_SHORTCUT,
             lambda checked=False: QTimer.singleShot(
                 0, lambda target=node: self._open_content_editor(target)
-            )
+            ),
         )
-        menu.addAction("Select all incoming/outgoing nodes").triggered.connect(
-            lambda checked=False, node=node: self._select_related_nodes(node)
+        self._add_menu_action(
+            menu,
+            "Select all incoming/outgoing nodes",
+            RELATED_SHORTCUT,
+            lambda checked=False, node=node: self._select_related_nodes(node),
         )
         menu.addSeparator()
-        menu.addAction("Delete node").triggered.connect(self.remove_selected)
+        self._add_menu_action(
+            menu, "Delete node", DELETE_SHORTCUT, self.remove_selected
+        )
         menu.addSeparator()
-        menu.addAction("Copy").triggered.connect(self.copy_selection)
-        menu.addAction("Cut").triggered.connect(self.cut_selection)
-        menu.addAction("Paste").triggered.connect(
-            lambda checked=False, position=scene_pos: self.paste_at(position)
+        self._add_menu_action(menu, "Copy", COPY_SHORTCUT, self.copy_selection)
+        self._add_menu_action(menu, "Cut", CUT_SHORTCUT, self.cut_selection)
+        self._add_menu_action(
+            menu,
+            "Paste",
+            PASTE_SHORTCUT,
+            lambda checked=False, position=scene_pos: self.paste_at(position),
         )
-        menu.addAction("Paste in place").triggered.connect(
-            lambda checked=False: self.paste_at(in_place=True)
+        self._add_menu_action(
+            menu,
+            "Paste in place",
+            PASTE_IN_PLACE_SHORTCUT,
+            lambda checked=False: self.paste_at(in_place=True),
         )
-        menu.addAction("Copy all incoming/outgoing nodes").triggered.connect(
-            lambda checked=False, node=node: self._copy_closed_fragment(node)
+        self._add_menu_action(
+            menu,
+            "Copy all incoming/outgoing nodes",
+            CLOSURE_SHORTCUT,
+            lambda checked=False, node=node: self._copy_closed_fragment(node),
         )
 
     def _fill_connector_menu(self, menu: QMenu, connector: GraphEdge) -> None:
@@ -813,31 +906,50 @@ class GraphEditorWidget(QFrame):
                 )
             )
         if connector.gwf_tag == "pair":
-            menu.addAction("Reverse direction").triggered.connect(
+            self._add_menu_action(
+                menu,
+                "Reverse direction",
+                REVERSE_SHORTCUT,
                 lambda checked=False, connector=connector: self._swap_connector(
                     connector
-                )
+                ),
             )
         menu.addSeparator()
-        menu.addAction("Delete connector").triggered.connect(self.remove_selected)
+        self._add_menu_action(
+            menu, "Delete connector", DELETE_SHORTCUT, self.remove_selected
+        )
 
     def _fill_selection_menu(self, menu: QMenu, scene_pos: QPointF) -> None:
-        menu.addAction("Delete").triggered.connect(self.remove_selected)
-        menu.addSeparator()
-        menu.addAction("Wrap in contour").triggered.connect(
-            self._wrap_selection_in_contour
+        self._add_menu_action(
+            menu, "Delete", DELETE_SHORTCUT, self.remove_selected
         )
         menu.addSeparator()
-        menu.addAction("Copy").triggered.connect(self.copy_selection)
-        menu.addAction("Cut").triggered.connect(self.cut_selection)
-        menu.addAction("Paste").triggered.connect(
-            lambda checked=False, position=scene_pos: self.paste_at(position)
+        self._add_menu_action(
+            menu,
+            "Wrap in contour",
+            CONTOUR_SHORTCUT,
+            self._wrap_selection_in_contour,
         )
-        menu.addAction("Paste in place").triggered.connect(
-            lambda checked=False: self.paste_at(in_place=True)
+        menu.addSeparator()
+        self._add_menu_action(menu, "Copy", COPY_SHORTCUT, self.copy_selection)
+        self._add_menu_action(menu, "Cut", CUT_SHORTCUT, self.cut_selection)
+        self._add_menu_action(
+            menu,
+            "Paste",
+            PASTE_SHORTCUT,
+            lambda checked=False, position=scene_pos: self.paste_at(position),
         )
-        menu.addAction("Copy all incoming/outgoing nodes").triggered.connect(
-            self._copy_closed_fragment_of_selection
+        self._add_menu_action(
+            menu,
+            "Paste in place",
+            PASTE_IN_PLACE_SHORTCUT,
+            lambda checked=False: self.paste_at(in_place=True),
+        )
+        self._add_menu_action(
+            menu,
+            "Copy all incoming/outgoing nodes",
+            CLOSURE_SHORTCUT,
+            self._copy_closed_fragment_of_selection,
         )
 
     def _select_related_nodes(self, node: GraphNode) -> None:
@@ -1162,6 +1274,107 @@ class GraphEditorWidget(QFrame):
     def _paste_if_not_editing(self) -> None:
         if not self._label_editor_active():
             self.paste_at()
+
+    def _paste_in_place(self) -> None:
+        if not self._label_editor_active():
+            self.paste_at(in_place=True)
+
+    def _selected_nodes(self) -> list[GraphNode]:
+        return [
+            item
+            for item in self.scene.selectedItems()
+            if isinstance(item, GraphNode)
+        ]
+
+    def _edit_selected_object(self) -> None:
+        if self._label_editor_active():
+            return
+        nodes = self._selected_nodes()
+        if len(nodes) == 1:
+            nodes[0].label.start_editing()
+            return
+        notes = [
+            item
+            for item in self.scene.selectedItems()
+            if isinstance(item, GraphNote)
+        ]
+        if len(notes) == 1:
+            self._edit_note(notes[0])
+            return
+        self.status_label.setText("Select one node or note to edit.")
+
+    def _edit_selected_content(self) -> None:
+        if self._label_editor_active():
+            return
+        nodes = self._selected_nodes()
+        if len(nodes) != 1:
+            self.status_label.setText("Select one node to edit its content.")
+            return
+        self._open_content_editor(nodes[0])
+
+    def _select_related_selected(self) -> None:
+        if self._label_editor_active():
+            return
+        nodes = self._selected_nodes()
+        if len(nodes) != 1:
+            self.status_label.setText(
+                "Select one node to select its incoming/outgoing nodes."
+            )
+            return
+        self._select_related_nodes(nodes[0])
+
+    def _copy_closure_of_selection(self) -> None:
+        if not self._label_editor_active():
+            self._copy_closed_fragment_of_selection()
+
+    def _wrap_selection_shortcut(self) -> None:
+        if self._label_editor_active():
+            return
+        if not self._selected_graph_objects():
+            self.status_label.setText("Select objects to wrap in a contour.")
+            return
+        self._wrap_selection_in_contour()
+
+    def _reverse_selected_connector(self) -> None:
+        if self._label_editor_active():
+            return
+        pairs = [
+            item
+            for item in self.scene.selectedItems()
+            if isinstance(item, GraphEdge) and item.gwf_tag == "pair"
+        ]
+        if len(pairs) != 1:
+            self.status_label.setText("Select one pair connector to reverse.")
+            return
+        self._swap_connector(pairs[0])
+
+    def _creation_position(self) -> QPointF:
+        position = self.view.last_scene_position()
+        if position is None:
+            position = self.view.mapToScene(self.view.viewport().rect().center())
+        return position
+
+    def _create_node_shortcut(self, gwf_type: str, prefix: str) -> None:
+        if self._label_editor_active():
+            return
+        self._create_node_at(self._creation_position(), gwf_type, prefix)
+
+    def _create_general_node_shortcut(self) -> None:
+        self._create_node_shortcut("node/const/perm/general", "node")
+
+    def _create_nrel_node_shortcut(self) -> None:
+        self._create_node_shortcut("node/const/perm/relation", "nrel")
+
+    def _create_rrel_node_shortcut(self) -> None:
+        self._create_node_shortcut("node/const/perm/relation", "rrel")
+
+    def _create_var_node_shortcut(self) -> None:
+        self._create_node_shortcut("node/var/general_node", "node")
+
+    def _add_note_shortcut(self) -> None:
+        if self._label_editor_active():
+            return
+        self._add_note_at(self._creation_position())
 
     def save(self) -> None:
         if self.file_path is None:

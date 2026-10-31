@@ -73,6 +73,7 @@ class GraphCanvasView(QGraphicsView):
         self._space_pressed = False
         self._pan_button: Qt.MouseButton | None = None
         self._last_pan_position: QPointF | None = None
+        self._last_scene_position: QPointF | None = None
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         # repainting the whole viewport per mouse move is far too expensive
@@ -116,7 +117,12 @@ class GraphCanvasView(QGraphicsView):
             return
         super().wheelEvent(event)
 
+    def last_scene_position(self) -> QPointF | None:
+        """Last pointer position in scene coordinates (None before any move)."""
+        return self._last_scene_position
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        self._last_scene_position = self.mapToScene(event.position().toPoint())
         self.scene()._begin_edge_batch()
         try:
             if event.button() == Qt.MouseButton.MiddleButton or (
@@ -182,6 +188,7 @@ class GraphCanvasView(QGraphicsView):
             self.scene()._end_edge_batch()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        self._last_scene_position = self.mapToScene(event.position().toPoint())
         self.scene()._begin_edge_batch()
         try:
             if self._pan_button is not None and self._last_pan_position is not None:
@@ -290,6 +297,7 @@ class GraphCanvasView(QGraphicsView):
             self.scene()._end_edge_batch()
 
     def contextMenuEvent(self, event) -> None:
+        self._last_scene_position = self.mapToScene(event.pos())
         item = self._graph_object_at(event.pos())
         self.build_context_menu(
             self.mapToScene(event.pos()),
