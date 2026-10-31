@@ -360,9 +360,9 @@ class GraphNode(QGraphicsItem):
         return bounds
 
     def shape(self) -> QPainterPath:
-        path = self._glyph_shape()
-        path.addRect(self._label_rect())
-        return path
+        # the identifier is a caption, not a handle: clicks and rubber-band
+        # selection must ignore the label area and hit the glyph only
+        return self._glyph_shape()
 
     def _label_rect(self) -> QRectF:
         return self.label.boundingRect().translated(self.label.pos())

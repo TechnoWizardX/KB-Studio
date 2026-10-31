@@ -33,6 +33,11 @@
   "Select all incoming/outgoing nodes" takes the buses of the node and its
   neighbours into the selection too, and Delete (the keyboard one included)
   removes selected canvas notes along with the graph objects.
+- Made the SCg node identifier a caption rather than a handle: node
+  hit-testing (`shape()`) covers the glyph only, so clicking, dragging or
+  rubber-band selecting over the label no longer selects the node. The label
+  still stays inside the item geometry (`boundingRect`), so painting and PNG
+  export keep long identifiers unclipped.
 
 - Added copy/paste of the selected graph objects (nodes, connectors, buses,
   contours) in the SCg editor: Ctrl+C/Ctrl+X/Ctrl+V shortcuts, context menu

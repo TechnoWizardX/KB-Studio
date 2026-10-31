@@ -280,7 +280,7 @@ class GraphSceneTests(unittest.TestCase):
         self.app.processEvents()
         original_source = source.pos()
         original_path = editor.scene.edges[0].path()
-        start = editor.view.mapFromScene(source.mapToScene(source.boundingRect().center()))
+        start = editor.view.mapFromScene(source.mapToScene(QPointF(0, 0)))
         finish = start + QPoint(70, 55)
 
         QTest.mousePress(
@@ -307,9 +307,7 @@ class GraphSceneTests(unittest.TestCase):
         target.setSelected(True)
         self.app.processEvents()
         original_target = target.pos()
-        start = editor.view.mapFromScene(
-            source.mapToScene(source.boundingRect().center())
-        )
+        start = editor.view.mapFromScene(source.mapToScene(QPointF(0, 0)))
         finish = start + QPoint(120, 70)
 
         QTest.mousePress(
@@ -1106,6 +1104,29 @@ class GraphSceneTests(unittest.TestCase):
         )
 
         self.assertGreater(rendered_text_pixels, 0)
+
+    def test_node_label_is_only_a_caption_for_selection(self):
+        node = self.scene.add_node("caption_only_node", QPointF(100, 100))
+        label_center = node.mapToScene(node._label_rect().center())
+
+        self.assertFalse(node.shape().contains(node.mapFromScene(label_center)))
+        self.assertTrue(node.shape().contains(QPointF(0, 0)))
+
+        selection = QPainterPath()
+        selection.addRect(
+            node.mapRectToScene(node._label_rect()).adjusted(2, 2, -2, -2)
+        )
+        self.scene.setSelectionArea(selection)
+        self.assertFalse(node.isSelected())
+
+        selection = QPainterPath()
+        selection.addRect(node.mapRectToScene(node._body_rect()))
+        self.scene.setSelectionArea(selection)
+        self.assertTrue(node.isSelected())
+
+        # the caption still belongs to the item geometry, so export bounds
+        # and painting keep the whole label
+        self.assertTrue(node.boundingRect().contains(node._label_rect()))
 
     def test_canvas_bus_and_contour_tools_create_gwf_objects(self):
         editor = GraphEditorWidget()
@@ -1979,7 +2000,7 @@ class GraphEditorUndoTests(unittest.TestCase):
         editor.scene.connect_nodes(source, target, "->")
         self.app.processEvents()
         original_source = QPointF(source.pos())
-        start = editor.view.mapFromScene(source.mapToScene(source.boundingRect().center()))
+        start = editor.view.mapFromScene(source.mapToScene(QPointF(0, 0)))
         finish = start + QPoint(70, 55)
         QTest.mousePress(editor.view.viewport(), Qt.MouseButton.LeftButton, pos=start)
         QTest.mouseMove(editor.view.viewport(), finish, 100)
