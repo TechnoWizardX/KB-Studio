@@ -1,0 +1,68 @@
+# syntax=docker/dockerfile:1
+
+# Build on the oldest supported distribution: PyInstaller bundles Python, Qt
+# and the other native libraries, but not glibc. The build image therefore
+# fixes the minimum glibc version of the resulting executable (2.35 here).
+FROM ubuntu:22.04 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# binutils provides objdump, which PyInstaller needs on Linux.
+# libpython3.10 provides the shared Python library bundled by PyInstaller.
+# The Qt runtime libraries let PyInstaller query Qt and collect its plugins.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        binutils \
+        ca-certificates \
+        libpython3.10 \
+        python3 \
+        python3-pip \
+        python3-venv \
+        libbrotli1 \
+        libdbus-1-3 \
+        libegl1 \
+        libfontconfig1 \
+        libfreetype6 \
+        libgl1 \
+        libglib2.0-0 \
+        libice6 \
+        libjpeg-turbo8 \
+        libpng16-16 \
+        libsm6 \
+        libx11-6 \
+        libxcb-cursor0 \
+        libxcb-icccm4 \
+        libxcb-image0 \
+        libxcb-keysyms1 \
+        libxcb-randr0 \
+        libxcb-render-util0 \
+        libxcb-shape0 \
+        libxcb-sync1 \
+        libxcb-xfixes0 \
+        libxcb-xinerama0 \
+        libxcb-xkb1 \
+        libxcb1 \
+        libxkbcommon-x11-0 \
+        libxkbcommon0 \
+        libxi6 \
+        libxrender1 \
+        libxtst6 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY requirements.txt .
+# Keep the Qt and PyInstaller versions in sync with the tested release.
+RUN python3 -m venv /venv \
+    && /venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /venv/bin/pip install --no-cache-dir \
+        -r requirements.txt \
+        "PySide6==6.11.2" \
+        "pyinstaller==6.22.3"
+
+COPY . .
+RUN /venv/bin/pyinstaller --noconfirm --clean KB-Studio.spec
+
+# Export only the executable. Build with:
+#   docker build -f Dockerfile.build --output type=local,dest=dist .
+FROM scratch
+COPY --from=build /src/dist/KB-Studio /KB-Studio

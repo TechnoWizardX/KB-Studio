@@ -104,8 +104,27 @@ the viewport centre before the pointer enters the canvas. Middle-mouse drag or
 
 ## Building a standalone executable
 
-The PyInstaller spec produces a single-file executable for the current
-operating system and architecture:
+PyInstaller produces a single-file executable for the current operating system
+and architecture; it does not cross-compile. Build on the oldest OS version you
+intend to support, because the executable inherits the build machine's C
+library and other system dependencies.
+
+### Linux
+
+The repository includes `Dockerfile.build`, which builds on Ubuntu 22.04
+(glibc 2.35). The result runs on Ubuntu 22.04+, Debian 12+, Ubuntu 24.04,
+Fedora, Arch and other distributions with glibc 2.35 or newer.
+
+```bash
+DOCKER_BUILDKIT=1 docker build -f Dockerfile.build --output type=local,dest=dist .
+./dist/KB-Studio
+```
+
+The image installs Python 3.10, the Qt runtime libraries (so PyInstaller can
+collect the Qt plugins), `binutils` and PyInstaller, then runs
+`pyinstaller --noconfirm --clean KB-Studio.spec`.
+
+For a native build (the executable then requires the host's glibc):
 
 ```bash
 python -m pip install -r requirements.txt pyinstaller
@@ -113,6 +132,12 @@ python build_assets.py          # only after changing files in src/resources/ico
 pyinstaller --noconfirm KB-Studio.spec
 ./dist/KB-Studio
 ```
+
+### Windows and macOS
+
+Build on the oldest Windows or macOS version you intend to support, using the
+same `pyinstaller --noconfirm KB-Studio.spec` command. PyInstaller must run on
+the target OS; sign and notarize macOS builds before distributing them.
 
 ## Testing
 
@@ -129,6 +154,8 @@ example `xvfb-run -a python -m unittest discover tests`.
 
 ```
 main.py                     application entry point
+Dockerfile.build            reproducible Ubuntu 22.04 build
+scripts/check-glibc.py      bundled glibc audit
 src/
   core/                     signals and the AI worker
   gui/
@@ -146,33 +173,32 @@ tests/                      unittest suite
 
 ## Linux compatibility
 
-Linux compatibility depends on the executable architecture, the system
-libraries that remain external to the PyInstaller bundle, and the GNU C
-Library (glibc) version required by the executable and bundled native
-libraries.
+The released Linux executable is built on Ubuntu 22.04 and requires **glibc
+2.35 or newer**, together with the usual desktop libraries (`libGL`,
+`libEGL`, `libxkbcommon`, fontconfig, ...). It does not start on Ubuntu 20.04
+or Debian 11 (glibc 2.31).
 
-Inspect the executable architecture and ELF interpreter:
-
-```bash
-file dist/KB-Studio
-```
-
-Inspect the highest glibc symbol version the executable references:
+Auditing only the top-level executable is misleading: it is the PyInstaller
+bootloader and references just `GLIBC_2.14`. The real requirement comes from
+the bundled native libraries, mainly `libpython3.10.so.1.0` and
+`libgcc_s.so.1`. Inspect every ELF file in the bundle with:
 
 ```bash
-readelf --version-info dist/KB-Studio | grep -o 'GLIBC_[0-9.]*' | sort -Vu
+python scripts/check-glibc.py dist/KB-Studio
 ```
 
-This is a useful initial check, but it does not prove that the complete
-application runs on a distribution: Python, Qt and other bundled native
-libraries have their own system-library requirements, and `ldd` only reports
-the executable's direct dynamic dependencies.
+The script reports the highest glibc version and the libraries that need it,
+and `--max 2.35` turns it into a CI check. It requires `readelf` (binutils)
+and PyInstaller.
 
-For the broadest compatibility, build on the oldest Linux distribution you
-intend to support and test the generated executable on every target system,
-including its GUI, bundled resources and file operations. A build made on a
-newer distribution is not guaranteed to run on older ones. Build and test
-separately for each operating system and architecture.
+The definitive test is to run the executable on each target distribution. For
+a headless smoke test:
+
+```bash
+QT_QPA_PLATFORM=offscreen ./dist/KB-Studio
+```
+
+Build and test separately for each operating system and architecture.
 
 ## License
 

@@ -1,0 +1,9 @@
+.git
+.gitignore
+.venv
+venv
+dist
+build
+__pycache__
+*.pyc
+test_project_dir
