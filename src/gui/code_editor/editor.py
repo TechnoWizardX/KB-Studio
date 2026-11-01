@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from lark.exceptions import (
@@ -32,6 +33,8 @@ from src.gui.syntax_highlighter import SCSHighlighter
 from src.utils.config_manager import ConfigManager
 from src.utils.security import get_project_root, safe_path
 from src.utils.theme_manager import ThemeManager
+
+logger = logging.getLogger(__name__)
 
 
 class CodeEditorWorkspace(QTabWidget):
@@ -493,9 +496,7 @@ class CodeEditor(QPlainTextEdit):
         except ParseError as error:
             self._set_syntax_error(f"Parse error: {error}")
         except Exception as error:
-            import traceback
-
-            traceback.print_exc()
+            logger.exception("Internal parser error")
             self._set_syntax_error(
                 f"Internal parser error: {type(error).__name__}"
             )

@@ -1,9 +1,12 @@
 from importlib.resources import files
 import json
+import logging
 import re
 from src.resources.data import DEFAULT_THEME_CONFIG
 from src.resources.icons import Icons
 from src.core.signals import signals
+
+logger = logging.getLogger(__name__)
 
 
 class ThemeManager:
@@ -18,7 +21,7 @@ class ThemeManager:
             text = files("src.resources.themes").joinpath(f"{name}.json").read_text(encoding="utf-8")
             return json.loads(text)
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            print(f"ERROR: Cannot load theme colors '{name}': {e}")
+            logger.error("Cannot load theme colors %r: %s", name, e)
             return DEFAULT_THEME_CONFIG.copy()
 
     @classmethod
@@ -27,7 +30,7 @@ class ThemeManager:
         try:
             return files("src.resources.themes").joinpath(f"{name}.qss").read_text(encoding="utf-8")
         except FileNotFoundError as e:
-            print(f"ERROR: Cannot load theme QSS '{name}': {e}")
+            logger.error("Cannot load theme QSS %r: %s", name, e)
             return ""
 
     @classmethod

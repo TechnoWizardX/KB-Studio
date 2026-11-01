@@ -108,5 +108,4 @@ def init_app():
     app.setStyleSheet(qss)
     window = MainWindow(theme_manager)
     window.show()
-    # window.code_editor.code_editor.test_parse()
     sys.exit(app.exec())

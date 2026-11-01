@@ -212,7 +212,6 @@ class ChatBot(QFrame):
         """Initialize connection with AI and puts it in QThread"""
         last_model = ConfigManager.get("last_model")
         self._display_name = last_model.get("display_name")
-        print(f"last model: {self._display_name}")
         self._model = last_model.get("model")
         self._provider = last_model.get("provider")
         self._base_url = last_model.get("base_url")
@@ -302,7 +301,6 @@ class ChatBot(QFrame):
             return
             
         if index == self.models_combo_box.findData("add_model"):
-            print("Add model function called")
             model_data = AddModelDialog.get_model_data_from_user(self)
 
             if model_data is None:  
@@ -336,7 +334,6 @@ class ChatBot(QFrame):
         self._provider = data.get("provider")
         self._base_url = data.get("base_url")
         ConfigManager.set("last_model", data)
-        print("model changed")
         self._recreate_worker()
 
     def _recreate_worker(self):

@@ -1,8 +1,13 @@
-from PySide6.QtCore import QStandardPaths
-from pathlib import Path
-from src.resources.data import DEFAULT_CONFIG
-from typing import Any
 import json
+import logging
+from pathlib import Path
+from typing import Any
+
+from PySide6.QtCore import QStandardPaths
+
+from src.resources.data import DEFAULT_CONFIG
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigManager():
@@ -30,8 +35,8 @@ class ConfigManager():
                 config_file.parent.mkdir(parents=True, exist_ok=True)
                 cls._current_config = cls.DEFAULT_CONFIG.copy()
                 cls.save()
-            except Exception as e:
-                print(f"ERROR: {e}")
+            except OSError as error:
+                logger.error("Cannot create config file: %s", error)
                 cls._current_config = cls.DEFAULT_CONFIG.copy()
                 return
         else:
@@ -62,8 +67,8 @@ class ConfigManager():
                         cls._current_config[key] = val
                 if migrated_message_count:
                     cls.save()
-        except Exception as e:
-            print(f"Ошибка чтения конфига, сброс на дефолт: {e}")
+        except (OSError, ValueError, TypeError) as error:
+            logger.error("Cannot read config, falling back to defaults: %s", error)
             cls._current_config = cls.DEFAULT_CONFIG.copy()
 
     @classmethod
@@ -73,16 +78,16 @@ class ConfigManager():
         try:
             with open(config_file, "w", encoding="utf-8") as f:
                 json.dump(cls._current_config, f, indent=4, ensure_ascii=False)
-        except:
-            print("ERROR: can't save current config")
+        except (OSError, TypeError) as error:
+            logger.error("Cannot save config: %s", error)
 
     @classmethod
     def get(cls, key):
         """Returns current config value by a key, if not available - returns default value"""
         try:
             return cls._current_config[key]
-        except Exception as e:
-            print(f"Unable get config value: {e}")
+        except KeyError:
+            logger.debug("Missing config key %r, using the default", key)
             return cls.DEFAULT_CONFIG[key]
 
     @classmethod
@@ -91,5 +96,5 @@ class ConfigManager():
         try:
             cls._current_config[key] = value
             cls.save()
-        except Exception as e:
-            print(f"ERROR: Unable to set new value {value} for a key {key}")
+        except (KeyError, TypeError) as error:
+            logger.error("Cannot set config key %r: %s", key, error)

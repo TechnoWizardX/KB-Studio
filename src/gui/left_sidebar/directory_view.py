@@ -134,7 +134,6 @@ class DirectoryTreeViewWidget(QFrame):
             options=QFileDialog.Option.ShowDirsOnly
         )
         if new_folder:
-            print(f"New project paths: {new_folder}. Registring new Project Tree...")
             # Clear internal state before emitting signal
             ConfigManager.set("selected_dir", "")
             ConfigManager.set("selected_file", "")
@@ -142,8 +141,6 @@ class DirectoryTreeViewWidget(QFrame):
             self.project_path = new_folder
             ConfigManager.set("project_dir", new_folder)
             self.project_dir_label.setText(new_folder)
-        else:
-            print("Choose declined")
 
     def make_new_file(self) -> None:
         self.creation_mode = "file"
@@ -195,7 +192,6 @@ class DirectoryTreeViewWidget(QFrame):
                 return
             
             full_path.mkdir()
-            print(full_path)
         except PathTraversalError as e:
             QMessageBox.warning(self, "Security Error", str(e))
         except OSError as e:
