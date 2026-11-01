@@ -267,6 +267,29 @@ def node_type_parts(gwf_type: str) -> tuple[str, str]:
     return permanence, structure
 
 
+_ROLE_IDENTIFIER = re.compile(r"^rrel_")
+
+
+def role_relation_node_type(identifier: str, gwf_type: str) -> str:
+    """Maps an ``rrel_*`` element typed as a relation onto the role type.
+
+    In SCs ``rrel_*`` elements are role relations
+    (``sc_node_role_relation``); a relation type on such an element makes
+    the sc-builder reject the whole file with "Can't extend type
+    ConstNodeRole to type ConstNodeNonRole".
+    """
+    if not _ROLE_IDENTIFIER.match(identifier):
+        return gwf_type
+    permanence, structure = node_type_parts(gwf_type)
+    if structure != "relation":
+        return gwf_type
+    if gwf_type.startswith("node/meta"):
+        return "node/meta/attribute"
+    if permanence == "var":
+        return "node/var/attribute"
+    return "node/const/attribute"
+
+
 def connector_parts(tag: str, gwf_type: str) -> tuple[str, bool] | None:
     """Разбирает gwf-тип коннектора.
 

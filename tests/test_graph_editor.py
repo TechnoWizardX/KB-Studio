@@ -1071,6 +1071,44 @@ class GraphSceneTests(unittest.TestCase):
         self.assertEqual(arcs["attribute"].get("dotEBalance"), "0.6")
         self.assertEqual(arcs["relation"].get("id_e"), "n3")
 
+    def test_loading_rrel_relation_node_migrates_to_role_type(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/const/perm/relation" idtf="rrel_2" id="n1" x="10" y="10"/>
+          <node type="node/const/perm/relation" idtf="nrel_2" id="n2" x="60" y="10"/>
+          <node type="node/const/perm/general" idtf="rrel_main" id="n3" x="110" y="10"/>
+        </staticSector></GWF>"""
+
+        self.scene.load_gwf(source)
+
+        rrel = self.scene.nodes["rrel_2"]
+        self.assertEqual(rrel.gwf_type, "node/const/attribute")
+        self.assertEqual(node_type_parts(rrel.gwf_type), ("const", "role"))
+        self.assertEqual(
+            self.scene.nodes["nrel_2"].gwf_type, "node/const/perm/relation"
+        )
+        # only relation-typed rrel elements are migrated
+        self.assertEqual(
+            self.scene.nodes["rrel_main"].gwf_type, "node/const/perm/general"
+        )
+        self.assertEqual(self.scene.migrated_role_nodes, 1)
+        exported = ET.fromstring(self.scene.to_gwf())
+        types = {
+            item.get("idtf"): item.get("type")
+            for item in exported.findall("staticSector/node")
+        }
+        self.assertEqual(types["rrel_2"], "node/const/attribute")
+
+    def test_loading_rrel_var_relation_keeps_the_variable_side(self):
+        source = """<GWF version="2.0"><staticSector>
+          <node type="node/var/relation" idtf="rrel_var" id="n1" x="10" y="10"/>
+        </staticSector></GWF>"""
+
+        self.scene.load_gwf(source)
+
+        node = self.scene.nodes["rrel_var"]
+        self.assertEqual(node.gwf_type, "node/var/attribute")
+        self.assertEqual(node_type_parts(node.gwf_type), ("var", "role"))
+
     def test_node_label_has_full_bounded_geometry(self):
         node = self.scene.add_node("a_very_long_node_identifier")
         label_rect = node.label.boundingRect().translated(node.label.pos())
@@ -2079,6 +2117,29 @@ class GraphEditorUndoTests(unittest.TestCase):
         self.assertIn("loaded", editor.scene.nodes)
         editor.close()
 
+    def test_opening_a_legacy_rrel_file_flags_it_for_saving(self):
+        editor = GraphEditorWidget()
+        with tempfile.TemporaryDirectory() as directory:
+            graph_path = os.path.join(directory, "graph.gwf")
+            with open(graph_path, "w", encoding="utf-8") as handle:
+                handle.write(
+                    '<GWF version="2.0"><staticSector>'
+                    '<node type="node/const/perm/relation" idtf="rrel_2" id="n1" x="10" y="10"/>'
+                    "</staticSector></GWF>"
+                )
+            with patch(
+                "src.gui.graph_editor.graph_editor.get_project_root",
+                return_value=Path(directory),
+            ):
+                editor.apply_file(graph_path)
+
+        self.assertEqual(
+            editor.scene.nodes["rrel_2"].gwf_type, "node/const/attribute"
+        )
+        self.assertTrue(editor.is_modified)
+        self.assertIn("rrel", editor.status_label.text())
+        editor.close()
+
     def test_inplace_label_rename_goes_through_undo_stack(self):
         editor = GraphEditorWidget()
         node = editor.scene.add_node("alpha")
@@ -2878,17 +2939,20 @@ class GraphEditorContextMenuTests(unittest.TestCase):
         editor = self.editor
         editor.resize(900, 600)
         editor.show()
-        editor.activateWindow()
         node = editor.scene.add_node("alpha")
         editor.scene.clearSelection()
         node.setSelected(True)
-        editor.view.setFocus()
-        self.app.processEvents()
-        QTest.qWait(20)
-        self.app.processEvents()
-
-        QTest.keyClick(editor.view, Qt.Key.Key_F2)
-        self.app.processEvents()
+        for attempt in range(5):
+            if node.label._editing:
+                break
+            # window activation is racy in a batched offscreen run;
+            # retry until the shortcut fires
+            editor.activateWindow()
+            editor.view.setFocus()
+            self.app.processEvents()
+            QTest.qWait(20)
+            QTest.keyClick(editor.view, Qt.Key.Key_F2)
+            self.app.processEvents()
 
         self.assertTrue(node.label._editing)
         editor.close()
@@ -2984,7 +3048,7 @@ class GraphEditorContextMenuTests(unittest.TestCase):
             QPointF(0, 0), "node/const/perm/relation", "nrel"
         )
         self.editor._create_node_at(
-            QPointF(5, 5), "node/const/perm/relation", "rrel"
+            QPointF(5, 5), "node/const/attribute", "rrel"
         )
         self.editor._create_node_at(
             QPointF(10, 10), "node/var/general_node"
@@ -2997,9 +3061,42 @@ class GraphEditorContextMenuTests(unittest.TestCase):
             "node/const/perm/relation",
         )
         self.assertEqual(
+            self.editor.scene.nodes["rrel_1"].gwf_type,
+            "node/const/attribute",
+        )
+        self.assertEqual(
             self.editor.scene.nodes["node_1"].gwf_type,
             "node/var/general_node",
         )
+
+    def test_canvas_menu_rrel_entry_creates_a_role_node(self):
+        menu = QMenu(self.editor)
+        self.editor._fill_canvas_menu(menu, QPointF(10, 10))
+        rrel_action = next(
+            action for action in menu.actions() if action.text() == "Add rrel node"
+        )
+
+        rrel_action.trigger()
+
+        node = self.editor.scene.nodes["rrel_1"]
+        self.assertEqual(node.gwf_type, "node/const/attribute")
+        self.assertEqual(
+            node_type_parts(node.gwf_type),
+            ("const", "role"),
+        )
+
+    def test_canvas_menu_nrel_entry_stays_a_relation_node(self):
+        menu = QMenu(self.editor)
+        self.editor._fill_canvas_menu(menu, QPointF(10, 10))
+        nrel_action = next(
+            action for action in menu.actions() if action.text() == "Add nrel node"
+        )
+
+        nrel_action.trigger()
+
+        node = self.editor.scene.nodes["nrel_1"]
+        self.assertEqual(node.gwf_type, "node/const/perm/relation")
+        self.assertEqual(node_type_parts(node.gwf_type), ("const", "relation"))
 
 
 class GraphEditorThemeTests(unittest.TestCase):

@@ -414,9 +414,16 @@ class GraphEditorWidget(QFrame):
             QMessageBox.warning(self, "Cannot open graph", str(error))
             return
         self.file_path = safe_file
-        self._mark_modified(False)
+        migrated = self.scene.migrated_role_nodes
+        self._mark_modified(bool(migrated))
         self.undo_stack.clear()
-        self.status_label.setText(f"Opened {safe_file.name}.")
+        status = f"Opened {safe_file.name}."
+        if migrated:
+            status += (
+                f" Converted {migrated} rrel node(s) from a relation type to"
+                " the role type — save to apply."
+            )
+        self.status_label.setText(status)
 
     def set_active(self, active: bool) -> None:
         self.is_active = active
@@ -799,7 +806,7 @@ class GraphEditorWidget(QFrame):
             "Add rrel node",
             RREL_SHORTCUT,
             lambda checked=False, position=scene_pos: self._create_node_at(
-                position, "node/const/perm/relation", "rrel"
+                position, "node/const/attribute", "rrel"
             ),
         )
         self._add_menu_action(
@@ -1366,7 +1373,7 @@ class GraphEditorWidget(QFrame):
         self._create_node_shortcut("node/const/perm/relation", "nrel")
 
     def _create_rrel_node_shortcut(self) -> None:
-        self._create_node_shortcut("node/const/perm/relation", "rrel")
+        self._create_node_shortcut("node/const/attribute", "rrel")
 
     def _create_var_node_shortcut(self) -> None:
         self._create_node_shortcut("node/var/general_node", "node")

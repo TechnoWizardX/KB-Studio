@@ -203,6 +203,14 @@
 
 ### Fixed
 
+- Fixed role relations in the SCg editor: "Add rrel node" and Ctrl+Alt+N now
+  create a role node (`node/const/attribute` → `sc_node_role_relation`)
+  instead of a non-role relation node, so a knowledge base rebuild no longer
+  fails with "Can't extend type `ConstNodeRole` to type `ConstNodeNonRole`
+  for element `rrel_N`". Opening a document saved earlier with the wrong
+  type migrates its `rrel_*` relation nodes to the matching role type
+  (variable nodes stay variable) and flags the document for saving, so the
+  corrected type reaches the .gwf file.
 - Fixed a permanent one-stall-per-second loop in the SCs code editor: the
   syntax parse changed text formats with its own error/token highlighting,
   which fired `textChanged` and re-armed the 500 ms parse debounce timer, so

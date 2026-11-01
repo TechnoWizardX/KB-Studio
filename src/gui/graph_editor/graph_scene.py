@@ -29,6 +29,7 @@ from src.gui.graph_editor.graph_types import (
     SIMPLE_RELATION as _SIMPLE_RELATION,
     connector_parts as _connector_parts,
     relation_for_gwf as _relation_for_gwf,
+    role_relation_node_type as _role_relation_node_type,
 )
 from src.gui.graph_editor.gwf_codec import (
     gwf_number as _gwf_number,
@@ -50,6 +51,9 @@ class GraphScene(QGraphicsScene):
         self.aux_objects: list[GraphAuxObject] = []
         self.opaque_lines: list[str] = []
         self.notes: list[GraphNote] = []
+        # rrel_* elements loaded as relation nodes get migrated to the role
+        # type; the count lets the editor flag the file as needing a save
+        self.migrated_role_nodes = 0
         self.gwf_root_attributes: dict[str, str] = {"version": "2.0"}
         self.gwf_root_extras: list[ET.Element] = []
         self.gwf_sector_attributes: dict[str, str] = {}
@@ -648,6 +652,7 @@ class GraphScene(QGraphicsScene):
 
     def load_scs(self, source: str) -> None:
         self._loading = True
+        self.migrated_role_nodes = 0
         try:
             self.clear()
             self.nodes.clear()
@@ -692,6 +697,7 @@ class GraphScene(QGraphicsScene):
         root, sector, known_node_ids = parse_gwf_document(source)
 
         self._loading = True
+        self.migrated_role_nodes = 0
         try:
             self.clear()
             self.nodes.clear()
@@ -764,11 +770,15 @@ class GraphScene(QGraphicsScene):
                 _gwf_number(element, "x", f"GWF node {gwf_id}"),
                 _gwf_number(element, "y", f"GWF node {gwf_id}"),
             )
+            gwf_type = element.get("type", "node/const/not_define")
+            normalized_type = _role_relation_node_type(idtf, gwf_type)
+            if normalized_type != gwf_type:
+                self.migrated_role_nodes += 1
             node = self.add_node(
                 identifier,
                 position,
                 gwf_id=gwf_id,
-                gwf_type=element.get("type", "node/const/not_define"),
+                gwf_type=normalized_type,
                 gwf_idtf=idtf,
                 gwf_element=deepcopy(element),
             )
