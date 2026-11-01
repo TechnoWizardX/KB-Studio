@@ -62,7 +62,11 @@ RUN python3 -m venv /venv \
 COPY . .
 RUN /venv/bin/pyinstaller --noconfirm --clean KB-Studio.spec
 
-# Export only the executable. Build with:
+# Fail the build if the bundle accidentally starts requiring a newer glibc.
+ARG GLIBC_MAX=2.35
+RUN /venv/bin/python scripts/check-glibc.py dist/KB-Studio --max "${GLIBC_MAX}"
+
+# Export only the executable. Build with scripts/build-linux.sh, or:
 #   docker build -f Dockerfile.build --output type=local,dest=dist .
 FROM scratch
 COPY --from=build /src/dist/KB-Studio /KB-Studio

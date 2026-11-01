@@ -111,18 +111,22 @@ library and other system dependencies.
 
 ### Linux
 
-The repository includes `Dockerfile.build`, which builds on Ubuntu 22.04
-(glibc 2.35). The result runs on Ubuntu 22.04+, Debian 12+, Ubuntu 24.04,
-Fedora, Arch and other distributions with glibc 2.35 or newer.
+The repository includes `Dockerfile.build` and `scripts/build-linux.sh`, which
+build on Ubuntu 22.04 (glibc 2.35). The result runs on Ubuntu 22.04+, Debian
+12+, Ubuntu 24.04, Fedora, Arch and other distributions with glibc 2.35 or
+newer.
 
 ```bash
-DOCKER_BUILDKIT=1 docker build -f Dockerfile.build --output type=local,dest=dist .
+scripts/build-linux.sh
 ./dist/KB-Studio
 ```
 
+The script builds into a temporary directory, replaces `dist/KB-Studio` only
+after a successful build, prints the SHA-256 and audits the bundled glibc
+version. Use `--no-cache`, `--output DIR` or `--glibc-max VERSION` as needed.
 The image installs Python 3.10, the Qt runtime libraries (so PyInstaller can
 collect the Qt plugins), `binutils` and PyInstaller, then runs
-`pyinstaller --noconfirm --clean KB-Studio.spec`.
+`pyinstaller --noconfirm --clean KB-Studio.spec` and the glibc check.
 
 For a native build (the executable then requires the host's glibc):
 
@@ -155,6 +159,7 @@ example `xvfb-run -a python -m unittest discover tests`.
 ```
 main.py                     application entry point
 Dockerfile.build            reproducible Ubuntu 22.04 build
+scripts/build-linux.sh      Docker build wrapper
 scripts/check-glibc.py      bundled glibc audit
 src/
   core/                     signals and the AI worker
