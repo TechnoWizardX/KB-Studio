@@ -16,10 +16,14 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# Use the system fontconfig: the copy from the build distribution is older
+# than the configuration files shipped by newer distributions.
+binaries = [b for b in a.binaries if not b[0].startswith('libfontconfig')]
+
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
+    binaries,
     a.datas,
     [],
     name='KB-Studio',

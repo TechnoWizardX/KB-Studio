@@ -183,6 +183,10 @@ The released Linux executable is built on Ubuntu 22.04 and requires **glibc
 `libEGL`, `libxkbcommon`, fontconfig, ...). It does not start on Ubuntu 20.04
 or Debian 11 (glibc 2.31).
 
+fontconfig is deliberately taken from the system: the copy from the build
+distribution is older than the configuration files shipped by newer
+distributions, so bundling it produces parser warnings at startup.
+
 Auditing only the top-level executable is misleading: it is the PyInstaller
 bootloader and references just `GLIBC_2.14`. The real requirement comes from
 the bundled native libraries, mainly `libpython3.10.so.1.0` and
