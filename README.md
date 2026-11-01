@@ -7,6 +7,7 @@ in one window.
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/PySide6-6.7%2B-41cd52" alt="PySide6 6.7+">
+  <img src="https://img.shields.io/badge/release-1.5-blue" alt="Release 1.5">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
 </p>
 
@@ -17,6 +18,25 @@ in one window.
 <p align="center">
   An SCg graph produced with the KB-Studio graph editor (PNG export).
 </p>
+
+## What's new in 1.5
+
+**The SCg graph editor is new in 1.5.0.** Version 1.4.2 was a text-only SCs
+editor with an AI assistant; 1.5.0 adds a full graph editor next to it:
+
+- Typed nodes and connectors, buses, contours, canvas notes and node content
+  (text or files).
+- GWF 1.6/2.0 load/save preserving metadata, element order and route points;
+  PNG export, search, zoom and fit-to-view.
+- Copy/cut/paste of selections and linked fragments, undo/redo, connector
+  waypoints and attach points, in-place rename.
+- The canonical SCg visual alphabet and a live dark/light graph theme.
+- Keyboard shortcuts and grouped context menus with hints.
+
+The release also rebuilds the workspace around collapsible left/right sidebars
+and a separate toolbar, fixes the SCs editor's self-rearming parse loop, and
+makes GWF export compatible with the ostis-ai `sc-builder` (including `rrel_*`
+role nodes and migration of older relation nodes).
 
 ## Features
 
@@ -74,6 +94,9 @@ python main.py
 ```
 
 On Windows use `.venv\Scripts\activate` instead.
+
+Prebuilt Linux binaries are available on the
+[releases page](https://github.com/TechnoWizardX/KB-Studio/releases).
 
 ## Keyboard shortcuts
 
