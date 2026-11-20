@@ -23,11 +23,40 @@ QWidget#lineNumberArea {
 }
 
 /* ---- AI Chat ---------------------------------------------- */
+QScrollArea#messagesBox {
+    border: none;
+    background-color: {{bg}};
+}
+QWidget#messagesContainer {
+    background-color: {{bg}};
+}
+QFrame#chatHeader {
+    background-color: {{editor_bg}};
+    border: none;
+    border-bottom: 1px solid {{border}};
+    border-radius: 0;
+}
+QLabel#chatHeaderTitle {
+    color: {{fg}};
+    background-color: transparent;
+    border: none;
+    font-weight: 600;
+}
 QTextEdit#chatBotInput {
-    border-color: transparent;
+    background-color: {{input_bg}};
+    color: {{input_fg}};
+    border: 1px solid {{input_border}};
+    border-radius: 6px;
+    padding: 6px;
+}
+QTextEdit#chatBotInput:focus {
+    border-color: {{input_border_focus}};
 }
 QFrame#chatSender {
     background-color: {{editor_bg}};
+    border: none;
+    border-top: 1px solid {{border}};
+    border-radius: 0;
 }
 QScrollArea#contextFilesList {
     border: none;
@@ -52,16 +81,54 @@ QPushButton#contextFileRemove {
 QPushButton#contextFileRemove:hover {
     background-color: {{hover}};
 }
+QFrame#messageUser {
+    background-color: {{selection}};
+    border: 1px solid {{accent}};
+    border-radius: 10px;
+}
+QFrame#messageAi {
+    background-color: {{bg_elevated}};
+    border: 1px solid {{border}};
+    border-radius: 10px;
+}
 QLabel#messageText {
-    border-color : transparent;
-    background-color : transparent;
+    border-color: transparent;
+    background-color: transparent;
+}
+QLabel#messageRole {
+    color: {{fg_dim}};
+    background-color: transparent;
+    font-size: 8pt;
+    border: none;
 }
 QLabel#messageDate {
+    color: {{fg_muted}};
     background-color: transparent;
-    font-size: 8 pt;
-    border-color : transparent;
+    font-size: 8pt;
+    border-color: transparent;
 }
-
+QFrame#messageUser QLabel#messageRole,
+QFrame#messageUser QLabel#messageDate {
+    color: {{fg}};
+}
+QLabel#chatEmptyTitle {
+    color: {{fg}};
+    background-color: transparent;
+    font-size: 13pt;
+    font-weight: 600;
+    border: none;
+}
+QLabel#chatEmptyText {
+    color: {{fg_dim}};
+    background-color: transparent;
+    border: none;
+}
+QLabel#chatShortcutHint {
+    color: {{fg_muted}};
+    background-color: transparent;
+    font-size: 8pt;
+    border: none;
+}
 /* ---- Frames ----------------------------------------------- */
 QFrame {
     background-color: {{frame_bg}};

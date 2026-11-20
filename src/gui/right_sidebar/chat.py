@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (QWidget, QDialogButtonBox, QFrame, QFormLayout, Q
                                QPushButton, QLabel, QTextEdit, QComboBox, QScrollArea,
                                QVBoxLayout, QHBoxLayout, QDialog, QMessageBox, QLineEdit, QFileDialog)
 from PySide6.QtCore import QSize, QThread, Qt, QTimer, QEvent, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
 from src.core.ai_worker import AiWorker, DEFAULT_SYSTEM_PROMPT
@@ -26,26 +27,83 @@ class ChatBot(QFrame):
         self.init_ai_connect()
 
         self.main_layout = QVBoxLayout()
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
         self.setLayout(self.main_layout)
+        self.setObjectName("chatBot")
+
+        self.header = QFrame()
+        self.header.setObjectName("chatHeader")
+        self.header_layout = QHBoxLayout(self.header)
+        self.header_layout.setContentsMargins(10, 6, 6, 6)
+        self.header_layout.setSpacing(6)
+        self.header_title = QLabel("AI Assistant")
+        self.header_title.setObjectName("chatHeaderTitle")
+        self.header_layout.addWidget(self.header_title)
+        self.header_layout.addStretch()
+        self.clear_history_btn = QPushButton()
+        self.clear_history_btn.setObjectName("IconButton")
+        self.clear_history_btn.setIcon(Icons.delete())
+        self.clear_history_btn.setIconSize(QSize(20, 20))
+        self.clear_history_btn.setFixedSize(QSize(28, 28))
+        self.clear_history_btn.setToolTip("Clear chat history")
+        self.clear_history_btn.clicked.connect(self._clear_history)
+        self.header_layout.addWidget(self.clear_history_btn)
+        self.main_layout.addWidget(self.header)
+
         self.messages_box = MessagesBox()
-        
+
         # Send chat box
         self.chat_sender = QFrame()
         self.chat_sender.setObjectName("chatSender")
         self.chat_sender_layout = QVBoxLayout()
-        self.chat_sender_layout.setContentsMargins(0, 0, 0, 0)
-        self.chat_sender_layout.setSpacing(0)
+        self.chat_sender_layout.setContentsMargins(8, 8, 8, 6)
+        self.chat_sender_layout.setSpacing(6)
         self.chat_sender.setLayout(self.chat_sender_layout)
 
         # Input message
         self.chat_input = QTextEdit()
+        self.chat_input.setObjectName("chatBotInput")
         self.chat_input.installEventFilter(self)
-        self.chat_input.setPlaceholderText("Ask AI...")
-        self.setObjectName("chatBotInput")
+        self.chat_input.setPlaceholderText("Ask AI…")
+        self.chat_input.setToolTip(
+            "Enter sends the message; Shift+Enter inserts a new line"
+        )
+        self.chat_input.setAcceptRichText(False)
+        self.chat_input.setFixedHeight(56)
+        self.chat_input.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self.chat_input.textChanged.connect(self._resize_input)
         self.chat_sender_layout.addWidget(self.chat_input)
 
         self.sender_bottom_layout = QHBoxLayout()
+        self.sender_bottom_layout.setContentsMargins(0, 0, 0, 0)
+        self.sender_bottom_layout.setSpacing(6)
         self.chat_sender_layout.addLayout(self.sender_bottom_layout)
+
+        self.add_file_to_context_menu = QPushButton()
+        self.add_file_to_context_menu.setObjectName("IconButton")
+        self.add_file_to_context_menu.setIcon(Icons.file_add())
+        self.add_file_to_context_menu.setIconSize(QSize(30, 30))
+        self.add_file_to_context_menu.setFixedSize(QSize(30, 30))
+        self.add_file_to_context_menu.setToolTip("Add files to the prompt context")
+        self.add_file_to_context_menu.clicked.connect(self._add_file_to_prompt)
+        self.sender_bottom_layout.addWidget(self.add_file_to_context_menu)
+
+        self.models_combo_box = QComboBox()
+        self.models_combo_box.setPlaceholderText("Select or add a model…")
+        self.models_combo_box.setToolTip("Model used for AI requests")
+        self.sender_bottom_layout.addWidget(self.models_combo_box, 1)
+
+        self.delete_model_btn = QPushButton()
+        self.delete_model_btn.setObjectName("IconButton")
+        self.delete_model_btn.setIcon(Icons.cross())
+        self.delete_model_btn.setIconSize(QSize(30, 30))
+        self.delete_model_btn.setFixedSize(QSize(30, 30))
+        self.delete_model_btn.setToolTip("Delete the selected model")
+        self.sender_bottom_layout.addWidget(self.delete_model_btn)
+        self.delete_model_btn.clicked.connect(self._delete_model)
 
         self.send_btn = QPushButton()
         self.send_btn.setObjectName("IconButton")
@@ -55,39 +113,24 @@ class ChatBot(QFrame):
         self.sender_bottom_layout.addWidget(self.send_btn)
         self.send_btn.clicked.connect(self._send_or_cancel_request)
 
-        self.models_combo_box = QComboBox()
-        self.models_combo_box.setPlaceholderText("Select or add a model…")
-        self.models_combo_box.setToolTip("Model used for AI requests")
-        self.sender_bottom_layout.addWidget(self.models_combo_box)
-        self.load_models_to_list()
-
-        self.delete_model_btn = QPushButton()
-        self.delete_model_btn.setObjectName("IconButton")
-        self.delete_model_btn.setIcon(Icons.cross())
-        self.delete_model_btn.setIconSize(QSize(30, 30))
-        self.delete_model_btn.setFixedSize(QSize(30, 30))
-        self.sender_bottom_layout.addWidget(self.delete_model_btn)
-        self.delete_model_btn.clicked.connect(self._delete_model)
-
         self.models_combo_box.activated.connect(self.on_selection_changed)
-
-        self.add_file_to_context_menu = QPushButton()
-        self.add_file_to_context_menu.setObjectName("IconButton")
-        self.add_file_to_context_menu.setIcon(Icons.file_add())
-        self.add_file_to_context_menu.setIconSize(QSize(30, 30))
-        self.add_file_to_context_menu.setFixedSize(QSize(30, 30))
-        self.add_file_to_context_menu.setToolTip("Add files to context")
-        
-        self.sender_bottom_layout.insertWidget(0, self.add_file_to_context_menu)
-        self.add_file_to_context_menu.clicked.connect(self._add_file_to_prompt)
 
         self.files_list = FileBox()
         self.files_list.file_removed.connect(self._remove_context_file)
         self.files_list.hide()
         self.chat_sender_layout.insertWidget(1, self.files_list)
 
-        self.main_layout.addWidget(self.messages_box, 2)
-        self.main_layout.addWidget(self.chat_sender, 1)
+        self.shortcut_hint = QLabel("Enter to send · Shift+Enter for a new line")
+        self.shortcut_hint.setObjectName("chatShortcutHint")
+        self.shortcut_hint.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.chat_sender_layout.addWidget(self.shortcut_hint)
+
+        self.main_layout.addWidget(self.messages_box, 1)
+        self.main_layout.addWidget(self.chat_sender, 0)
+
+        self.load_models_to_list()
 
         signals.theme_changed.connect(self._refresh_icons)
         signals.message_context_count_updated.connect(self._message_context_count_updated)
@@ -105,32 +148,64 @@ class ChatBot(QFrame):
                     saved_message["created_at"],
                 )
         except (OSError, sqlite3.Error) as error:
-            self.send_btn.setEnabled(False)
             QMessageBox.critical(
                 self,
                 "Chat history unavailable",
                 f"Could not open the chat history database:\n{error}",
             )
+        self._update_send_button()
+
+    def _resize_input(self) -> None:
+        """Grow the input with its content, up to the maximum height."""
+        document_height = self.chat_input.document().size().height()
+        frame = self.chat_input.frameWidth() * 2
+        height = int(document_height) + frame + 12
+        height = max(56, min(160, height))
+        if height != self.chat_input.height():
+            self.chat_input.setFixedHeight(height)
 
     def _refresh_icons(self, _theme: str) -> None:
         self._update_send_button()
         self.delete_model_btn.setIcon(Icons.cross())
+        self.clear_history_btn.setIcon(Icons.delete())
         self.add_file_to_context_menu.setIcon(Icons.file_add())
 
     def _update_send_button(self):
         is_generating = self._active_ai_message is not None
         self.send_btn.setIcon(Icons.cross() if is_generating else Icons.send())
-        self.send_btn.setToolTip("Cancel request" if is_generating else "Send request")
+        self._update_action_states()
+
+    def _update_action_states(self) -> None:
+        """Enable actions only when they can do something useful."""
+        is_generating = self._active_ai_message is not None
+        has_history = self.history_manager is not None
+        can_send = has_history and (is_generating or self.ready_for_sent())
+        self.send_btn.setEnabled(can_send)
+        if is_generating:
+            self.send_btn.setToolTip("Cancel request")
+        elif not has_history:
+            self.send_btn.setToolTip("Chat history is unavailable")
+        elif self.ready_for_sent():
+            self.send_btn.setToolTip("Send request (Enter)")
+        else:
+            self.send_btn.setToolTip("Select a model before sending")
+
+        current_index = self.models_combo_box.currentIndex()
+        has_model = (
+            current_index >= 0
+            and self.models_combo_box.itemData(current_index) != "add_model"
+        )
+        self.delete_model_btn.setEnabled(has_model)
+        self.clear_history_btn.setEnabled(has_history and not is_generating)
 
     def _send_or_cancel_request(self):
         if self._active_ai_message is not None:
             self.send_btn.setEnabled(False)
-            self.send_btn.setToolTip("Cancelling request...")
+            self.send_btn.setToolTip("Cancelling request…")
             try:
                 self.worker.cancel_request()
             except Exception as error:
-                self.send_btn.setEnabled(True)
-                self.send_btn.setToolTip("Cancel request")
+                self._update_action_states()
                 QMessageBox.warning(
                     self,
                     "Cancellation failed",
@@ -177,6 +252,7 @@ class ChatBot(QFrame):
             )
             return
         self.messages_box.clear_messages()
+        self._update_action_states()
 
     def _add_file_to_prompt(self):
         """Open a file dialog to select files and add them to the context for the AI prompt."""
@@ -288,6 +364,7 @@ class ChatBot(QFrame):
         self.models_combo_box.clear()
         self.load_models_to_list()
         self._changing_model = False
+        self._update_action_states()
 
     def load_models_to_list(self):
         """Load configured models and keep an explicit "add" entry.
@@ -317,6 +394,7 @@ class ChatBot(QFrame):
             self.models_combo_box.setCurrentIndex(last_index)
         else:
             self.models_combo_box.setCurrentIndex(-1)
+        self._update_action_states()
 
     def on_selection_changed(self, index: int):
         """Emits when model in combobox of models changed"""
@@ -331,6 +409,7 @@ class ChatBot(QFrame):
                 self._changing_model = True
                 self.models_combo_box.setCurrentIndex(last_index)
                 self._changing_model = False
+                self._update_action_states()
                 return
         
             if model_data["api"]:
@@ -351,6 +430,7 @@ class ChatBot(QFrame):
 
         data = self.models_combo_box.itemData(index)
         if data is None or data.get("display_name") == self._display_name:
+            self._update_action_states()
             return
         
         self._display_name = data.get("display_name")
@@ -359,6 +439,7 @@ class ChatBot(QFrame):
         self._base_url = data.get("base_url")
         ConfigManager.set("last_model", data)
         self._recreate_worker()
+        self._update_action_states()
 
     def _recreate_worker(self):
         """Recreate AI worker with new model configuration"""
@@ -367,7 +448,7 @@ class ChatBot(QFrame):
         self.worker = self._create_worker()
 
     def ready_for_sent(self) -> bool:
-        return self._provider and self._base_url and self._model
+        return bool(self._provider and self._base_url and self._model)
     
     def send_request(self):
         """Sends request to the LLM: locally (Ollama) or cloud (with API and Provider)"""
@@ -413,7 +494,6 @@ class ChatBot(QFrame):
         self.messages_box.add_message(prompt, author="user")
         self._active_ai_message = self.messages_box.add_message(text="", author="ai")
         self._update_send_button()
-        self.send_btn.setEnabled(True)
 
         self.worker.text_chunk_received.connect(self._active_ai_message.add_chunk)
         self.worker.generation_ended.connect(self._on_generation_ended)
@@ -462,7 +542,6 @@ class ChatBot(QFrame):
             pass
         self._active_ai_message = None
         self._update_send_button()
-        self.send_btn.setEnabled(True)
     
     def _on_worker_error(self, error: str):
         """Handle worker error"""
@@ -484,38 +563,93 @@ class ChatBot(QFrame):
         
 
     
+class EmptyState(QWidget):
+    """Placeholder shown while the chat has no messages."""
+
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 24, 16, 24)
+        layout.setSpacing(6)
+        layout.addStretch()
+
+        title = QLabel("Start a conversation")
+        title.setObjectName("chatEmptyTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        text = QLabel("Ask about your code or attach files with the + button.")
+        text.setObjectName("chatEmptyText")
+        text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        text.setWordWrap(True)
+        layout.addWidget(text)
+        layout.addStretch()
+
+
 class MessagesBox(QScrollArea):
     def __init__(self):
-        super().__init__() 
+        super().__init__()
+        self.setObjectName("messagesBox")
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.container = QWidget()
+        self.container.setObjectName("messagesContainer")
         self.main_layout = QVBoxLayout(self.container)
+        self.main_layout.setContentsMargins(8, 8, 8, 8)
+        self.main_layout.setSpacing(8)
+        self._empty_state = EmptyState()
+        self.main_layout.addWidget(self._empty_state, 1)
         self.main_layout.addStretch(3)
         self.setWidget(self.container)
         self.setWidgetResizable(True)
 
+        self._auto_scroll = True
+        scroll_bar = self.verticalScrollBar()
+        scroll_bar.valueChanged.connect(self._on_scrolled)
+        scroll_bar.rangeChanged.connect(self._on_range_changed)
+
     def add_message(self, text, author, created_at=None) -> "Message | None":
+        self._empty_state.hide()
         message = Message(text, author, created_at)
         alignment = Qt.AlignmentFlag.AlignLeft if author == "ai" else Qt.AlignmentFlag.AlignRight
         self.main_layout.insertWidget(self.main_layout.count() - 1, message, alignment)  # before stretch
+        message.content_changed.connect(self._on_message_grew)
+        self._auto_scroll = True
         self._scroll_to_bottom()
         if author == "ai":
             return message
 
     def clear_messages(self) -> None:
-        while self.main_layout.count() > 1:
-            item = self.main_layout.takeAt(0)
+        for index in reversed(range(self.main_layout.count())):
+            item = self.main_layout.itemAt(index)
             widget = item.widget()
-            if widget is not None:
+            if widget is not None and widget is not self._empty_state:
+                self.main_layout.takeAt(index)
                 widget.deleteLater()
+        self._empty_state.show()
+        self._auto_scroll = True
+        self.verticalScrollBar().setValue(0)
+
+    def _on_scrolled(self, value: int) -> None:
+        """Stop following the stream once the user scrolls up."""
+        bar = self.verticalScrollBar()
+        self._auto_scroll = value >= bar.maximum() - 24
+
+    def _on_range_changed(self, _minimum: int, maximum: int) -> None:
+        if self._auto_scroll:
+            self.verticalScrollBar().setValue(maximum)
+
+    def _on_message_grew(self) -> None:
+        if self._auto_scroll:
+            self._scroll_to_bottom()
 
     def _scroll_to_bottom(self):
-        """Scroll to bottom after adding message"""
-        QTimer.singleShot(0, lambda: QTimer.singleShot(
-            0,
-            lambda: self.verticalScrollBar().setValue(
-                self.verticalScrollBar().maximum()
-            ),
-        ))
+        """Scroll to bottom after the layout has been updated."""
+        QTimer.singleShot(0, self._scroll_now)
+
+    def _scroll_now(self) -> None:
+        bar = self.verticalScrollBar()
+        bar.setValue(bar.maximum())
 
 class FileBox(QScrollArea):
     file_removed = Signal(str)
@@ -582,6 +716,8 @@ class ContextFile(QFrame):
         self.main_layout.addWidget(self.remove_btn)
 
 class Message(QFrame):
+    content_changed = Signal()
+
     def __init__(self, text, author, created_at=None):
         super().__init__()
         
@@ -591,9 +727,12 @@ class Message(QFrame):
         message_time = datetime.fromisoformat(created_at) if created_at else datetime.now()
         time = message_time.astimezone().strftime("%H:%M")
 
+        self.setObjectName("messageUser" if author == "user" else "messageAi")
+        self.setMaximumWidth(380)
+
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(0)
+        self.main_layout.setContentsMargins(10, 8, 10, 6)
+        self.main_layout.setSpacing(2)
 
         self.label = QLabel(text)
         self.label.setObjectName("messageText")
@@ -604,11 +743,21 @@ class Message(QFrame):
             Qt.TextInteractionFlag.LinksAccessibleByMouse
         )
         self.label.setTextFormat(Qt.TextFormat.MarkdownText)
+        self.label.setOpenExternalLinks(False)
+        self.label.linkActivated.connect(self._open_link)
         self.main_layout.addWidget(self.label)
 
+        meta_layout = QHBoxLayout()
+        meta_layout.setContentsMargins(0, 0, 0, 0)
+        meta_layout.setSpacing(4)
+        self.role = QLabel("You" if author == "user" else "AI")
+        self.role.setObjectName("messageRole")
         self.date = QLabel(time)
         self.date.setObjectName("messageDate")
-        self.main_layout.addWidget(self.date)
+        meta_layout.addWidget(self.role)
+        meta_layout.addStretch()
+        meta_layout.addWidget(self.date)
+        self.main_layout.addLayout(meta_layout)
 
         # Typing cursor for AI messages
         if self._streaming:
@@ -616,6 +765,9 @@ class Message(QFrame):
             self._cursor_timer.timeout.connect(self._toggle_cursor)
             self._cursor_visible = True
             self._cursor_timer.start(500)  # Blink every 500ms
+
+    def _open_link(self, url: str) -> None:
+        QDesktopServices.openUrl(QUrl(url))
 
     def _toggle_cursor(self):
         """Toggle typing cursor visibility"""
@@ -628,6 +780,7 @@ class Message(QFrame):
         """Append chunk to message text - runs in main thread via Qt queued connection"""
         self.content += chunk
         self.label.setText(self.content + ("▌" if self._streaming and self._cursor_visible else ""))
+        self.content_changed.emit()
 
     def finish_streaming(self):
         """Called when streaming ends - remove cursor"""
