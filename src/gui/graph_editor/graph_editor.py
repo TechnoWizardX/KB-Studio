@@ -181,7 +181,6 @@ class GraphEditorWidget(QFrame):
         self.setObjectName("graphEditorWidget")
         self.file_path: Path | None = None
         self.is_modified = False
-        self.is_active = True
 
         layout = QVBoxLayout(self)
         toolbar = QHBoxLayout()
@@ -380,7 +379,6 @@ class GraphEditorWidget(QFrame):
         self.edge_type_combo.currentIndexChanged.connect(
             self._apply_selected_connector_type
         )
-        signals.selected_new_file.connect(self.apply_file)
         self._mark_modified(False)
         self.status_label.setText("Create a graph or open a .gwf file.")
 
@@ -391,8 +389,6 @@ class GraphEditorWidget(QFrame):
         self.view.viewport().update()
 
     def apply_file(self, file_path: str | Path) -> None:
-        if not self.is_active:
-            return
         if not file_path or Path(file_path).suffix.lower() != ".gwf":
             return
         try:
@@ -424,9 +420,6 @@ class GraphEditorWidget(QFrame):
                 " the role type — save to apply."
             )
         self.status_label.setText(status)
-
-    def set_active(self, active: bool) -> None:
-        self.is_active = active
 
     def new_graph(self) -> None:
         if not self._confirm_replace_current_graph():

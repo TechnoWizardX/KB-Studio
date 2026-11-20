@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -29,7 +29,14 @@ from PySide6.QtGui import (
 )
 from PySide6.QtGui import QPainter, QPainterPath
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QComboBox, QMenu, QMessageBox
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QMenu,
+    QMessageBox,
+    QStackedWidget,
+    QWidget,
+)
 
 from src.core.signals import signals
 from src.gui.graph_editor import scg_painter
@@ -232,15 +239,6 @@ class GraphSceneTests(unittest.TestCase):
         self.assertTrue(editor.is_modified)
         self.assertIsNone(editor.file_path)
         self.assertTrue(editor.save_button.isEnabled())
-
-    def test_inactive_graph_editor_does_not_open_text_editor_selections(self):
-        editor = GraphEditorWidget()
-        editor.set_active(False)
-
-        editor.apply_file("/not/a/project/text.scs")
-
-        self.assertIsNone(editor.file_path)
-        self.assertEqual(editor.scene.nodes, {})
 
     def test_graph_editor_ignores_scs_files_until_graphical_scs_is_supported(self):
         editor = GraphEditorWidget()
@@ -2567,7 +2565,7 @@ class GraphEditorUndoTests(unittest.TestCase):
             self.assertIn("saved_by_shortcut", content)
         editor.close()
 
-    def test_main_window_switches_to_graph_editor_for_gwf_files(self):
+    def test_main_window_routes_selected_files_to_matching_editor(self):
         try:
             from src.gui.main_window import MainWindow
             from src.gui.toolbar import ToolBar
@@ -2577,12 +2575,38 @@ class GraphEditorUndoTests(unittest.TestCase):
         window = MainWindow.__new__(MainWindow)
         window.topbar = ToolBar(lambda _index: None)
         window.topbar.editor_selector.setCurrentIndex(0)
+        window.editor_stack = QStackedWidget()
+        window.editor_stack.addWidget(QWidget())
+        window.editor_stack.addWidget(QWidget())
+        window.code_editor = Mock()
+        window.graph_editor = Mock()
+        applied_editor_indices = []
+
+        window.graph_editor.apply_file.side_effect = lambda _path: (
+            applied_editor_indices.append(window.editor_stack.currentIndex())
+        )
+        window.code_editor.apply_file.side_effect = lambda _path: (
+            applied_editor_indices.append(window.editor_stack.currentIndex())
+        )
 
         window._on_file_selected("/project/diagram.gwf")
 
         self.assertEqual(window.topbar.editor_selector.currentIndex(), 1)
+        self.assertEqual(window.editor_stack.currentIndex(), 1)
+        window.graph_editor.apply_file.assert_called_once_with(
+            Path("/project/diagram.gwf")
+        )
+        window.code_editor.apply_file.assert_not_called()
+
         window._on_file_selected("/project/code.scs")
-        self.assertEqual(window.topbar.editor_selector.currentIndex(), 1)
+
+        self.assertEqual(window.topbar.editor_selector.currentIndex(), 0)
+        self.assertEqual(window.editor_stack.currentIndex(), 0)
+        window.code_editor.apply_file.assert_called_once_with(
+            Path("/project/code.scs")
+        )
+        # The file must be handed to the editor only after it is visible.
+        self.assertEqual(applied_editor_indices, [1, 0])
 
 
 class GraphEditorClipboardTests(unittest.TestCase):

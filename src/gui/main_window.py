@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSignalBlocker, Qt
 import sys
 from pathlib import Path
 
@@ -70,13 +70,29 @@ class MainWindow(QMainWindow):
         signals.selected_new_file.connect(self._on_file_selected)
 
     def _on_file_selected(self, file_path: str) -> None:
-        if Path(str(file_path)).suffix.lower() == ".gwf":
-            self.topbar.editor_selector.setCurrentIndex(1)
+        """Route an explicitly opened file to the editor that can show it.
+
+        The sidebar emits one signal for every double-clicked file. Routing
+        here (instead of in each editor) guarantees the target editor is
+        active before ``apply_file`` runs and keeps the toolbar selector in
+        sync with the visible editor.
+        """
+        path = Path(str(file_path))
+        if path.suffix.lower() == ".gwf":
+            self._switch_editor(1)
+            self.graph_editor.apply_file(path)
+        else:
+            self._switch_editor(0)
+            self.code_editor.apply_file(path)
+
+    def _switch_editor(self, index: int) -> None:
+        """Select an editor page and update the selector without feedback."""
+        with QSignalBlocker(self.topbar.editor_selector):
+            self.topbar.editor_selector.setCurrentIndex(index)
+        self._select_editor(index)
 
     def _select_editor(self, index: int) -> None:
         self.editor_stack.setCurrentIndex(index)
-        self.code_editor.set_active(index == 0)
-        self.graph_editor.set_active(index == 1)
 
     def show_error(self, error):
         QMessageBox.critical(self, "ERROR", error)
