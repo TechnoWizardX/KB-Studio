@@ -442,6 +442,14 @@ QToolButton:focus {
     outline: none;
     border: 1px solid {{border_focus}};
 }
+QToolButton:checked {
+    background-color: {{selection}};
+    border: 1px solid {{accent}};
+}
+QToolButton:checked:hover {
+    background-color: {{selection}};
+    border-color: {{accent_hover}};
+}
 QToolButton[popupMode="1"] { /* MenuButtonPopup */
     padding-right: 16px;
 }
