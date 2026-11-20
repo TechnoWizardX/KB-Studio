@@ -56,6 +56,8 @@ class ChatBot(QFrame):
         self.send_btn.clicked.connect(self._send_or_cancel_request)
 
         self.models_combo_box = QComboBox()
+        self.models_combo_box.setPlaceholderText("Select or add a model…")
+        self.models_combo_box.setToolTip("Model used for AI requests")
         self.sender_bottom_layout.addWidget(self.models_combo_box)
         self.load_models_to_list()
 
@@ -242,7 +244,10 @@ class ChatBot(QFrame):
 
     def _delete_model(self):
         """Delete the currently selected model from the list and config."""
-        if self.models_combo_box.currentIndex() == self.models_combo_box.findData("add_model"):
+        current_index = self.models_combo_box.currentIndex()
+        if current_index < 0:
+            return
+        if self.models_combo_box.itemData(current_index) == "add_model":
             return
 
         reply = QMessageBox.question(
@@ -285,15 +290,33 @@ class ChatBot(QFrame):
         self._changing_model = False
 
     def load_models_to_list(self):
-        """Loads models info from config, deletes "api" key from userData"""
-        if self.models_list:
-            for model_data in self.models_list: 
-                data = model_data.copy()
-                data.pop("api", None)
-                self.models_combo_box.addItem(model_data.get("display_name"), userData=data)
-            last_index = self.models_combo_box.findText(self._display_name)
+        """Load configured models and keep an explicit "add" entry.
+
+        Empty placeholder records (the default config ships one) are skipped
+        so the selector never shows a blank current model. With no usable
+        model the combo shows its placeholder text instead.
+        """
+        self.models_combo_box.clear()
+        valid_models = [
+            model
+            for model in (self.models_list or [])
+            if isinstance(model, dict)
+            and str(model.get("display_name", "")).strip()
+        ]
+        for model_data in valid_models:
+            data = model_data.copy()
+            data.pop("api", None)
+            self.models_combo_box.addItem(
+                str(model_data.get("display_name", "")).strip(),
+                userData=data,
+            )
+        self.models_combo_box.addItem("Add a model…", userData="add_model")
+
+        last_index = self.models_combo_box.findText(self._display_name or "")
+        if last_index >= 0 and self.models_combo_box.itemData(last_index) != "add_model":
             self.models_combo_box.setCurrentIndex(last_index)
-        self.models_combo_box.addItem("Add new model...", userData="add_model")
+        else:
+            self.models_combo_box.setCurrentIndex(-1)
 
     def on_selection_changed(self, index: int):
         """Emits when model in combobox of models changed"""
@@ -323,6 +346,7 @@ class ChatBot(QFrame):
             new_index = self.models_combo_box.findText(model_data["display_name"])
             self.models_combo_box.setCurrentIndex(new_index)
             self._changing_model = False
+            self.on_selection_changed(new_index)
             return
 
         data = self.models_combo_box.itemData(index)
