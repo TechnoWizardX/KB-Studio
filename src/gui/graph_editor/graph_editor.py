@@ -201,9 +201,31 @@ class GraphEditorWidget(QFrame):
             bar.addWidget(button)
             return button
 
+        def add_separator(bar):
+            separator = QFrame(self)
+            separator.setObjectName("toolbarSeparator")
+            separator.setFrameShape(QFrame.Shape.VLine)
+            separator.setFrameShadow(QFrame.Shadow.Plain)
+            separator.setFixedWidth(1)
+            bar.addWidget(separator)
+            return separator
+
         self.new_button = add_button(
             toolbar, Icons.new_graph(), "New graph", self.new_graph
         )
+
+        self.save_button = add_button(
+            toolbar, Icons.save(), "Save graph (Ctrl+S)", self.save
+        )
+
+        self.export_button = add_button(
+            toolbar,
+            Icons.export_image(),
+            "Export graph to PNG",
+            self.export_image,
+        )
+
+        add_separator(toolbar)
 
         self.node_type_combo = QComboBox()
         self.node_type_combo.setMaximumWidth(190)
@@ -224,6 +246,8 @@ class GraphEditorWidget(QFrame):
         )
         toolbar.addWidget(self.edge_type_combo)
 
+        add_separator(toolbar)
+
         self.rename_edit = QLineEdit()
         self.rename_edit.setPlaceholderText("Selected node name")
         self.rename_edit.returnPressed.connect(self.rename_selected)
@@ -232,6 +256,8 @@ class GraphEditorWidget(QFrame):
         self.rename_button = add_button(
             toolbar, Icons.rename(), "Rename selected node", self.rename_selected
         )
+
+        add_separator(toolbar)
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Find node")
@@ -242,12 +268,10 @@ class GraphEditorWidget(QFrame):
             toolbar, Icons.find(), "Find node", self.find_node
         )
 
+        add_separator(toolbar)
+
         self.remove_button = add_button(
             toolbar, Icons.delete(), "Delete selection (Del)", self.remove_selected
-        )
-
-        self.save_button = add_button(
-            toolbar, Icons.save(), "Save graph", self.save
         )
         toolbar.addStretch()
 
@@ -269,6 +293,8 @@ class GraphEditorWidget(QFrame):
         save_shortcut = QShortcut(QKeySequence.StandardKey.Save, self)
         save_shortcut.activated.connect(self.save)
 
+        add_separator(tools_toolbar)
+
         self.zoom_in_button = add_button(
             tools_toolbar, Icons.zoom_in(), "Zoom in", lambda: self.view.zoom_in()
         )
@@ -281,6 +307,8 @@ class GraphEditorWidget(QFrame):
             tools_toolbar, Icons.fit(), "Fit graph to view", self.fit_graph
         )
 
+        add_separator(tools_toolbar)
+
         for arrangement, icon_kind, label in (
             (self._arrange_grid, Icons.arrange_grid(), "Arrange as grid"),
             (self._arrange_vertical, Icons.arrange_vertical(), "Arrange in a vertical line"),
@@ -289,12 +317,7 @@ class GraphEditorWidget(QFrame):
         ):
             add_button(tools_toolbar, icon_kind, label, arrangement)
 
-        self.export_button = add_button(
-            tools_toolbar,
-            Icons.export_image(),
-            "Export graph to PNG",
-            self.export_image,
-        )
+        add_separator(tools_toolbar)
 
         self.scene = GraphScene(self)
         self.view = GraphCanvasView(

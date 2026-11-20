@@ -80,6 +80,12 @@ QFrame#devPanelWidget {
 QFrame#Terminal {
     border-color: transparent;
 }
+QFrame#toolbarSeparator {
+    background-color: {{border}};
+    border: none;
+    border-radius: 0;
+    margin: 6px 0px;
+}
 
 /* ---- Dev Panel Buttons ------------------------------------ */
 QPushButton#devPanelBtn {

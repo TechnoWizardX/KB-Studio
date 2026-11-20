@@ -32,6 +32,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QFrame,
     QMenu,
     QMessageBox,
     QStackedWidget,
@@ -230,6 +231,17 @@ class GraphSceneTests(unittest.TestCase):
         self.assertEqual(self.scene.edges, [])
         self.assertNotIn(relation, self.scene.items())
         self.assertNotIn(attribute, self.scene.items())
+
+    def test_graph_editor_toolbar_groups_related_actions(self):
+        editor = GraphEditorWidget()
+
+        separators = editor.findChildren(QFrame, "toolbarSeparator")
+
+        self.assertGreaterEqual(len(separators), 5)
+        self.assertTrue(
+            all(separator.isVisibleTo(editor) for separator in separators)
+        )
+        editor.close()
 
     def test_graph_editor_widget_initializes_and_can_start_a_new_graph(self):
         editor = GraphEditorWidget()
