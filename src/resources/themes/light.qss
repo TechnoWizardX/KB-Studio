@@ -350,18 +350,20 @@ QStatusBar::item {
 
 /* ---- Splitter --------------------------------------------- */
 QSplitter::handle {
-    background-color: transparent;
-    height: 1px;
-    width: 1px;
+    background-color: {{border}};
+    border-radius: 3px;
 }
 QSplitter::handle:hover {
     background-color: {{accent}};
 }
+QSplitter::handle:pressed {
+    background-color: {{accent_hover}};
+}
 QSplitter::handle:horizontal {
-    width: 1px;
+    width: 6px;
 }
 QSplitter::handle:vertical {
-    height: 1px;
+    height: 6px;
 }
 
 /* ---- Tab Widget ------------------------------------------- */

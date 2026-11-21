@@ -58,7 +58,8 @@ class MainWindow(QMainWindow):
 
         self.main_splitter = QSplitter(Qt.Horizontal)
         self.main_splitter.setObjectName("mainSplitter")
-        self.main_splitter.setHandleWidth(5)
+        self.main_splitter.setHandleWidth(6)
+        self.main_splitter.setChildrenCollapsible(False)
         self.main_layout.addWidget(self.main_splitter)
 
         self.main_splitter.addWidget(self.left_bar)

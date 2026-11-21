@@ -17,7 +17,8 @@ class CodeEditorWidget(QFrame):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
 
         self.splitter = QSplitter(Qt.Orientation.Vertical)
-        self.splitter.setHandleWidth(5)
+        self.splitter.setHandleWidth(6)
+        self.splitter.setChildrenCollapsible(False)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 0)
         self.main_layout.addWidget(self.splitter)
