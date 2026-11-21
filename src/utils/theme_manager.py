@@ -48,6 +48,9 @@ class ThemeManager:
         icons_dir = Path(str(files("src.resources"))) / "icons"
         qss = qss.replace("{{icons_dir}}", icons_dir.as_posix())
         qss = qss.replace("{{chevron_icon}}", f"chevron_down_{name}.svg")
+        qss = qss.replace("{{chevron_up_icon}}", f"chevron_up_{name}.svg")
+        qss = qss.replace("{{check_icon}}", "check.svg")
+        qss = qss.replace("{{radio_dot_icon}}", "radio_dot.svg")
         cls.last_used_theme = name
 
         icon_color = cls.colors.get("icon_fg", "#d4d4d4")

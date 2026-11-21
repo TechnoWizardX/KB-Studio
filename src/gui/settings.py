@@ -1,10 +1,13 @@
-from PySide6.QtWidgets import (QApplication, QWidget, QDialog, QFrame, QLabel, QLineEdit, QPushButton, 
-                               QVBoxLayout, QHBoxLayout, QScrollArea, QCheckBox, QMessageBox)
+from PySide6.QtWidgets import (QApplication, QWidget, QDialog, QFrame, QLabel, QPushButton, 
+                               QVBoxLayout, QHBoxLayout, QScrollArea, QCheckBox,
+                               QButtonGroup, QSpinBox)
 from PySide6.QtCore import QSize, Signal
 from src.core.signals import signals
 from src.resources.icons import Icons
 from src.utils.config_manager import ConfigManager
 from src.utils.theme_manager import ThemeManager
+
+
 class Settings(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -19,11 +22,15 @@ class Settings(QDialog):
         self.setWindowTitle("Settings")
         self.setMinimumSize(700, 500)
         self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.settings_content = QWidget()
+        self.settings_content.setObjectName("settingsContent")
         self.settings_layout = QVBoxLayout(self.settings_content)
+        self.settings_layout.setContentsMargins(16, 16, 16, 16)
+        self.settings_layout.setSpacing(10)
         self.scroll_area.setWidget(self.settings_content)
         self.main_layout.addWidget(self.scroll_area)
 
@@ -31,21 +38,30 @@ class Settings(QDialog):
         self.settings_layout.addWidget(self.appearance_label)
 
         self.theme_label = QLabel("Theme")
+        self.theme_label.setObjectName("settingsLabel")
         self.theme_frame = QFrame()
         self.theme_frame_layout = QHBoxLayout(self.theme_frame)
+        self.theme_frame_layout.setContentsMargins(16, 12, 16, 12)
+        self.theme_frame_layout.setSpacing(8)
         self.settings_layout.addWidget(self.theme_label)
         self.settings_layout.addWidget(self.theme_frame)
-        
-        self.theme_light_button = QPushButton("Light")
-        self.theme_light_button.clicked.connect(lambda: self.apply_theme("light"))
-        self.theme_dark_button = QPushButton("Dark")
-        self.theme_dark_button.clicked.connect(lambda: self.apply_theme("dark"))
-        self.theme_frame_layout.addWidget(self.theme_light_button)
-        self.theme_frame_layout.addWidget(self.theme_dark_button)
+
+        self.theme_group = QButtonGroup(self)
+        self.theme_group.setExclusive(True)
+        current_theme = ConfigManager.get("theme")
+        self.theme_light_button = self._create_theme_button(
+            "Light", "light", current_theme == "light"
+        )
+        self.theme_dark_button = self._create_theme_button(
+            "Dark", "dark", current_theme == "dark"
+        )
+        self.theme_frame_layout.addStretch()
 
         self.editor_label = SettingsSection("Editor")
         self.editor_frame = QFrame()
         self.editor_frame_layout = QVBoxLayout(self.editor_frame)
+        self.editor_frame_layout.setContentsMargins(16, 12, 16, 12)
+        self.editor_frame_layout.setSpacing(8)
         self.settings_layout.addWidget(self.editor_label)
         self.settings_layout.addWidget(self.editor_frame)
         
@@ -54,31 +70,55 @@ class Settings(QDialog):
         self.auto_save_checkbox.toggled.connect(self.set_auto_save)
         self.editor_frame_layout.addWidget(self.auto_save_checkbox)
 
-        self.chat_label = SettingsSection("AI-Chat")
+        self.chat_label = SettingsSection("AI chat")
         self.chat_frame = QFrame()
         self.chat_frame_layout = QVBoxLayout(self.chat_frame)
+        self.chat_frame_layout.setContentsMargins(16, 12, 16, 12)
+        self.chat_frame_layout.setSpacing(8)
         self.settings_layout.addWidget(self.chat_label)
         self.settings_layout.addWidget(self.chat_frame)
 
         self.startup_message_count = CountChangeSection(
-            "Messages loaded on startup",
+            "Messages loaded at startup",
             "startup_message_count",
             ConfigManager.get("startup_message_count"),
             signals.startup_message_count_updated,
         )
         self.chat_frame_layout.addWidget(self.startup_message_count)
 
-        self.max_context_messages = CountChangeSection("Max context messages", "message_context_count", ConfigManager.get("message_context_count"), signals.message_context_count_updated)
+        self.max_context_messages = CountChangeSection(
+            "Messages kept as context",
+            "message_context_count",
+            ConfigManager.get("message_context_count"),
+            signals.message_context_count_updated,
+        )
         self.chat_frame_layout.addWidget(self.max_context_messages)
 
         self.settings_layout.addStretch()
 
+    def _create_theme_button(self, label: str, theme: str, checked: bool) -> QPushButton:
+        button = QPushButton(label)
+        button.setObjectName("themeButton")
+        button.setCheckable(True)
+        button.setChecked(checked)
+        button.setToolTip(f"Use the {label.lower()} theme")
+        button.clicked.connect(
+            lambda _checked=False, theme=theme: self.apply_theme(theme)
+        )
+        self.theme_group.addButton(button)
+        self.theme_frame_layout.addWidget(button)
+        return button
+
     def apply_theme(self, theme: str) -> None:
         qss = ThemeManager.build_qss(theme)
         app = QApplication.instance()
-        app.setStyleSheet(qss)
+        if app is not None:
+            app.setStyleSheet(qss)
         ConfigManager.set("theme", theme)
-        signals.theme_changed.emit(theme)
+        if theme == "dark":
+            self.theme_dark_button.setChecked(True)
+        else:
+            self.theme_light_button.setChecked(True)
 
     def _refresh_icon(self, _theme: str) -> None:
         self.call_button.setIcon(Icons.settings())
@@ -87,41 +127,50 @@ class Settings(QDialog):
         ConfigManager.set("auto_save", enabled)
         signals.auto_save_changed.emit(enabled)
 
+
 class CountChangeSection(QWidget):
-    def __init__(self, text: str, config_name: str, initial_count: int, signal: Signal, parent=None):
+    def __init__(
+        self,
+        text: str,
+        config_name: str,
+        initial_count: int,
+        signal: Signal,
+        minimum: int = 1,
+        maximum: int = 100000,
+        parent=None,
+    ):
         super().__init__(parent)
         self._text = text
         self._config_name = config_name
-        self._initial_count = initial_count
         self._signal = signal
 
         self.main_layout = QHBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 4, 0, 0)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(8)
 
         self._label = QLabel(text)
         self.main_layout.addWidget(self._label, 1)
 
-        self._line_edit = QLineEdit(str(initial_count))
-        self._line_edit.setFixedWidth(50)
+        self._spin_box = QSpinBox()
+        self._spin_box.setRange(minimum, maximum)
+        self._spin_box.setValue(max(minimum, int(initial_count or minimum)))
+        self._spin_box.setFixedWidth(100)
+        self._spin_box.setKeyboardTracking(False)
+        self._spin_box.setToolTip(f"{text} ({minimum}–{maximum})")
+        self._label.setBuddy(self._spin_box)
+        self.main_layout.addWidget(self._spin_box, 0)
 
-        self.main_layout.addWidget(self._line_edit, 0)
+        self._spin_box.valueChanged.connect(self._on_value_changed)
 
-        self._apply_button = QPushButton("Apply")
-        self._apply_button.clicked.connect(self.emit_change)
-        self.main_layout.addWidget(self._apply_button, 0)
+    def _on_value_changed(self, new_count: int) -> None:
+        self._signal.emit(new_count)
+        ConfigManager.set(self._config_name, new_count)
 
-    def emit_change(self):
-        try:
-            new_count = int(self._line_edit.text())
-            if new_count < 1:
-                raise ValueError("Count must be greater than zero")
-            self._signal.emit(new_count)
-            ConfigManager.set(self._config_name, new_count)
-        except ValueError as e:
-            QMessageBox.warning(self, "Invalid Input", str(e))
-            self._line_edit.setText(str(self._initial_count))
-    
+    def emit_change(self) -> None:
+        """Apply the current value (kept for callers of the old API)."""
+        self._on_value_changed(self._spin_box.value())
+
+
 class SettingsSection(QWidget):
     def __init__(self, text: str, parent=None):
         super().__init__(parent)
@@ -133,13 +182,16 @@ class SettingsSection(QWidget):
         self.main_layout.setSpacing(8)
 
         self._accent = QFrame()
+        self._accent.setObjectName("settingsAccent")
         self._accent.setFixedSize(3, 16)
         self.main_layout.addWidget(self._accent, 0)
 
         self._label = QLabel(text)
+        self._label.setObjectName("settingsSectionLabel")
         self.main_layout.addWidget(self._label, 1)
 
         self._line = QFrame()
+        self._line.setObjectName("settingsLine")
         self._line.setFrameShape(QFrame.Shape.HLine)
         self._line.setFixedHeight(1)
         self.main_layout.addWidget(self._line, 6)

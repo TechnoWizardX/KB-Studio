@@ -697,7 +697,7 @@ QCheckBox::indicator:focus, QRadioButton::indicator:focus {
 QCheckBox::indicator:checked {
     background-color: {{accent}};
     border-color: {{accent}};
-    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSI5IiB2aWV3Qm94PSIwIDAgMTIgOSI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTEwLjIgMUw0LjMgNi45IDIuOCA1LjVsLTEuNCAxLjQgMy4zIDMuMyA4LjgtOC44eiIvPjwvc3ZnPg==);
+    image: url("{{icons_dir}}/{{check_icon}}");
 }
 QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
     background-color: {{bg_elevated}};
@@ -709,7 +709,7 @@ QRadioButton::indicator {
 QRadioButton::indicator:checked {
     background-color: {{input_bg}};
     border-color: {{accent}};
-    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDEyIDEyIj48Y2lyY2xlIGN4PSI2IiBjeT0iNiIgcj0iNCIgZmlsbD0iIzAwN2FjYyIvPjwvc3ZnPg==);
+    image: url("{{icons_dir}}/{{radio_dot_icon}}");
 }
 
 /* ---- Progress Bar ----------------------------------------- */
@@ -794,18 +794,49 @@ QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
     border-radius: 2px;
 }
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-bottom: 4px solid {{fg}};
+    image: url("{{icons_dir}}/{{chevron_up_icon}}");
+    width: 10px;
+    height: 10px;
 }
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 4px solid {{fg}};
+    image: url("{{icons_dir}}/{{chevron_icon}}");
+    width: 10px;
+    height: 10px;
 }
 
+QPushButton#themeButton {
+    min-width: 84px;
+    padding: 6px 16px;
+}
+QPushButton#themeButton:checked {
+    background-color: {{accent}};
+    color: #ffffff;
+    border: 1px solid {{accent}};
+}
+QPushButton#themeButton:checked:hover {
+    background-color: {{accent_hover}};
+    border-color: {{accent_hover}};
+}
+QFrame#settingsAccent {
+    background-color: {{accent}};
+    border: none;
+    border-radius: 1px;
+}
+QFrame#settingsLine {
+    background-color: {{border}};
+    border: none;
+}
+QLabel#settingsSectionLabel {
+    color: {{fg}};
+    background-color: transparent;
+    font-weight: 600;
+    border: none;
+}
+QLabel#settingsLabel {
+    color: {{fg_dim}};
+    background-color: transparent;
+    border: none;
+}
 /* ---- Tool Tip --------------------------------------------- */
 QToolTip {
     background-color: {{bg_elevated}};

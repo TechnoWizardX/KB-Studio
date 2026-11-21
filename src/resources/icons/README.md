@@ -16,6 +16,9 @@ Toolbar SVG icons were downloaded from the [Lucide](https://lucide.io) icon set
 | `rename.svg`              | `pencil`       | Rename node                             |
 | `delete.svg`              | `trash-2`      | Delete selection                        |
 | `chevron_down_dark.svg` / `chevron_down_light.svg` | `chevron-down` | Combo box arrow        |
+| `chevron_up_dark.svg` / `chevron_up_light.svg` | `chevron-up` | Spin box arrows            |
+| `check.svg`               | `check`        | Checked checkbox mark                   |
+| `radio_dot.svg`           | `circle`       | Checked radio button dot                |
 | `tool_select.svg`         | `mouse-pointer`| Select tool                             |
 | `tool_node.svg`           | `circle`       | Node tool                               |
 | `tool_connector.svg`      | `spline`       | Connector tool                          |
