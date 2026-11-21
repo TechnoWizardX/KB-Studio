@@ -266,6 +266,12 @@ QLineEdit:focus {
     border: 1px solid {{input_border_focus}};
     background-color: {{input_bg}};
 }
+QLineEdit#inlineNameEdit {
+    padding: 2px 6px;
+    border: 1px solid {{border_focus}};
+    border-radius: 3px;
+    background-color: {{input_bg}};
+}
 QLineEdit:disabled {
     background-color: {{bg_elevated}};
     color: {{fg_muted}};

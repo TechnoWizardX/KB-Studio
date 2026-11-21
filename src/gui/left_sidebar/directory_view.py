@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QTreeView, QFileSystemModel, QFrame, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QPushButton, QFileDialog, QLineEdit,
                                QMessageBox, QMenu, QFileIconProvider, QSizePolicy)
-from PySide6.QtCore import QStandardPaths, QSize, QPoint, QModelIndex, Qt
+from PySide6.QtCore import QStandardPaths, QSize, QPoint, QModelIndex, Qt, QEvent, QTimer
 from PySide6.QtGui import QAction
 
 from pathlib import Path
@@ -20,6 +20,7 @@ class DirectoryTreeViewWidget(QFrame):
         ConfigManager.set("selected_file", ConfigManager.get("last_viewed_file"))
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
 
         self.project_path = root_path
         self.dir_view = DirectoryTreeView(root_path=self.project_path)
@@ -29,12 +30,16 @@ class DirectoryTreeViewWidget(QFrame):
         self.dir_view.doubleClicked.connect(self.on_double_clicked)
 
         self.project_manage_layout = QVBoxLayout()
+        self.project_manage_layout.setContentsMargins(8, 6, 8, 6)
+        self.project_manage_layout.setSpacing(4)
         self.project_struct_manage_layout = QHBoxLayout()
+        self.project_struct_manage_layout.setSpacing(4)
         self.project_manage_layout.addLayout(self.project_struct_manage_layout)
 
         self.project_dir_label = QLabel(text=root_path)
         self.project_dir_label.setWordWrap(True)
         self.project_dir_label.setObjectName("TransparentLabel")
+        self.project_dir_label.setToolTip(root_path or "")
         
         self.select_project_dir_btn = QPushButton()
         self.select_project_dir_btn.setObjectName("IconButton")
@@ -42,6 +47,7 @@ class DirectoryTreeViewWidget(QFrame):
         self.select_project_dir_btn.setIconSize(QSize(30, 30))
         self.select_project_dir_btn.setFixedSize(QSize(30, 30))
         self.select_project_dir_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.select_project_dir_btn.setToolTip("Select project folder")
         self.select_project_dir_btn.clicked.connect(self.select_project)
         
         self.project_struct_manage_layout.addWidget(self.select_project_dir_btn)
@@ -53,7 +59,7 @@ class DirectoryTreeViewWidget(QFrame):
         self.main_layout.addWidget(self.dir_view)
 
         #------------------------------------------------------------------------------
-        #Mkdir, Mkfile, name edit
+        # Inline creation row: a line edit overlaid on the tree
         #------------------------------------------------------------------------------
         
         self.mk_dir_btn = QPushButton()
@@ -62,6 +68,7 @@ class DirectoryTreeViewWidget(QFrame):
         self.mk_dir_btn.setFixedSize(QSize(30, 30))
         self.mk_dir_btn.setIconSize(QSize(30, 30))
         self.mk_dir_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.mk_dir_btn.setToolTip("New folder")
         self.project_struct_manage_layout.addWidget(self.mk_dir_btn)
         self.mk_dir_btn.clicked.connect(self.make_new_dir)
 
@@ -71,17 +78,31 @@ class DirectoryTreeViewWidget(QFrame):
         self.mk_file_btn.setFixedSize(QSize(30, 30))
         self.mk_file_btn.setIconSize(QSize(30, 30))
         self.mk_file_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.mk_file_btn.setToolTip("New file")
         self.project_struct_manage_layout.addWidget(self.mk_file_btn)
         self.mk_file_btn.clicked.connect(self.make_new_file)
 
         signals.theme_changed.connect(self._refresh_icons)
 
-        self.name_edit = QLineEdit()
+        self.name_edit = QLineEdit(self.dir_view.viewport())
+        self.name_edit.setObjectName("inlineNameEdit")
         self.name_edit_status = False
         self.name_edit.hide()
         self.name_edit.returnPressed.connect(self.create_file_or_dir)
+        self.name_edit.installEventFilter(self)
         self.creation_mode = None
-        self.project_manage_layout.insertWidget(1, self.name_edit)
+        self._creation_base_path: Path | None = None
+        self._context_target_index = QModelIndex()
+
+        self.dir_view.viewport().installEventFilter(self)
+        self.dir_view.verticalScrollBar().valueChanged.connect(
+            self._position_name_edit
+        )
+        self.dir_view.horizontalScrollBar().valueChanged.connect(
+            self._position_name_edit
+        )
+        self.dir_view.expanded.connect(lambda _index: self._position_name_edit())
+        self.dir_view.collapsed.connect(lambda _index: self._position_name_edit())
 
         self.project_struct_manage_layout.addStretch(1)
 
@@ -107,10 +128,12 @@ class DirectoryTreeViewWidget(QFrame):
         else:
             selected_dir = get_project_root()
         ConfigManager.set("selected_dir", str(selected_dir))
+        self._context_target_index = index
 
         menu = ProjectContextMenu(tree = self.dir_view, index=index)
 
         menu.exec(self.dir_view.mapToGlobal(point))
+        self._context_target_index = QModelIndex()
 
     def on_selection_changed(self, index) -> None:
         if not self.dir_view.tree_model.isDir(index):
@@ -129,7 +152,7 @@ class DirectoryTreeViewWidget(QFrame):
     def select_project(self) -> None:
         new_folder = QFileDialog.getExistingDirectory(
             self,
-            caption="Select new project folder",
+            caption="Select project folder",
             dir=".",
             options=QFileDialog.Option.ShowDirsOnly
         )
@@ -141,25 +164,89 @@ class DirectoryTreeViewWidget(QFrame):
             self.project_path = new_folder
             ConfigManager.set("project_dir", new_folder)
             self.project_dir_label.setText(new_folder)
+            self.project_dir_label.setToolTip(new_folder)
 
     def make_new_file(self) -> None:
-        self.creation_mode = "file"
-        self.name_edit_status = True
-        self.name_edit.setText("")
-        self.name_edit.setPlaceholderText("Enter file name...")
-        self.name_edit.show()
-        self.name_edit.setFocus()
+        self._start_inline_creation("file", "New file name…")
 
     def make_new_dir(self) -> None:
-        self.creation_mode = "dir"
+        self._start_inline_creation("folder", "New folder name…")
+
+    def _start_inline_creation(self, mode: str, placeholder: str) -> None:
+        """Show the inline name row below the selected folder."""
+        self.creation_mode = mode
+        target = self._target_index_for_creation()
+        self._context_target_index = QModelIndex()
+        if target.isValid():
+            self.dir_view.setCurrentIndex(target)
+        self._creation_base_path = self._target_dir_for_creation()
         self.name_edit_status = True
-        self.name_edit.setText("")
-        self.name_edit.setPlaceholderText("Enter dir name...")
+        self.name_edit.clear()
+        self.name_edit.setPlaceholderText(placeholder)
+        self.name_edit.setToolTip("Enter to create · Esc to cancel")
+        self._position_name_edit()
         self.name_edit.show()
+        self.name_edit.raise_()
         self.name_edit.setFocus()
+
+    def _target_index_for_creation(self) -> QModelIndex:
+        """Return the folder row that new items should be created in."""
+        index = self._context_target_index
+        if not index.isValid():
+            index = self.dir_view.currentIndex()
+        if not index.isValid():
+            return self.dir_view.rootIndex()
+        if self.dir_view.tree_model.isDir(index):
+            return index
+        parent = index.parent()
+        return parent if parent.isValid() else self.dir_view.rootIndex()
+
+    def _target_dir_for_creation(self) -> Path:
+        index = self._target_index_for_creation()
+        if index.isValid():
+            try:
+                path = Path(self.dir_view.tree_model.filePath(index))
+                path.resolve().relative_to(get_project_root())
+                if path.is_dir():
+                    return path
+            except (OSError, ValueError):
+                pass
+        return get_project_root()
+
+    def _position_name_edit(self) -> None:
+        """Keep the inline row attached to its folder while the tree moves."""
+        if not self.name_edit_status:
+            return
+
+        view = self.dir_view
+        index = self._target_index_for_creation()
+        if index.isValid() and view.tree_model.isDir(index) and index != view.rootIndex():
+            if not view.isExpanded(index):
+                view.expand(index)
+        view.scrollTo(index)
+
+        rect = view.visualRect(index)
+        viewport = view.viewport()
+        indent = view.indentation() if index.isValid() else 0
+        x = 0
+        y = rect.bottom() + 1 if rect.height() else 0
+        width = viewport.width()
+        height = max(view.sizeHintForRow(0), 24)
+        self.name_edit.setTextMargins(indent, 0, 0, 0)
+        self.name_edit.setGeometry(x, y, width, height)
+        self.name_edit.raise_()
+
+    def _cancel_inline_creation(self) -> None:
+        self.name_edit_status = False
+        self._creation_base_path = None
+        self._context_target_index = QModelIndex()
+        self.name_edit.hide()
 
     def _get_valid_base_path(self) -> Path:
         """Get validated base path within project root."""
+        if self._creation_base_path is not None:
+            return self._creation_base_path
+
         project_root = get_project_root()
 
         selected_dir = ConfigManager.get("selected_dir")
@@ -177,67 +264,101 @@ class DirectoryTreeViewWidget(QFrame):
         return project_root
 
     def execute_create_dir(self, name: str) -> None:
+        name = name.strip()
         try:
-            name = name.strip()
-            # Validate filename
             if not validate_filename(name):
-                QMessageBox.warning(self, "Error", f"Invalid directory name: '{name}'")
+                QMessageBox.warning(
+                    self, "Invalid name", f"“{name}” is not a valid folder name."
+                )
                 return
             
             base_path = self._get_valid_base_path()
             full_path = safe_path(base_path, name)
 
             if full_path.exists():
-                QMessageBox.warning(self, "Error", f"File or directory with name '{name}' already exists!")
+                QMessageBox.warning(
+                    self,
+                    "Already exists",
+                    f"“{name}” already exists in this folder.",
+                )
                 return
             
             full_path.mkdir()
         except PathTraversalError as e:
-            QMessageBox.warning(self, "Security Error", str(e))
+            QMessageBox.warning(self, "Security error", str(e))
         except OSError as e:
-            QMessageBox.critical(self, "Error", f"Could not create directory '{name}':\n{e}")
+            QMessageBox.critical(
+                self, "Create failed", f"Could not create the folder “{name}”:\n{e}"
+            )
         except ValueError as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, "Create failed", str(e))
 
     def execute_create_file(self, name: str) -> None:
+        name = name.strip()
         try:
-            name = name.strip()
-            # Validate filename
             if not validate_filename(name):
-                QMessageBox.warning(self, "Error", f"Invalid file name: '{name}'")
+                QMessageBox.warning(
+                    self, "Invalid name", f"“{name}” is not a valid file name."
+                )
                 return
             
             base_path = self._get_valid_base_path()
             full_path = safe_path(base_path, name)
             
             if full_path.exists():
-                QMessageBox.warning(self, "Error", f"File or directory with name '{name}' already exists!")  
+                QMessageBox.warning(
+                    self,
+                    "Already exists",
+                    f"“{name}” already exists in this folder.",
+                )
                 return
             
             with full_path.open("x", encoding="utf-8"):
                 pass
         except PathTraversalError as e:
-            QMessageBox.warning(self, "Security Error", str(e))
+            QMessageBox.warning(self, "Security error", str(e))
         except OSError as e:
-            QMessageBox.critical(self, "Error", f"Could not create file '{name}':\n{e}")
+            QMessageBox.critical(
+                self, "Create failed", f"Could not create the file “{name}”:\n{e}"
+            )
         except ValueError as e:
-            QMessageBox.critical(self, "Error", str(e))
+            QMessageBox.critical(self, "Create failed", str(e))
 
     def create_file_or_dir(self) -> None:
         name = self.name_edit.text()
-        self.name_edit.hide()
         self.name_edit_status = False
-        if self.creation_mode == "dir":
+        self.name_edit.hide()
+        if self.creation_mode == "folder":
             signals.execute_create_dir.emit(name)
         elif self.creation_mode == "file":
             signals.execute_create_file.emit(name)
+        self._creation_base_path = None
+        self._context_target_index = QModelIndex()
+
+    def eventFilter(self, obj, event):
+        if obj is self.name_edit:
+            if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+                self._cancel_inline_creation()
+                return True
+            if event.type() == QEvent.Type.FocusOut and self.name_edit_status:
+                # Enter already finishes creation; a click elsewhere cancels.
+                QTimer.singleShot(0, self._cancel_after_focus_out)
+        elif obj is self.dir_view.viewport():
+            if event.type() == QEvent.Type.Resize:
+                self._position_name_edit()
+        return super().eventFilter(obj, event)
+
+    def _cancel_after_focus_out(self) -> None:
+        if self.name_edit_status and not self.name_edit.hasFocus():
+            self._cancel_inline_creation()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape and self.name_edit_status:
-            self.name_edit.hide()
-            self.name_edit_status = False
+            self._cancel_inline_creation()
             
         super().keyPressEvent(event)
+
+
 class DirectoryTreeView(QTreeView):
     def __init__(self, root_path : str = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.HomeLocation)):
         super().__init__()
@@ -251,7 +372,10 @@ class DirectoryTreeView(QTreeView):
         self.setRootIndex(self.tree_model.index(root_path))
         for column in range(1, self.model().columnCount()):
             self.setColumnHidden(column, True)
+        self.setHeaderHidden(True)
         self.setAnimated(True)
+        self.setMouseTracking(True)
+        self.setToolTip("Double-click a file to open it")
         signals.selected_new_project_folder.connect(self.update_project_dir)
 
     def update_project_dir(self, new_path):
@@ -262,6 +386,16 @@ class DirectoryTreeView(QTreeView):
         self.clearSelection()
         self.setCurrentIndex(self.model().index(new_path))
 
+    def mouseMoveEvent(self, event):
+        index = self.indexAt(event.position().toPoint())
+        if index.isValid():
+            path = self.tree_model.filePath(index)
+            kind = "Folder" if self.tree_model.isDir(index) else "File"
+            self.setToolTip(f"{kind}: {path}")
+        else:
+            self.setToolTip("Double-click a file to open it")
+        super().mouseMoveEvent(event)
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_F2:
             current_index = self.currentIndex()
@@ -271,30 +405,38 @@ class DirectoryTreeView(QTreeView):
         if event.key() == Qt.Key.Key_Delete:
             current_index = self.currentIndex()
             if current_index.isValid():
-                path_str = self.tree_model.filePath(current_index)
-                try:
-                    path = safe_path(get_project_root(), path_str)
-                except PathTraversalError as e:
-                    QMessageBox.critical(self.window(), "Security Error", str(e))
-                    return
-                
-                reply = QMessageBox.question(self.window(), "Confirmation", f"Are you sure to delete: \n{path_str}?", 
-                                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
-                match reply:
-                    case QMessageBox.StandardButton.Yes:
-                        try:
-                            if self.tree_model.isDir(current_index):
-                                shutil.rmtree(path)
-                            else:
-                                path.unlink()
-                        except Exception as e:
-                            QMessageBox.critical(self.window(), "Ошибка", f"Не удалось удалить:\n{e}")
-                    case QMessageBox.StandardButton.Cancel:
-                        pass
-                    case _:
-                        pass
+                self._delete_index(current_index)
 
         super().keyPressEvent(event)
+
+    def _delete_index(self, index: QModelIndex) -> None:
+        path_str = self.tree_model.filePath(index)
+        try:
+            path = safe_path(get_project_root(), path_str)
+        except PathTraversalError as e:
+            QMessageBox.critical(self.window(), "Security error", str(e))
+            return
+
+        reply = QMessageBox.question(
+            self.window(),
+            "Delete",
+            f"Delete “{Path(path_str).name}”?\n\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            if self.tree_model.isDir(index):
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except Exception as e:
+            QMessageBox.critical(
+                self.window(),
+                "Delete failed",
+                f"Could not delete “{Path(path_str).name}”:\n{e}",
+            )
 
     def mouseDoubleClickEvent(self, event):
             index = self.indexAt(event.position().toPoint())
@@ -324,11 +466,13 @@ class ProjectContextMenu(QMenu):
         self._build_menu()
 
     def _build_menu(self):
-        create_file_act = QAction("Create new file", self)
+        create_file_act = QAction("New File", self)
+        create_file_act.setToolTip("Create a file in the selected folder")
         create_file_act.triggered.connect(self._create_file_act)
         self.addAction(create_file_act)
 
-        create_dir_act = QAction("Create new dir", self)
+        create_dir_act = QAction("New Folder", self)
+        create_dir_act.setToolTip("Create a folder in the selected folder")
         create_dir_act.triggered.connect(self._create_dir_act)
         self.addAction(create_dir_act)
 
@@ -359,21 +503,26 @@ class ProjectContextMenu(QMenu):
         try:
             path = safe_path(get_project_root(), path_str)
         except PathTraversalError as e:
-            QMessageBox.critical(self.window(), "Security Error", str(e))
+            QMessageBox.critical(self.window(), "Security error", str(e))
             return
         
-        reply = QMessageBox.question(self.window(), "Confirmation", f"Are you sure to delete: \n{path_str}?", 
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
-        match reply:
-            case QMessageBox.StandardButton.Yes:
-                try:
-                    if self.is_directory:
-                        shutil.rmtree(path)
-                    else:
-                        path.unlink()
-                except Exception as e:
-                    QMessageBox.critical(self.window(), "Ошибка", f"Не удалось удалить:\n{e}")
-            case QMessageBox.StandardButton.Cancel:
-                pass
-            case _:
-                pass
+        reply = QMessageBox.question(
+            self.window(),
+            "Delete",
+            f"Delete “{Path(path_str).name}”?\n\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            if self.is_directory:
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except Exception as e:
+            QMessageBox.critical(
+                self.window(),
+                "Delete failed",
+                f"Could not delete “{Path(path_str).name}”:\n{e}",
+            )
