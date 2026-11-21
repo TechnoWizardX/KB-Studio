@@ -643,10 +643,9 @@ QComboBox::drop-down {
     subcontrol-position: top right;
 }
 QComboBox::down-arrow {
-    image: none;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 5px solid {{fg}};
+    image: url("{{icons_dir}}/{{chevron_icon}}");
+    width: 12px;
+    height: 12px;
     margin-right: 8px;
 }
 QComboBox QAbstractItemView {
@@ -697,7 +696,7 @@ QCheckBox::indicator:focus, QRadioButton::indicator:focus {
 QCheckBox::indicator:checked {
     background-color: {{accent}};
     border-color: {{accent}};
-    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSI5IiB2aWV3Qm94PSIwIDAgMTIgOSI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTEwLjIgMUw0LjMgNi45IDIuOCA1LjVsLTEuNCAxLjQgMy4zIDMuMyA4LjgtOC44eiIvPjwvc3ZnPg==);
+    image: url("{{icons_dir}}/{{chevron_icon}}");
 }
 QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
     background-color: {{bg_elevated}};

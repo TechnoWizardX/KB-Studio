@@ -2,6 +2,8 @@ from importlib.resources import files
 import json
 import logging
 import re
+from pathlib import Path
+
 from src.resources.data import DEFAULT_THEME_CONFIG
 from src.resources.icons import Icons
 from src.core.signals import signals
@@ -43,6 +45,9 @@ class ThemeManager:
             return ""
 
         qss = cls._render_qss(qss_template, cls.colors)
+        icons_dir = Path(str(files("src.resources"))) / "icons"
+        qss = qss.replace("{{icons_dir}}", icons_dir.as_posix())
+        qss = qss.replace("{{chevron_icon}}", f"chevron_down_{name}.svg")
         cls.last_used_theme = name
 
         icon_color = cls.colors.get("icon_fg", "#d4d4d4")
