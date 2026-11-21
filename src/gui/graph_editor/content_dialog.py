@@ -75,6 +75,9 @@ class _ContentDialog(QDialog):
 
         file_row = QHBoxLayout()
         self.attach_button = QPushButton("Attach file…", self)
+        self.attach_button.setToolTip(
+            "Choose a file whose bytes are stored with this node's content."
+        )
         self.attach_button.clicked.connect(self._attach_file)
         self.file_label = QLabel("", self)
         self.file_label.setTextInteractionFlags(
@@ -90,11 +93,15 @@ class _ContentDialog(QDialog):
         self.visible_checkbox = QCheckBox(
             "Show content under the node", self
         )
+        self.visible_checkbox.setToolTip(
+            "Draw the content text below the node on the canvas."
+        )
         self.visible_checkbox.setChecked(visible or self._c_type == "0")
         layout.addWidget(self.visible_checkbox)
 
         buttons = QHBoxLayout()
         self.remove_button = QPushButton("Remove content", self)
+        self.remove_button.setToolTip("Delete the text and any attached file.")
         self.remove_button.setEnabled(node.has_content())
         self.remove_button.clicked.connect(self._remove_content)
         ok_button = QPushButton("OK", self)

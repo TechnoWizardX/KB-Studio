@@ -1,20 +1,35 @@
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 import src.resources.resources_rc
 
 
+_ICON_SIZES = (16, 20, 24, 28, 30, 32, 48, 64)
+
+
 def _recolor_icon(icon: QIcon, color: QColor) -> QIcon:
-    """Возвращает копию иконки, перекрашенную в заданный цвет."""
-    pixmap = icon.pixmap(24, 24)
-    result = QPixmap(pixmap.size())
-    result.fill(Qt.transparent)
-    painter = QPainter(result)
-    painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
-    painter.drawPixmap(0, 0, pixmap)
-    painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-    painter.fillRect(result.rect(), color)
-    painter.end()
-    return QIcon(result)
+    """Return a copy of the icon tinted with the given colour.
+
+    Rasterising the SVG at every size we use keeps icons crisp on standard
+    and high-DPI screens. A single 24 px pixmap made 30 px buttons blurry
+    once Qt scaled it up.
+    """
+    result = QIcon()
+    for size in _ICON_SIZES:
+        pixmap = icon.pixmap(QSize(size, size))
+        if pixmap.isNull():
+            continue
+        recolored = QPixmap(pixmap.size())
+        recolored.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(recolored)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.drawPixmap(0, 0, pixmap)
+        painter.setCompositionMode(
+            QPainter.CompositionMode.CompositionMode_SourceIn
+        )
+        painter.fillRect(recolored.rect(), color)
+        painter.end()
+        result.addPixmap(recolored)
+    return result if not result.isNull() else icon
 
 
 class Icons:

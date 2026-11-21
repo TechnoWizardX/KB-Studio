@@ -20,10 +20,13 @@ class ToolBar(QWidget):
 
         self.settings = Settings(self)
         self.settings_button = self.settings.call_button
+        self.settings_button.setToolTip("Open settings")
         self.settings_button.clicked.connect(self.settings.exec)
 
         self.editor_selector = QComboBox()
-        self.editor_selector.setToolTip("Select editor")
+        self.editor_selector.setToolTip(
+            "Switch between the SCS text editor and the SCg graph editor"
+        )
         with QSignalBlocker(self.editor_selector):
             self.editor_selector.addItem("SCs text editor")
             self.editor_selector.addItem("SCg graph editor")
@@ -66,10 +69,20 @@ class SideBarShowButton (QPushButton):
         match self.config_name:
             case "show_left_bar":
                 self.setIcon(Icons.panel_left_fill() if self.state else Icons.panel_left())
+                panel_name = "project file tree"
             case "show_bottom_bar":
                 self.setIcon(Icons.panel_bottom_fill() if self.state else Icons.panel_bottom())
+                panel_name = "problems panel"
             case "show_right_bar":
                 self.setIcon(Icons.panel_right_fill() if self.state else Icons.panel_right())
+                panel_name = "AI chat panel"
+            case _:
+                panel_name = "panel"
+
+        action = "Hide" if self.state else "Show"
+        tooltip = f"{action} the {panel_name}"
+        self.setToolTip(tooltip)
+        self.setAccessibleName(tooltip)
 
     def on_clicked(self):
         self.state = not self.state

@@ -250,6 +250,9 @@ class GraphEditorWidget(QFrame):
 
         self.rename_edit = QLineEdit()
         self.rename_edit.setPlaceholderText("Selected node name")
+        self.rename_edit.setToolTip(
+            "New name for the selected node. Press Enter to rename."
+        )
         self.rename_edit.returnPressed.connect(self.rename_selected)
         toolbar.addWidget(self.rename_edit)
 
@@ -261,6 +264,9 @@ class GraphEditorWidget(QFrame):
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Find node")
+        self.search_edit.setToolTip(
+            "Find a node by its exact identifier. Press Enter to search."
+        )
         self.search_edit.returnPressed.connect(self.find_node)
         toolbar.addWidget(self.search_edit)
 

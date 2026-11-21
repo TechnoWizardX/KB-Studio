@@ -51,6 +51,7 @@ class ThemeManager:
         qss = qss.replace("{{chevron_up_icon}}", f"chevron_up_{name}.svg")
         qss = qss.replace("{{check_icon}}", "check.svg")
         qss = qss.replace("{{radio_dot_icon}}", "radio_dot.svg")
+        qss = qss.replace("{{size_grip_icon}}", f"size_grip_{name}.svg")
         cls.last_used_theme = name
 
         icon_color = cls.colors.get("icon_fg", "#d4d4d4")

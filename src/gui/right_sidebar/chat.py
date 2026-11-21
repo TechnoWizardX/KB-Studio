@@ -92,7 +92,7 @@ class ChatBot(QFrame):
         self.sender_bottom_layout.addWidget(self.add_file_to_context_menu)
 
         self.models_combo_box = QComboBox()
-        self.models_combo_box.setPlaceholderText("Select or add a model…")
+        self.models_combo_box.setPlaceholderText("Select a model…")
         self.models_combo_box.setToolTip("Model used for AI requests")
         self.sender_bottom_layout.addWidget(self.models_combo_box, 1)
 
@@ -466,10 +466,19 @@ class ChatBot(QFrame):
             return
 
         if not self.ready_for_sent():
-            QMessageBox.warning(self, "Request not ready", "Model data incorrect/corrupted")
+            QMessageBox.warning(
+                self,
+                "Incomplete model",
+                "The selected model is missing required details. "
+                "Remove it and add it again.",
+            )
             return
         if self.history_manager is None:
-            QMessageBox.critical(self, "Chat history unavailable", "Chat history is not available.")
+            QMessageBox.critical(
+                self,
+                "Chat history unavailable",
+                "Chat history is unavailable.",
+            )
             return
 
         try:
@@ -802,30 +811,52 @@ class AddModelDialog(QDialog):
         self.main_layout = QVBoxLayout(self)
         self.form_layout = QFormLayout()
 
-        info_label = QLabel("Enter model configuration details")
+        info_label = QLabel("Enter the model connection details.")
         info_label.setWordWrap(True)
         self.main_layout.addWidget(info_label)
 
         self.display_name_edit = QLineEdit()
-        self.display_name_edit.setPlaceholderText("e.g., GPT-6 Astra, Claude Opus 4.6")
+        self.display_name_edit.setPlaceholderText(
+            "e.g., GPT-6 Astra, Claude Opus 4.6"
+        )
+        self.display_name_edit.setToolTip(
+            "Name shown in the model list. It does not have to match the model ID."
+        )
         self.form_layout.addRow("Display name *", self.display_name_edit)
         
         self.provider_edit = QLineEdit()
-        self.provider_edit.setPlaceholderText("e.g., anthropic, openai, openrouter; enter ollama if you using local model")
-        self.form_layout.addRow("API Provider *", self.provider_edit)
+        self.provider_edit.setPlaceholderText(
+            "e.g., anthropic, openai, openrouter; use ollama for a local model"
+        )
+        self.provider_edit.setToolTip(
+            "Provider used for API requests. Use “ollama” for a local model."
+        )
+        self.form_layout.addRow("API provider *", self.provider_edit)
 
         self.model_edit = QLineEdit()
-        self.model_edit.setPlaceholderText("e.g., gpt-4, claude-sonnet-5.5, liquid/lfm-2.5-2.6b:free")
-        self.form_layout.addRow("Model name*", self.model_edit)
+        self.model_edit.setPlaceholderText(
+            "e.g., gpt-4, claude-sonnet-5.5, liquid/lfm-2.5-2.6b:free"
+        )
+        self.model_edit.setToolTip("Exact model name sent to the provider.")
+        self.form_layout.addRow("Model name *", self.model_edit)
 
         self.base_url_edit = QLineEdit()
-        self.base_url_edit.setPlaceholderText("e.g., https://api.openai.com/v1 or http://localhost:11434/v1 for ollama")
-        self.form_layout.addRow("Base url*", self.base_url_edit)
+        self.base_url_edit.setPlaceholderText(
+            "e.g., https://api.openai.com/v1 or http://localhost:11434/v1 for ollama"
+        )
+        self.base_url_edit.setToolTip(
+            "API endpoint, including the version path. For Ollama, use "
+            "http://localhost:11434/v1."
+        )
+        self.form_layout.addRow("Base URL *", self.base_url_edit)
         
         self.api_edit = QLineEdit()
         self.api_edit.setPlaceholderText("e.g., sk-... Leave empty if you use ollama")
         self.api_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.form_layout.addRow("API Key", self.api_edit)
+        self.api_edit.setToolTip(
+            "Stored encrypted on this computer. Leave empty for Ollama."
+        )
+        self.form_layout.addRow("API key", self.api_edit)
 
         self.main_layout.addLayout(self.form_layout)
         self.button_box = QDialogButtonBox(

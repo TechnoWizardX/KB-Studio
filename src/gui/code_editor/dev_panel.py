@@ -25,6 +25,7 @@ class DevPanelWidget(QFrame):
         self.problems_btn = QPushButton("Problems")
         self.problems_btn.setObjectName("devPanelBtn")
         self.problems_btn.setMaximumSize(100, 60)
+        self.problems_btn.setToolTip("Show problems for the active file")
         self.buttons_layout.addWidget(self.problems_btn)
 
         self.problems_wgt = ProblemsWidget()
@@ -44,4 +45,4 @@ class ProblemsWidget(QTextEdit):
         self.show_diagnostics(None)
 
     def show_diagnostics(self, error: str | None) -> None:
-        self.setText(error if error else "There is no syntax issues")
+        self.setText(error if error else "No syntax issues.")

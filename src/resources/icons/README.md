@@ -19,6 +19,7 @@ Toolbar SVG icons were downloaded from the [Lucide](https://lucide.io) icon set
 | `chevron_up_dark.svg` / `chevron_up_light.svg` | `chevron-up` | Spin box arrows            |
 | `check.svg`               | `check`        | Checked checkbox mark                   |
 | `radio_dot.svg`           | `circle`       | Checked radio button dot                |
+| `size_grip_dark.svg` / `size_grip_light.svg` | `grip` | Window resize grip                  |
 | `tool_select.svg`         | `mouse-pointer`| Select tool                             |
 | `tool_node.svg`           | `circle`       | Node tool                               |
 | `tool_connector.svg`      | `spline`       | Connector tool                          |

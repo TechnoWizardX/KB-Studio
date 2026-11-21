@@ -867,7 +867,7 @@ QHeaderView::section:hover {
 /* ---- Size Grip -------------------------------------------- */
 QSizeGrip {
     background-color: transparent;
-    image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBmaWxsPSIjZDQ5NDQ4IiBkPSJNMTQgMTVsLTQtNCA0LTQtNCA0bC00LTQgNCA0eiIvPjwvc3ZnPg==);
+    image: url("{{icons_dir}}/{{size_grip_icon}}");
     width: 16px;
     height: 16px;
 }

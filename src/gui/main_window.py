@@ -96,7 +96,7 @@ class MainWindow(QMainWindow):
         self.editor_stack.setCurrentIndex(index)
 
     def show_error(self, error):
-        QMessageBox.critical(self, "ERROR", error)
+        QMessageBox.critical(self, "Error", error)
 
     def closeEvent(self, event):
         if not self.right_bar.panel.shutdown():
