@@ -191,7 +191,7 @@ class GraphEditorWidget(QFrame):
         def add_button(bar, icon_kind, tooltip, slot=None, checkable=False):
             button = QToolButton(self)
             button.setIcon(icon_kind)
-            button.setIconSize(QSize(20, 20))
+            button.setIconSize(QSize(18, 18))
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
             button.setToolTip(tooltip)
             button.setStatusTip(tooltip)

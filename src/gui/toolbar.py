@@ -53,7 +53,7 @@ class SideBarShowButton (QPushButton):
     def __init__(self, config_name, state : bool = True):
         super().__init__()
         self.setObjectName("IconButton")
-        self.setIconSize(QSize(30, 30))
+        self.setIconSize(QSize(24, 24))
         self.setFixedSize(QSize(30, 30))
         self.config_name = config_name
         self.state : bool= state

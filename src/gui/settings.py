@@ -15,7 +15,7 @@ class Settings(QDialog):
         self.call_button.setObjectName("IconButton")
         self.call_button.setIcon(Icons.settings())
         self.call_button.setToolTip("Settings")
-        self.call_button.setIconSize(QSize(30, 30))
+        self.call_button.setIconSize(QSize(24, 24))
         self.call_button.setFixedSize(QSize(30, 30))
         signals.theme_changed.connect(self._refresh_icon)
 
