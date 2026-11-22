@@ -1,14 +1,22 @@
-from PySide6.QtCore import QSignalBlocker, QSize
-from PySide6.QtWidgets import QHBoxLayout, QComboBox, QSizePolicy, QWidget, QPushButton
+from PySide6.QtCore import QSize
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QWidget,
+)
 
 from src.gui.settings import Settings
 from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
 from src.core.signals import signals
-class ToolBar(QWidget):
-    """Top bar: editor switcher and settings button."""
 
-    def __init__(self, select_editor_func, parent=None):
+
+class ToolBar(QWidget):
+    """Top bar: active editor label, new graph action and settings."""
+
+    def __init__(self, new_graph_func=None, parent=None):
         super().__init__(parent)
         self.setObjectName("toolBar")
         self._size_policy = QSizePolicy(
@@ -16,27 +24,31 @@ class ToolBar(QWidget):
         )
         self.setSizePolicy(self._size_policy)
 
-        self._select_editor = select_editor_func
-
         self.settings = Settings(self)
         self.settings_button = self.settings.call_button
         self.settings_button.setToolTip("Open settings")
         self.settings_button.clicked.connect(self.settings.exec)
 
-        self.editor_selector = QComboBox()
-        self.editor_selector.setToolTip(
-            "Switch between the SCS text editor and the SCg graph editor"
+        self.editor_mode_label = QLabel("No file open")
+        self.editor_mode_label.setObjectName("TransparentLabel")
+        self.editor_mode_label.setToolTip(
+            "The editor follows the type of the active tab"
         )
-        with QSignalBlocker(self.editor_selector):
-            self.editor_selector.addItem("SCs text editor")
-            self.editor_selector.addItem("SCg graph editor")
-        self.editor_selector.setCurrentIndex(0)
-        self.editor_selector.currentIndexChanged.connect(self._select_editor)
+
+        self.new_graph_button = QPushButton()
+        self.new_graph_button.setObjectName("IconButton")
+        self.new_graph_button.setIcon(Icons.new_graph())
+        self.new_graph_button.setIconSize(QSize(24, 24))
+        self.new_graph_button.setFixedSize(QSize(30, 30))
+        self.new_graph_button.setToolTip("New graph")
+        if new_graph_func is not None:
+            self.new_graph_button.clicked.connect(new_graph_func)
 
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(4)
-        self.main_layout.addWidget(self.editor_selector)
+        self.main_layout.addWidget(self.editor_mode_label)
+        self.main_layout.addWidget(self.new_graph_button)
         self.main_layout.addWidget(self.settings_button)
         self.main_layout.addStretch()
 
@@ -48,6 +60,26 @@ class ToolBar(QWidget):
         self.main_layout.addWidget(self.left_show_btn)
         self.main_layout.addWidget(self.bottom_show_btn)
         self.main_layout.addWidget(self.right_show_btn)
+
+    def set_editor_mode(self, kind: str) -> None:
+        """Show which editor owns the active tab and gate the Problems panel."""
+        labels = {
+            "scs": "SCS text editor",
+            "gwf": "SCg graph editor",
+        }
+        self.editor_mode_label.setText(labels.get(kind, "No file open"))
+
+        if not hasattr(self, "bottom_show_btn"):
+            return
+        is_text = kind == "scs"
+        self.bottom_show_btn.setEnabled(is_text)
+        if is_text:
+            self.bottom_show_btn.update_icon()
+        else:
+            self.bottom_show_btn.setToolTip(
+                "Problems are only available for text files"
+            )
+
 
 class SideBarShowButton (QPushButton):
     def __init__(self, config_name, state : bool = True):

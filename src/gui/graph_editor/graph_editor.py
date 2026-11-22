@@ -20,6 +20,7 @@ from PySide6.QtCore import (
     QPointF,
     QRectF,
     QSize,
+    Signal,
     Qt,
     QTimer,
 )
@@ -176,6 +177,10 @@ def _install_stall_recorder(canvas: "GraphEditorWidget") -> None:
 
 
 class GraphEditorWidget(QFrame):
+    modified_changed = Signal(bool)
+    file_changed = Signal(str)
+    new_graph_requested = Signal()
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("graphEditorWidget")
@@ -211,7 +216,10 @@ class GraphEditorWidget(QFrame):
             return separator
 
         self.new_button = add_button(
-            toolbar, Icons.new_graph(), "New graph", self.new_graph
+            toolbar,
+            Icons.new_graph(),
+            "New graph",
+            self.new_graph_requested.emit,
         )
 
         self.save_button = add_button(
@@ -439,6 +447,7 @@ class GraphEditorWidget(QFrame):
             QMessageBox.warning(self, "Cannot open graph", str(error))
             return
         self.file_path = safe_file
+        self.file_changed.emit(str(safe_file))
         migrated = self.scene.migrated_role_nodes
         self._mark_modified(bool(migrated))
         self.undo_stack.clear()
@@ -455,6 +464,7 @@ class GraphEditorWidget(QFrame):
             return
         self.scene.load_scs("")
         self.file_path = None
+        self.file_changed.emit("")
         self._mark_modified(True)
         self.undo_stack.clear()
         self.status_label.setText("New graph — save it as a .gwf file.")
@@ -1437,16 +1447,24 @@ class GraphEditorWidget(QFrame):
             QMessageBox.warning(self, "Cannot save graph", str(error))
             return
         self.file_path = safe_file
+        self.file_changed.emit(str(safe_file))
         self._mark_modified(False)
         self.status_label.setText(f"Saved {self.file_path.name}.")
 
+    def confirm_close(self) -> bool:
+        """Ask to save pending changes before the tab is closed."""
+        return self._confirm_unsaved("closing it")
+
     def _confirm_replace_current_graph(self) -> bool:
+        return self._confirm_unsaved("replacing it")
+
+    def _confirm_unsaved(self, action: str) -> bool:
         if not self.is_modified:
             return True
         answer = QMessageBox.warning(
             self,
             "Unsaved graph",
-            "Save changes to the current graph before replacing it?",
+            f"Save changes to the current graph before {action}?",
             QMessageBox.StandardButton.Save
             | QMessageBox.StandardButton.Discard
             | QMessageBox.StandardButton.Cancel,
@@ -1475,7 +1493,10 @@ class GraphEditorWidget(QFrame):
         self.undo_stack.redo()
 
     def _mark_modified(self, modified: bool = True) -> None:
+        was_modified = self.is_modified
         self.is_modified = modified
         self.save_button.setEnabled(modified or self.file_path is None)
         title = "Save *" if modified else "Save"
         self.save_button.setText(title)
+        if modified != was_modified:
+            self.modified_changed.emit(modified)

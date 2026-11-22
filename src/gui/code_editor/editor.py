@@ -8,7 +8,7 @@ from lark.exceptions import (
     UnexpectedEOF,
     UnexpectedToken,
 )
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QKeyEvent,
@@ -20,202 +20,18 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
-    QPushButton,
-    QTabWidget,
     QTextEdit,
     QWidget,
 )
 
 from src.core.signals import signals
 from src.lark_syntax.parser import SCSParser
-from src.resources.icons import Icons
 from src.gui.syntax_highlighter import SCSHighlighter
 from src.utils.config_manager import ConfigManager
 from src.utils.security import get_project_root, safe_path
 from src.utils.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
-
-
-class CodeEditorWorkspace(QTabWidget):
-    syntax_status_changed = Signal(object, object)
-
-    def __init__(self):
-        super().__init__()
-        self.setObjectName("codeEditorWorkspace")
-        self.setTabsClosable(False)
-        self.setMovable(True)
-        self.setDocumentMode(True)
-
-        self.tabBar().setExpanding(False)
-        self.tabBar().setUsesScrollButtons(True)
-        self.tabBar().setElideMode(Qt.TextElideMode.ElideRight)
-        self.tabBar().setDrawBase(False)
-
-        self.currentChanged.connect(self._on_current_changed)
-        signals.theme_changed.connect(self._refresh_close_icons)
-
-        last_viewed_files = ConfigManager.get("last_viewed_files")
-        if not isinstance(last_viewed_files, list):
-            last_viewed_files = []
-        last_viewed_file = ConfigManager.get("last_viewed_file")
-        paths_to_restore = list(
-            dict.fromkeys(
-                [path for path in last_viewed_files if isinstance(path, str)]
-                + (
-                    [last_viewed_file]
-                    if isinstance(last_viewed_file, str) and last_viewed_file
-                    else []
-                )
-            )
-        )
-        for path in paths_to_restore:
-            self.apply_file(path)
-        if last_viewed_file:
-            for index in range(self.count()):
-                editor = self.widget(index)
-                if editor.abs_path == Path(last_viewed_file).resolve():
-                    self.setCurrentIndex(index)
-                    break
-
-        signals.selected_new_project_folder.connect(self.clear_workspace)
-
-    def clear_workspace(self, new_dir):
-        ConfigManager.set("last_viewed_file", "")
-        ConfigManager.set("last_viewed_files", [])
-        # Properly close all tabs to delete editors and stop their timers
-        while self.count() > 0:
-            self.close_tab(0)
-
-    def apply_file(self, file_path: str | Path) -> None:
-        if not file_path:
-            return
-
-        try:
-            safe_file = safe_path(get_project_root(), str(file_path))
-            if not safe_file.is_file():
-                raise FileNotFoundError(f"Not a file: {safe_file}")
-        except (OSError, ValueError) as error:
-            QMessageBox.warning(self, "Cannot open file", str(error))
-            return
-
-        for index in range(self.count()):
-            editor = self.widget(index)
-            if editor.abs_path == safe_file:
-                self.setCurrentIndex(index)
-                return
-
-        try:
-            editor = CodeEditor(safe_file)
-            index = self.addTab(editor, safe_file.name)
-            self.setTabToolTip(index, str(safe_file))
-            self._set_close_icon(index)
-            editor.syntax_status_changed.connect(
-                lambda error, current_editor=editor: self.syntax_status_changed.emit(
-                    current_editor, error
-                )
-            )
-            editor.document().modificationChanged.connect(
-                lambda modified, current_editor=editor: self._update_tab_title(
-                    current_editor, modified
-                )
-            )
-        except (OSError, UnicodeError, ValueError) as error:
-            QMessageBox.warning(
-                self, "Cannot open file", f"{safe_file}\n\n{error}"
-            )
-            return
-
-        self.setCurrentWidget(editor)
-
-    def _set_close_icon(self, index: int) -> None:
-        editor = self.widget(index)
-        if not isinstance(editor, CodeEditor):
-            return
-        close_button = QPushButton()
-        close_button.setObjectName("editorTabCloseButton")
-        close_button.setIcon(Icons.cross())
-        close_button.setIconSize(QSize(12, 12))
-        close_button.setFixedSize(16, 16)
-        close_button.setToolTip("Close tab")
-        close_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        close_button.clicked.connect(lambda *_: self._close_editor(editor))
-        self.tabBar().setTabButton(
-            index, self.tabBar().ButtonPosition.RightSide, close_button
-        )
-
-    def _close_editor(self, editor: "CodeEditor") -> None:
-        index = self.indexOf(editor)
-        if index >= 0:
-            self.close_tab(index)
-
-    def _refresh_close_icons(self) -> None:
-        for index in range(self.count()):
-            self._set_close_icon(index)
-
-    def _on_current_changed(self, index: int) -> None:
-        editor = self.widget(index)
-        if isinstance(editor, CodeEditor) and editor.abs_path is not None:
-            current_file = str(editor.abs_path)
-        else:
-            current_file = ""
-
-        ConfigManager.set("selected_file", current_file)
-        self._persist_open_tabs(current_file)
-
-    def _persist_open_tabs(self, current_file: str | None = None) -> None:
-        open_files = [
-            str(editor.abs_path)
-            for index in range(self.count())
-            if isinstance((editor := self.widget(index)), CodeEditor)
-            and editor.abs_path is not None
-        ]
-        if current_file is None:
-            editor = self.currentWidget()
-            current_file = (
-                str(editor.abs_path)
-                if isinstance(editor, CodeEditor) and editor.abs_path is not None
-                else ""
-            )
-        ConfigManager.set("last_viewed_files", open_files)
-        ConfigManager.set("last_viewed_file", current_file)
-
-    def _update_tab_title(self, editor: "CodeEditor", modified: bool) -> None:
-        index = self.indexOf(editor)
-        if index >= 0:
-            title = Path(editor.abs_path).name if editor.abs_path else "Untitled"
-            self.setTabText(index, f"{title} *" if modified else title)
-
-    def close_tab(self, index: int) -> None:
-        editor = self.widget(index)
-        if not isinstance(editor, CodeEditor):
-            return
-
-        editor.parse_timer.stop()
-        editor.save_timer.stop()
-        if editor.document().isModified():
-            answer = QMessageBox.question(
-                self,
-                "Unsaved changes",
-                f"Save changes to '{Path(editor.abs_path).name}' before closing?",
-                QMessageBox.StandardButton.Save
-                | QMessageBox.StandardButton.Discard
-                | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Cancel,
-            )
-            if answer == QMessageBox.StandardButton.Cancel:
-                return
-            if (
-                answer == QMessageBox.StandardButton.Save
-                and not editor.save_changes()
-            ):
-                return
-
-        self.removeTab(index)
-        self._persist_open_tabs()
-        editor.parse_timer.stop()
-        editor.save_timer.stop()
-        editor.deleteLater()
 
 
 class CodeEditor(QPlainTextEdit):

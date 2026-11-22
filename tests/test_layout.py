@@ -5,7 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-from src.gui.code_editor_widget import CodeEditorWidget
+from src.gui.editor_workspace import EditorWorkspace
 
 
 class SplitterHandleTests(unittest.TestCase):
@@ -14,7 +14,7 @@ class SplitterHandleTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_editor_splitter_has_a_visible_grab_handle(self):
-        editor = CodeEditorWidget()
+        editor = EditorWorkspace()
 
         self.assertGreaterEqual(editor.splitter.handleWidth(), 6)
         self.assertFalse(editor.splitter.childrenCollapsible())

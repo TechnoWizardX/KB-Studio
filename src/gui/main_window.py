@@ -1,23 +1,18 @@
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
-    QHBoxLayout,
     QMainWindow,
     QMessageBox,
     QSplitter,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtCore import QSignalBlocker, Qt
+from PySide6.QtCore import Qt
 import sys
-from pathlib import Path
 
 from src.utils.config_manager import ConfigManager
 from src.utils.theme_manager import ThemeManager
 
-from src.gui.code_editor_widget import CodeEditorWidget
-from src.gui.graph_editor import GraphEditorWidget
+from src.gui.editor_workspace import EditorWorkspace
 
 from src.gui.left_sidebar_widget import LeftSidebarWidget
 from src.gui.right_sidebar_widget import RightSidebarWidget
@@ -40,15 +35,11 @@ class MainWindow(QMainWindow):
         self.main_layout.setSpacing(0)
 
         
-        self.topbar = ToolBar(self._select_editor)
+        self.editor_workspace = EditorWorkspace()
+        self.topbar = ToolBar(self.editor_workspace.new_graph)
         self.main_layout.addWidget(self.topbar)
-
-        self.editor_stack = QStackedWidget()
-        self.code_editor = CodeEditorWidget()
-        self.graph_editor = GraphEditorWidget()
-        self.editor_stack.addWidget(self.code_editor)
-        self.editor_stack.addWidget(self.graph_editor)
-        self._select_editor(0)
+        self.editor_workspace.kind_changed.connect(self.topbar.set_editor_mode)
+        self.topbar.set_editor_mode(self.editor_workspace.current_kind())
 
         show_left_bar = ConfigManager.get("show_left_bar")
         show_right_bar = ConfigManager.get("show_right_bar")
@@ -63,7 +54,7 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.main_splitter)
 
         self.main_splitter.addWidget(self.left_bar)
-        self.main_splitter.addWidget(self.editor_stack)
+        self.main_splitter.addWidget(self.editor_workspace)
         self.main_splitter.addWidget(self.right_bar)
         self.main_splitter.setSizes([200, 500, 200])
 
@@ -71,29 +62,8 @@ class MainWindow(QMainWindow):
         signals.selected_new_file.connect(self._on_file_selected)
 
     def _on_file_selected(self, file_path: str) -> None:
-        """Route an explicitly opened file to the editor that can show it.
-
-        The sidebar emits one signal for every double-clicked file. Routing
-        here (instead of in each editor) guarantees the target editor is
-        active before ``apply_file`` runs and keeps the toolbar selector in
-        sync with the visible editor.
-        """
-        path = Path(str(file_path))
-        if path.suffix.lower() == ".gwf":
-            self._switch_editor(1)
-            self.graph_editor.apply_file(path)
-        else:
-            self._switch_editor(0)
-            self.code_editor.apply_file(path)
-
-    def _switch_editor(self, index: int) -> None:
-        """Select an editor page and update the selector without feedback."""
-        with QSignalBlocker(self.topbar.editor_selector):
-            self.topbar.editor_selector.setCurrentIndex(index)
-        self._select_editor(index)
-
-    def _select_editor(self, index: int) -> None:
-        self.editor_stack.setCurrentIndex(index)
+        """Open a file from the sidebar in the matching editor tab."""
+        self.editor_workspace.apply_file(file_path)
 
     def show_error(self, error):
         QMessageBox.critical(self, "Error", error)
@@ -105,6 +75,10 @@ class MainWindow(QMainWindow):
                 "AI request is still running",
                 "Wait for the current AI request to finish, then close the application.",
             )
+            event.ignore()
+            return
+
+        if not self.editor_workspace.confirm_close_all():
             event.ignore()
             return
 

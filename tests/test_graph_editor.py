@@ -35,8 +35,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QMenu,
     QMessageBox,
-    QStackedWidget,
-    QWidget,
 )
 
 from src.core.signals import signals
@@ -2577,48 +2575,22 @@ class GraphEditorUndoTests(unittest.TestCase):
             self.assertIn("saved_by_shortcut", content)
         editor.close()
 
-    def test_main_window_routes_selected_files_to_matching_editor(self):
+    def test_main_window_hands_selected_files_to_the_tab_workspace(self):
         try:
             from src.gui.main_window import MainWindow
-            from src.gui.toolbar import ToolBar
         except ModuleNotFoundError as error:
             self.skipTest(f"main_window dependency missing: {error}")
 
         window = MainWindow.__new__(MainWindow)
-        window.topbar = ToolBar(lambda _index: None)
-        window.topbar.editor_selector.setCurrentIndex(0)
-        window.editor_stack = QStackedWidget()
-        window.editor_stack.addWidget(QWidget())
-        window.editor_stack.addWidget(QWidget())
-        window.code_editor = Mock()
-        window.graph_editor = Mock()
-        applied_editor_indices = []
-
-        window.graph_editor.apply_file.side_effect = lambda _path: (
-            applied_editor_indices.append(window.editor_stack.currentIndex())
-        )
-        window.code_editor.apply_file.side_effect = lambda _path: (
-            applied_editor_indices.append(window.editor_stack.currentIndex())
-        )
+        window.editor_workspace = Mock()
 
         window._on_file_selected("/project/diagram.gwf")
-
-        self.assertEqual(window.topbar.editor_selector.currentIndex(), 1)
-        self.assertEqual(window.editor_stack.currentIndex(), 1)
-        window.graph_editor.apply_file.assert_called_once_with(
-            Path("/project/diagram.gwf")
-        )
-        window.code_editor.apply_file.assert_not_called()
-
         window._on_file_selected("/project/code.scs")
 
-        self.assertEqual(window.topbar.editor_selector.currentIndex(), 0)
-        self.assertEqual(window.editor_stack.currentIndex(), 0)
-        window.code_editor.apply_file.assert_called_once_with(
-            Path("/project/code.scs")
+        self.assertEqual(
+            [call.args[0] for call in window.editor_workspace.apply_file.call_args_list],
+            ["/project/diagram.gwf", "/project/code.scs"],
         )
-        # The file must be handed to the editor only after it is visible.
-        self.assertEqual(applied_editor_indices, [1, 0])
 
 
 class GraphEditorClipboardTests(unittest.TestCase):

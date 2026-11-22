@@ -367,20 +367,20 @@ QSplitter::handle:vertical {
 }
 
 /* ---- Tab Widget ------------------------------------------- */
-QTabWidget#codeEditorWorkspace {
+QTabWidget#documentTabs {
     border: 0;
 }
-QTabWidget#codeEditorWorkspace::pane {
+QTabWidget#documentTabs::pane {
     border: 0px solid transparent;
     border-radius: 0;
     background-color: {{editor_bg}};
     margin: 0;
     padding: 0;
 }
-QTabWidget#codeEditorWorkspace::tab-bar {
+QTabWidget#documentTabs::tab-bar {
     border: 0;
 }
-QTabWidget#codeEditorWorkspace QTabBar {
+QTabWidget#documentTabs QTabBar {
     border: 0;
     background-color: {{nav_bg}};
 }
