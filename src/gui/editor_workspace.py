@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QMessageBox,
@@ -37,7 +37,6 @@ class EditorWorkspace(QFrame):
         self._dev_panel_visible = bool(ConfigManager.get("show_bottom_bar"))
         self._restoring = True
         self._dev_panel_sizes_applied = False
-        self._fitted_graphs: set[int] = set()
 
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -232,7 +231,7 @@ class EditorWorkspace(QFrame):
             widget.parse_timer.stop()
             widget.save_timer.stop()
         if isinstance(widget, GraphEditorWidget):
-            self._fitted_graphs.discard(id(widget))
+            widget.save_timer.stop()
         if widget is not None:
             widget.deleteLater()
 
@@ -261,20 +260,8 @@ class EditorWorkspace(QFrame):
             self.dev_panel_widget.problems_wgt.show_diagnostics(
                 editor.syntax_error
             )
-        elif isinstance(editor, GraphEditorWidget):
-            if id(editor) not in self._fitted_graphs:
-                QTimer.singleShot(
-                    0, lambda current_editor=editor: self._fit_graph_if_active(
-                        current_editor
-                    )
-                )
         if not self._restoring:
             self._persist_open_tabs()
-
-    def _fit_graph_if_active(self, editor: GraphEditorWidget) -> None:
-        if self.tabs.currentWidget() is editor and self.tabs.indexOf(editor) >= 0:
-            self._fitted_graphs.add(id(editor))
-            editor.fit_graph()
 
     def current_kind(self) -> str:
         return self._kind_of(self.tabs.currentWidget())

@@ -95,6 +95,7 @@ from src.gui.graph_editor.gwf_codec import (
     empty_content_element,
     parse_gwf_document,
 )
+from src.utils.config_manager import ConfigManager
 from src.utils.security import get_project_root, safe_path
 
 GRAPH_MIME = "application/x-kbstudio-gwf"
@@ -186,6 +187,12 @@ class GraphEditorWidget(QFrame):
         self.setObjectName("graphEditorWidget")
         self.file_path: Path | None = None
         self.is_modified = False
+
+        self.save_timer = QTimer(self)
+        self.save_timer.timeout.connect(self._auto_save)
+        self.save_timer.setSingleShot(True)
+        self.save_timer.setInterval(400)
+        signals.auto_save_changed.connect(self.on_auto_save_changed)
 
         layout = QVBoxLayout(self)
         toolbar = QHBoxLayout()
@@ -450,6 +457,9 @@ class GraphEditorWidget(QFrame):
         self.file_changed.emit(str(safe_file))
         migrated = self.scene.migrated_role_nodes
         self._mark_modified(bool(migrated))
+        # Loading must not rewrite the file behind the user's back, even if
+        # the graph was migrated while opening it.
+        self.save_timer.stop()
         self.undo_stack.clear()
         status = f"Opened {safe_file.name}."
         if migrated:
@@ -1439,17 +1449,42 @@ class GraphEditorWidget(QFrame):
                 QMessageBox.warning(self, "Cannot save graph", str(error))
                 return
 
+        self._write_graph()
+
+    def save_changes(self) -> bool:
+        """Write the graph to its file without asking for a new path."""
+        if self.file_path is None:
+            return False
+        return self._write_graph()
+
+    def _write_graph(self) -> bool:
         try:
             safe_file = safe_path(get_project_root(), str(self.file_path))
             content = self.scene.to_gwf()
             safe_file.write_text(content, encoding="utf-8")
         except (OSError, UnicodeError, ValueError) as error:
             QMessageBox.warning(self, "Cannot save graph", str(error))
-            return
+            return False
         self.file_path = safe_file
         self.file_changed.emit(str(safe_file))
         self._mark_modified(False)
         self.status_label.setText(f"Saved {self.file_path.name}.")
+        return True
+
+    def _auto_save(self) -> None:
+        if (
+            ConfigManager.get("auto_save")
+            and self.file_path is not None
+            and self.is_modified
+        ):
+            self._write_graph()
+
+    def on_auto_save_changed(self, enabled: bool) -> None:
+        """React to the shared text/graph auto-save setting."""
+        if enabled and self.file_path is not None and self.is_modified:
+            self.save_timer.start()
+        else:
+            self.save_timer.stop()
 
     def confirm_close(self) -> bool:
         """Ask to save pending changes before the tab is closed."""
@@ -1498,5 +1533,15 @@ class GraphEditorWidget(QFrame):
         self.save_button.setEnabled(modified or self.file_path is None)
         title = "Save *" if modified else "Save"
         self.save_button.setText(title)
+        if modified:
+            if (
+                ConfigManager.get("auto_save")
+                and self.file_path is not None
+            ):
+                self.save_timer.start()
+            else:
+                self.save_timer.stop()
+        else:
+            self.save_timer.stop()
         if modified != was_modified:
             self.modified_changed.emit(modified)
