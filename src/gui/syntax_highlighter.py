@@ -107,8 +107,9 @@ class SCSHighlighter(QSyntaxHighlighter):
 
     def _build_formats(self):
         """Create QTextCharFormat for each bracket type based on current theme."""
-        colors = self.BRACKET_COLORS_DARK if self._theme == 'dark' else self.BRACKET_COLORS_LIGHT
-        error_color = '#f14c4c' if self._theme == 'dark' else '#cd3131'
+        is_light = self._theme in ('light', 'solarized_light')
+        colors = self.BRACKET_COLORS_LIGHT if is_light else self.BRACKET_COLORS_DARK
+        error_color = '#cd3131' if is_light else '#f14c4c'
         semantic_colors = (
             {
                 "ID": "#ce9178",
@@ -117,7 +118,7 @@ class SCSHighlighter(QSyntaxHighlighter):
                 "STRING": "#6a9955",
                 "LINK_CONTENT": "#c678dd",
             }
-            if self._theme == "dark"
+            if not (self._theme in ('light', 'solarized_light'))
             else {
                 "ID": "#800000",
                 "ALIAS": "#7f3fbf",
@@ -142,7 +143,7 @@ class SCSHighlighter(QSyntaxHighlighter):
             fmt.setForeground(QColor(semantic_colors[token_type]))
             self._formats[token_type] = fmt
 
-        comment_color = "#858585" if self._theme == "dark" else "#6a737d"
+        comment_color = "#6a737d" if self._theme in ('light', 'solarized_light') else "#858585"
         self._comment_format.setForeground(QColor(comment_color))
         self._string_format = semantic_formats["STRING"]
         
@@ -152,7 +153,10 @@ class SCSHighlighter(QSyntaxHighlighter):
 
     def set_theme(self, theme_name: str):
         """Update highlighter colors for a new theme."""
-        if theme_name in ('dark', 'light'):
+        if theme_name in (
+            'dark', 'nord', 'lavender_graphite', 'moccha', 'mint_espresso',
+            'light', 'solarized_light',
+        ):
             self._theme = theme_name
         else:
             self._theme = 'dark'

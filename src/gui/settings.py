@@ -49,12 +49,17 @@ class Settings(QDialog):
         self.theme_group = QButtonGroup(self)
         self.theme_group.setExclusive(True)
         current_theme = ConfigManager.get("theme")
-        self.theme_light_button = self._create_theme_button(
-            "Light", "light", current_theme == "light"
-        )
-        self.theme_dark_button = self._create_theme_button(
-            "Dark", "dark", current_theme == "dark"
-        )
+        for label, theme_name in (
+            ("Light", "light"),
+            ("Dark", "dark"),
+            ("Nord", "nord"),
+            ("Solarized Light", "solarized_light"),
+            ("Лаванда-графит", "lavender_graphite"),
+            ("Moccha", "moccha"),
+            ("Мята-эспрессо", "mint_espresso"),
+        ):
+            button = self._create_theme_button(label, theme_name, current_theme == theme_name)
+            setattr(self, f"theme_{theme_name}_button", button)
         self.theme_frame_layout.addStretch()
 
         self.editor_label = SettingsSection("Editor")
@@ -115,10 +120,9 @@ class Settings(QDialog):
         if app is not None:
             app.setStyleSheet(qss)
         ConfigManager.set("theme", theme)
-        if theme == "dark":
-            self.theme_dark_button.setChecked(True)
-        else:
-            self.theme_light_button.setChecked(True)
+        button = getattr(self, f"theme_{theme}_button", None)
+        if button is not None:
+            button.setChecked(True)
 
     def _refresh_icon(self, _theme: str) -> None:
         self.call_button.setIcon(Icons.settings())

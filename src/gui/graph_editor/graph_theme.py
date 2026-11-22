@@ -53,13 +53,22 @@ _LIGHT = {
     "preview_snapping": "#16825d",
 }
 
-_tables = {"dark": _DARK, "light": _LIGHT}
+_tables = {
+    "dark": _DARK,
+    "nord": _DARK,
+    "lavender_graphite": _DARK,
+    "moccha": _DARK,
+    "mint_espresso": _DARK,
+    "light": _LIGHT,
+    "solarized_light": _LIGHT,
+}
 _tokens = {"canvas_bg": "bg_alt"}
 _cache: dict[str, QColor] = {}
 
 
 def theme_name() -> str:
-    return "light" if ThemeManager.last_used_theme == "light" else "dark"
+    name = ThemeManager.last_used_theme
+    return name if name in _tables else ("light" if name == "light" else "dark")
 
 
 def color(key: str) -> QColor:

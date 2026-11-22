@@ -1,6 +1,6 @@
 /* ============================================================
-   KB Studio — VS Code Light 2026 Theme
-   Modern, accessible, clean light theme
+   KB Studio — Shared Theme Base
+   Layout, widgets, and selectors shared by every theme
    ============================================================ */
 
 /* ---- Base / Typography ------------------------------------ */
@@ -10,18 +10,17 @@ QMainWindow, QWidget {
     font-family: "Segoe UI", "Ubuntu", "Cantarell", "Noto Sans", sans-serif;
     font-size: 12pt;
 }
+
 QSplitter#mainSplitter {
     background-color : transparent;
     border: transparent;
 }
-
 /* ---- Line Number Area ------------------------------------- */
 QWidget#lineNumberArea {
     background-color: {{number_line_bg}};
     color: {{number_line_fg}};
     border-right: 1px solid {{border}};
 }
-
 /* ---- AI Chat ---------------------------------------------- */
 QScrollArea#messagesBox {
     border: none;
@@ -470,7 +469,7 @@ QPushButton[primary="true"]:hover, QPushButton#btn-accent:hover {
     border-color: {{accent_hover}};
 }
 QPushButton[primary="true"]:pressed, QPushButton#btn-accent:pressed {
-    background-color: #005a99;
+    background-color: {{accent_pressed}};
 }
 
 /* Error / Danger */
@@ -480,11 +479,11 @@ QPushButton#btn-error {
     border: 1px solid {{error}};
 }
 QPushButton#btn-error:hover {
-    background-color: #ffebeb;
-    border-color: #cd3131;
+    background-color: {{error_hover}};
+    border-color: {{error_hover_border}};
 }
 QPushButton#btn-error:pressed {
-    background-color: #ffd6d6;
+    background-color: {{error_pressed}};
 }
 
 /* Success */
@@ -494,7 +493,7 @@ QPushButton#btn-success {
     border: 1px solid {{success}};
 }
 QPushButton#btn-success:hover {
-    background-color: #d0f0e6;
+    background-color: {{success_hover}};
 }
 
 /* Warning */
@@ -504,7 +503,7 @@ QPushButton#btn-warning {
     border: 1px solid {{warning}};
 }
 QPushButton#btn-warning:hover {
-    background-color: #fff0d0;
+    background-color: {{warning_hover}};
 }
 
 /* ---- Tool Buttons (in toolbars) --------------------------- */
@@ -533,7 +532,7 @@ QToolButton:checked:hover {
     background-color: {{selection}};
     border-color: {{accent_hover}};
 }
-QToolButton[popupMode="1"] {
+QToolButton[popupMode="1"] { /* MenuButtonPopup */
     padding-right: 16px;
 }
 QToolButton::menu-indicator {

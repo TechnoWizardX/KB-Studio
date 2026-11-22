@@ -34,5 +34,12 @@
     "scrollbar_handle_hover": "#454545",
     "line_highlight_color": "#202020",
     "icon_fg": "#cccccc",
-    "tab_active_border": "#007acc"
+    "tab_active_border": "#007acc",
+    "accent_pressed": "#006bb3",
+    "error_hover": "#5a2222",
+    "error_hover_border": "#ff6b6b",
+    "error_pressed": "#6b2a2a",
+    "success_hover": "#26504a",
+    "warning_hover": "#504a26",
+    "icon_variant": "dark"
 }

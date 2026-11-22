@@ -28,9 +28,9 @@ class ThemeManager:
 
     @classmethod
     def _load_qss(cls, name: str) -> str:
-        """Load theme QSS template from package resources."""
+        """Load the shared theme QSS template from package resources."""
         try:
-            return files("src.resources.themes").joinpath(f"{name}.qss").read_text(encoding="utf-8")
+            return files("src.resources.themes").joinpath("base.qss").read_text(encoding="utf-8")
         except FileNotFoundError as e:
             logger.error("Cannot load theme QSS %r: %s", name, e)
             return ""
@@ -46,12 +46,15 @@ class ThemeManager:
 
         qss = cls._render_qss(qss_template, cls.colors)
         icons_dir = Path(str(files("src.resources"))) / "icons"
+        icon_variant = cls.colors.get("icon_variant", "dark")
+        if icon_variant not in {"dark", "light"}:
+            icon_variant = "dark"
         qss = qss.replace("{{icons_dir}}", icons_dir.as_posix())
-        qss = qss.replace("{{chevron_icon}}", f"chevron_down_{name}.svg")
-        qss = qss.replace("{{chevron_up_icon}}", f"chevron_up_{name}.svg")
+        qss = qss.replace("{{chevron_icon}}", f"chevron_down_{icon_variant}.svg")
+        qss = qss.replace("{{chevron_up_icon}}", f"chevron_up_{icon_variant}.svg")
         qss = qss.replace("{{check_icon}}", "check.svg")
         qss = qss.replace("{{radio_dot_icon}}", "radio_dot.svg")
-        qss = qss.replace("{{size_grip_icon}}", f"size_grip_{name}.svg")
+        qss = qss.replace("{{size_grip_icon}}", f"size_grip_{icon_variant}.svg")
         cls.last_used_theme = name
 
         icon_color = cls.colors.get("icon_fg", "#d4d4d4")
@@ -89,4 +92,7 @@ class ThemeManager:
                 if f.is_file() and f.suffix == ".json"
             )
         except Exception:
-            return ["dark", "light"]
+            return [
+                "dark", "light", "nord", "solarized_light",
+                "lavender_graphite", "moccha", "mint_espresso",
+            ]
