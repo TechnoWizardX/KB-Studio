@@ -43,6 +43,18 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(self.settings.theme_light_button.isChecked())
         self.assertTrue(self.settings.theme_dark_button.isCheckable())
 
+    def test_theme_picker_displays_preview_cards_for_all_themes(self):
+        buttons = [
+            getattr(self.settings, f"theme_{name}_button", None)
+            for name in (
+                "light", "dark", "nord", "solarized_light",
+                "lavender_graphite", "moccha", "mint_espresso",
+            )
+        ]
+        self.assertTrue(all(button is not None for button in buttons))
+        self.assertEqual(len(buttons), 7)
+        self.assertTrue(all(button.minimumHeight() == 112 for button in buttons))
+
     def test_applying_a_theme_checks_its_button_and_emits_once(self):
         received = []
 

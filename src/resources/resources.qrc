@@ -4,6 +4,11 @@
     <file>icons/arrange_horizontal.svg</file>
     <file>icons/arrange_tuple.svg</file>
     <file>icons/arrange_vertical.svg</file>
+    <file>icons/check.svg</file>
+    <file>icons/chevron_down_dark.svg</file>
+    <file>icons/chevron_down_light.svg</file>
+    <file>icons/chevron_up_dark.svg</file>
+    <file>icons/chevron_up_light.svg</file>
     <file>icons/cross.svg</file>
     <file>icons/delete.svg</file>
     <file>icons/export_image.svg</file>
@@ -20,11 +25,14 @@
     <file>icons/panel-right-fill.svg</file>
     <file>icons/panel-right.svg</file>
     <file>icons/plus.svg</file>
+    <file>icons/radio_dot.svg</file>
     <file>icons/redo.svg</file>
     <file>icons/rename.svg</file>
     <file>icons/save.svg</file>
     <file>icons/send.svg</file>
     <file>icons/settings.svg</file>
+    <file>icons/size_grip_dark.svg</file>
+    <file>icons/size_grip_light.svg</file>
     <file>icons/tool_bus.svg</file>
     <file>icons/tool_connector.svg</file>
     <file>icons/tool_contour.svg</file>

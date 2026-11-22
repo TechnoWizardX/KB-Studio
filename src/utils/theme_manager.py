@@ -83,6 +83,11 @@ class ThemeManager:
         return cls.colors.get(key, "#ffffff")
 
     @classmethod
+    def get_theme_colors(cls, name: str) -> dict[str, str]:
+        """Get the color palette of a theme without applying it."""
+        return cls._load_json(name)
+
+    @classmethod
     def list_themes(cls) -> list[str]:
         """Return list of available theme names from package resources."""
         try:

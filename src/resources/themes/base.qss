@@ -804,17 +804,40 @@ QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
 }
 
 QPushButton#themeButton {
-    min-width: 84px;
-    padding: 6px 16px;
+    min-width: 190px;
+    max-width: 190px;
+    min-height: 112px;
+    max-height: 112px;
+    padding: 0;
+    background-color: {{bg_elevated}};
+    border: 1px solid {{border}};
+    border-radius: 8px;
+    text-align: center;
+}
+QPushButton#themeButton:hover {
+    background-color: {{hover}};
+    border-color: {{border_hover}};
 }
 QPushButton#themeButton:checked {
-    background-color: {{accent}};
-    color: #ffffff;
-    border: 1px solid {{accent}};
+    background-color: {{bg_elevated}};
+    color: {{fg}};
+    border: 2px solid {{accent}};
 }
 QPushButton#themeButton:checked:hover {
-    background-color: {{accent_hover}};
+    background-color: {{hover}};
     border-color: {{accent_hover}};
+}
+QFrame#themePreview {
+    background-color: {{frame_bg}};
+    border: 1px solid {{border}};
+    border-radius: 5px;
+}
+QLabel#themeCardTitle {
+    color: {{fg}};
+    background-color: transparent;
+    border: none;
+    font-size: 10pt;
+    font-weight: 600;
 }
 QFrame#settingsAccent {
     background-color: {{accent}};

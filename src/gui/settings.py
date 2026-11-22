@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QApplication, QWidget, QDialog, QFrame, QLabel, QPushButton, 
-                               QVBoxLayout, QHBoxLayout, QScrollArea, QCheckBox,
+                               QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea, QCheckBox,
                                QButtonGroup, QSpinBox)
-from PySide6.QtCore import QSize, Signal
+from PySide6.QtCore import Qt, QSize, Signal
 from src.core.signals import signals
 from src.resources.icons import Icons
 from src.utils.config_manager import ConfigManager
@@ -40,16 +40,17 @@ class Settings(QDialog):
         self.theme_label = QLabel("Theme")
         self.theme_label.setObjectName("settingsLabel")
         self.theme_frame = QFrame()
-        self.theme_frame_layout = QHBoxLayout(self.theme_frame)
+        self.theme_frame_layout = QGridLayout(self.theme_frame)
         self.theme_frame_layout.setContentsMargins(16, 12, 16, 12)
-        self.theme_frame_layout.setSpacing(8)
+        self.theme_frame_layout.setHorizontalSpacing(10)
+        self.theme_frame_layout.setVerticalSpacing(10)
         self.settings_layout.addWidget(self.theme_label)
         self.settings_layout.addWidget(self.theme_frame)
 
         self.theme_group = QButtonGroup(self)
         self.theme_group.setExclusive(True)
         current_theme = ConfigManager.get("theme")
-        for label, theme_name in (
+        themes = (
             ("Light", "light"),
             ("Dark", "dark"),
             ("Nord", "nord"),
@@ -57,10 +58,12 @@ class Settings(QDialog):
             ("Лаванда-графит", "lavender_graphite"),
             ("Moccha", "moccha"),
             ("Мята-эспрессо", "mint_espresso"),
-        ):
+        )
+        for index, (label, theme_name) in enumerate(themes):
             button = self._create_theme_button(label, theme_name, current_theme == theme_name)
             setattr(self, f"theme_{theme_name}_button", button)
-        self.theme_frame_layout.addStretch()
+            row, column = divmod(index, 3)
+            self.theme_frame_layout.addWidget(button, row, column)
 
         self.editor_label = SettingsSection("Editor")
         self.editor_frame = QFrame()
@@ -102,7 +105,7 @@ class Settings(QDialog):
         self.settings_layout.addStretch()
 
     def _create_theme_button(self, label: str, theme: str, checked: bool) -> QPushButton:
-        button = QPushButton(label)
+        button = QPushButton()
         button.setObjectName("themeButton")
         button.setCheckable(True)
         button.setChecked(checked)
@@ -110,8 +113,38 @@ class Settings(QDialog):
         button.clicked.connect(
             lambda _checked=False, theme=theme: self.apply_theme(theme)
         )
+
+        layout = QVBoxLayout(button)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(7)
+
+        preview = QFrame()
+        preview.setObjectName("themePreview")
+        preview_layout = QHBoxLayout(preview)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(3)
+
+        colors = ThemeManager.get_theme_colors(theme)
+        swatches = (
+            colors.get("bg", "#202020"),
+            colors.get("accent", "#007acc"),
+            colors.get("selection", "#264f78"),
+            colors.get("success", "#4ec9b0"),
+        )
+        for color in swatches:
+            swatch = QFrame()
+            swatch.setStyleSheet(f"background-color: {color}; border: none;")
+            swatch.setMinimumHeight(38)
+            preview_layout.addWidget(swatch)
+
+        title = QLabel(label)
+        title.setObjectName("themeCardTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(preview)
+        layout.addWidget(title)
+
+        button.setFixedSize(190, 112)
         self.theme_group.addButton(button)
-        self.theme_frame_layout.addWidget(button)
         return button
 
     def apply_theme(self, theme: str) -> None:
