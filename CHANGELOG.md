@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.6] - In development
+
+### Added
+
+- Added a new theme selection interface in Settings with a three-column card
+  grid and live previews of the main palette colors.
+- Added the following application themes:
+  - Nord;
+  - Solarized Light;
+  - Лаванда-графит (Lavender Graphite);
+  - Moccha;
+  - Мята-эспрессо (Mint Espresso).
+- Added theme palette lookup for rendering theme previews without applying
+  the selected theme.
+
+### Changed
+
+- Consolidated all application themes onto the shared `base.qss` stylesheet;
+  `dark.qss` and `light.qss` are no longer separate style sources.
+- Theme JSON palettes now control shared widget styles and new themes can be
+  added without duplicating the full stylesheet.
+- Chevron and size-grip icons are selected automatically from shared
+  `dark`/`light` icon variants instead of duplicating icons per theme.
+- Updated the settings appearance section to show all available themes more
+  clearly and keep the active theme visually highlighted.
+
+### Build and resources
+
+- Updated theme resources to support the shared stylesheet and the new
+  palettes in packaged builds.
+- Expanded theme-manager tests to cover every discovered theme and the shared
+  icon-variant resolution.
+
 ## [1.5] - 2026-11-01
 
 ### Added
