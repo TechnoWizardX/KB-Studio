@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from src.core.signals import signals
 from src.gui.code_editor import CodeEditor, DevPanelWidget
+from src.gui.empty_editor_state import EmptyEditorState
 from src.gui.graph_editor import GraphEditorWidget
 from src.resources.icons import Icons
 from src.utils.config_manager import ConfigManager
@@ -58,7 +60,24 @@ class EditorWorkspace(QFrame):
         tab_bar.setUsesScrollButtons(True)
         tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
         tab_bar.setDrawBase(False)
-        self.splitter.addWidget(self.tabs)
+
+        # The stack keeps the tab bar and the "nothing open" page in the same
+        # slot, so the splitter stays a two-panel layout.
+        self.editor_area = QStackedWidget()
+        self.editor_area.setObjectName("editorArea")
+        self.editor_area.addWidget(self.tabs)
+
+        self.empty_state = EmptyEditorState()
+        self.editor_area.addWidget(self.empty_state)
+        self.splitter.addWidget(self.editor_area)
+
+        self.empty_state.new_graph_requested.connect(self.new_graph)
+        self.empty_state.new_file_requested.connect(
+            signals.create_file_act.emit
+        )
+        self.empty_state.open_project_requested.connect(
+            signals.select_project_requested.emit
+        )
 
         self.dev_panel_widget = DevPanelWidget()
         self.splitter.addWidget(self.dev_panel_widget)
@@ -253,6 +272,7 @@ class EditorWorkspace(QFrame):
     # Active document
     # ------------------------------------------------------------------
     def _on_current_changed(self, index: int) -> None:
+        self._sync_empty_state()
         editor = self.tabs.widget(index)
         self.kind_changed.emit(self._kind_of(editor))
         self._apply_dev_panel_visibility()
@@ -265,6 +285,11 @@ class EditorWorkspace(QFrame):
 
     def current_kind(self) -> str:
         return self._kind_of(self.tabs.currentWidget())
+
+    def _sync_empty_state(self) -> None:
+        page = self.tabs if self.tabs.count() else self.empty_state
+        if self.editor_area.currentWidget() is not page:
+            self.editor_area.setCurrentWidget(page)
 
     @staticmethod
     def _kind_of(widget: QWidget | None) -> str:

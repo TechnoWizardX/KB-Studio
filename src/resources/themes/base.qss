@@ -955,3 +955,52 @@ QScrollArea {
 QScrollArea > QWidget > QWidget {
     background-color: transparent;
 }
+
+/* ---- Empty Editor State ----------------------------------- */
+QFrame#emptyState {
+    background-color: {{editor_bg}};
+    border: none;
+}
+QFrame#emptyStateCard {
+    background-color: {{frame_bg}};
+    border: 1px solid {{border}};
+    border-radius: 10px;
+}
+QFrame#emptyStateBadge {
+    background-color: {{bg_elevated}};
+    border: 1px solid {{border}};
+    border-radius: 36px;
+}
+QLabel#emptyStateIcon {
+    background-color: transparent;
+    border: none;
+}
+QLabel#emptyStateTitle {
+    color: {{fg}};
+    background-color: transparent;
+    border: none;
+    font-size: 15pt;
+    font-weight: 600;
+}
+QLabel#emptyStateHint {
+    color: {{fg_dim}};
+    background-color: transparent;
+    border: none;
+}
+QLabel#emptyStateTip {
+    color: {{fg_muted}};
+    background-color: transparent;
+    border: none;
+    font-size: 9pt;
+}
+QPushButton#emptyStateButton {
+    min-height: 32px;
+    padding: 6px 18px;
+    border-radius: 5px;
+}
+QPushButton#emptyStateButton:focus {
+    border: 1px solid {{border_focus}};
+}
+QPushButton#emptyStateButton[primary="true"]:focus {
+    border: 1px solid {{fg}};
+}

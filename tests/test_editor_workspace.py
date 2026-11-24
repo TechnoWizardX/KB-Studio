@@ -7,11 +7,13 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPointF
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
+from src.core.signals import signals
 from src.gui.code_editor import CodeEditor
 from src.gui.editor_workspace import EditorWorkspace
+from src.gui.empty_editor_state import EmptyEditorState
 from src.gui.graph_editor import GraphEditorWidget
 from src.utils.config_manager import ConfigManager
 
@@ -77,6 +79,56 @@ class EditorWorkspaceTests(unittest.TestCase):
         self.assertIsInstance(self.workspace.tabs.widget(1), GraphEditorWidget)
         self.assertEqual(received_kinds, ["scs", "gwf"])
         self.assertEqual(self.workspace.current_kind(), "gwf")
+
+    def test_empty_state_stays_until_the_first_file_opens(self):
+        self.assertIsInstance(self.workspace.empty_state, EmptyEditorState)
+        self.assertIs(
+            self.workspace.editor_area.currentWidget(),
+            self.workspace.empty_state,
+        )
+
+        self._open_text()
+
+        self.assertIs(
+            self.workspace.editor_area.currentWidget(), self.workspace.tabs
+        )
+
+    def test_closing_the_last_tab_brings_the_empty_state_back(self):
+        received_kinds = []
+        self.workspace.kind_changed.connect(received_kinds.append)
+        self._open_text()
+
+        self.assertTrue(self.workspace.close_tab(0))
+
+        self.assertEqual(self.workspace.tabs.count(), 0)
+        self.assertIs(
+            self.workspace.editor_area.currentWidget(),
+            self.workspace.empty_state,
+        )
+        self.assertEqual(received_kinds, ["scs", ""])
+
+    def test_empty_state_new_graph_button_opens_a_graph_tab(self):
+        self.workspace.empty_state.new_graph_button.click()
+        self.app.processEvents()
+
+        self.assertEqual(self.workspace.tabs.count(), 1)
+        self.assertIsInstance(
+            self.workspace.tabs.currentWidget(), GraphEditorWidget
+        )
+        self.assertIs(
+            self.workspace.editor_area.currentWidget(), self.workspace.tabs
+        )
+
+    def test_empty_state_delegates_new_file_and_folder_requests(self):
+        file_requests = QSignalSpy(signals.create_file_act)
+        folder_requests = QSignalSpy(signals.select_project_requested)
+
+        self.workspace.empty_state.new_file_button.click()
+        self.workspace.empty_state.open_project_button.click()
+        self.app.processEvents()
+
+        self.assertEqual(file_requests.count(), 1)
+        self.assertEqual(folder_requests.count(), 1)
 
     def test_reopening_a_file_activates_its_existing_tab(self):
         text_editor = self._open_text()

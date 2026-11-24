@@ -108,6 +108,7 @@ class DirectoryTreeViewWidget(QFrame):
 
         signals.create_file_act.connect(self.make_new_file)
         signals.create_dir_act.connect(self.make_new_dir)
+        signals.select_project_requested.connect(self.select_project)
         signals.execute_create_file.connect(self.execute_create_file)
         signals.execute_create_dir.connect(self.execute_create_dir)
 
