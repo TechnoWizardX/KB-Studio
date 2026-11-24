@@ -73,7 +73,7 @@ class Settings(QDialog):
         self.settings_layout.addWidget(self.editor_label)
         self.settings_layout.addWidget(self.editor_frame)
         
-        self.auto_save_checkbox = QCheckBox("Automatically save files")
+        self.auto_save_checkbox = QCheckBox("Automatically save files and graphs")
         self.auto_save_checkbox.setChecked(bool(ConfigManager.get("auto_save")))
         self.auto_save_checkbox.toggled.connect(self.set_auto_save)
         self.editor_frame_layout.addWidget(self.auto_save_checkbox)

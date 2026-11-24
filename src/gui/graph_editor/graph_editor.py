@@ -1472,16 +1472,20 @@ class GraphEditorWidget(QFrame):
         return True
 
     def _auto_save(self) -> None:
-        if (
+        if self._auto_save_pending():
+            self._write_graph()
+
+    def _auto_save_pending(self) -> bool:
+        """True when the shared auto-save rule applies to this graph."""
+        return (
             ConfigManager.get("auto_save")
             and self.file_path is not None
             and self.is_modified
-        ):
-            self._write_graph()
+        )
 
     def on_auto_save_changed(self, enabled: bool) -> None:
         """React to the shared text/graph auto-save setting."""
-        if enabled and self.file_path is not None and self.is_modified:
+        if enabled and self._auto_save_pending():
             self.save_timer.start()
         else:
             self.save_timer.stop()
@@ -1533,14 +1537,8 @@ class GraphEditorWidget(QFrame):
         self.save_button.setEnabled(modified or self.file_path is None)
         title = "Save *" if modified else "Save"
         self.save_button.setText(title)
-        if modified:
-            if (
-                ConfigManager.get("auto_save")
-                and self.file_path is not None
-            ):
-                self.save_timer.start()
-            else:
-                self.save_timer.stop()
+        if self._auto_save_pending():
+            self.save_timer.start()
         else:
             self.save_timer.stop()
         if modified != was_modified:
