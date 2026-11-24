@@ -479,6 +479,10 @@ class ProjectContextMenu(QMenu):
 
         if self.target_path:
             self.addSeparator()
+
+            add_file_to_context = self.addAction("Add file to conversation")
+            add_file_to_context.triggered.connect(lambda: signals.add_file_to_context.emit(str(self.target_path)))
+            self.addSeparator()
             delete_act = QAction("Delete", self)
             delete_act.setShortcut("Del")
             delete_act.triggered.connect(self._delete_act)
@@ -488,6 +492,7 @@ class ProjectContextMenu(QMenu):
             rename_act.setShortcut("F2")
             rename_act.triggered.connect(self._rename_act)
             self.addAction(rename_act)
+
 
     def _create_file_act(self):
         signals.create_file_act.emit()

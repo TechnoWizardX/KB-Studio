@@ -25,4 +25,6 @@ class Signals(QObject):
     show_left_bar = Signal(bool)
     show_bottom_bar = Signal(bool)
     show_right_bar = Signal(bool)
+
+    add_file_to_context = Signal(str)
 signals = Signals()

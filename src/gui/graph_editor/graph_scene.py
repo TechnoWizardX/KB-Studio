@@ -733,6 +733,7 @@ class GraphScene(QGraphicsScene):
             ]
 
             self._build_from_sector(sector)
+            
         finally:
             self._loading = False
 

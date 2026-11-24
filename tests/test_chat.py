@@ -1,5 +1,7 @@
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -7,7 +9,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QApplication
 
-from src.gui.right_sidebar.chat import Message, MessagesBox
+from src.core.signals import signals
+from src.gui.right_sidebar.chat import ChatBot, Message, MessagesBox
+from src.utils.config_manager import ConfigManager
 
 
 class ChatMessageTests(unittest.TestCase):

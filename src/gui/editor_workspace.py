@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal, QPoint
 from PySide6.QtWidgets import (
     QFrame,
     QMessageBox,
@@ -9,8 +9,10 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QTabWidget,
     QVBoxLayout,
-    QWidget,
+    QWidget, 
+    QMenu
 )
+from PySide6.QtGui import QAction, QGuiApplication, QKeySequence, QShortcut
 
 from src.core.signals import signals
 from src.gui.code_editor import CodeEditor, DevPanelWidget
@@ -60,7 +62,8 @@ class EditorWorkspace(QFrame):
         tab_bar.setUsesScrollButtons(True)
         tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
         tab_bar.setDrawBase(False)
-
+        tab_bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        tab_bar.customContextMenuRequested.connect(self._show_tab_menu)
         # The stack keeps the tab bar and the "nothing open" page in the same
         # slot, so the splitter stays a two-panel layout.
         self.editor_area = QStackedWidget()
@@ -91,6 +94,12 @@ class EditorWorkspace(QFrame):
         self._restore_session()
         self._restoring = False
         self._on_current_changed(self.tabs.currentIndex())
+
+        self.close_tab_shortcut = QShortcut(QKeySequence.StandardKey.Close, self)
+        self.close_tab_shortcut.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut
+        )
+        self.close_tab_shortcut.activated.connect(self._close_current_tab)
 
     # ------------------------------------------------------------------
     # Opening documents
@@ -132,6 +141,10 @@ class EditorWorkspace(QFrame):
 
         if activate:
             self.tabs.setCurrentWidget(editor)
+            if isinstance(editor, GraphEditorWidget):
+                editor.view.setFocus()
+            else:
+                editor.setFocus()
         self._persist_open_tabs()
         return editor
 
@@ -147,6 +160,19 @@ class EditorWorkspace(QFrame):
     # ------------------------------------------------------------------
     # Tab bookkeeping
     # ------------------------------------------------------------------
+    def _show_tab_menu(self, position: QPoint) -> None:
+        index = self.tabs.tabBar().tabAt(position)
+        if index < 0:            # ПКМ по пустому месту таб-бара
+            return
+        menu = self._build_tab_menu(index)
+        try:
+            menu.exec(self.tabs.tabBar().mapToGlobal(position))
+        finally:
+            menu.deleteLater()
+
+    def _build_tab_menu(self, index) -> TabContextMenu:
+        return TabContextMenu(self, index)
+    
     def _add_code_tab(self, editor: CodeEditor) -> None:
         safe_file = editor.abs_path
         index = self.tabs.addTab(editor, safe_file.name if safe_file else "Untitled")
@@ -210,13 +236,26 @@ class EditorWorkspace(QFrame):
         self._persist_open_tabs()
         return True
 
+    def close_other_tabs(self, keep: QWidget) -> bool:
+        for index in reversed(range(self.tabs.count())):
+            if self.tabs.widget(index) is keep:
+                continue
+            if not self.close_tab(index):
+                return False
+        return True
+    
     def confirm_close_all(self) -> bool:
         """Ask about every modified document, without closing anything yet."""
         for index in range(self.tabs.count()):
             if not self._confirm_close(self.tabs.widget(index)):
                 return False
         return True
-
+   
+    def _close_current_tab(self) -> None:
+        if self.tabs.count() == 0:  
+            return
+        self.close_tab(self.tabs.currentIndex())
+    
     def _confirm_close(self, widget: QWidget) -> bool:
         if isinstance(widget, GraphEditorWidget):
             return widget.confirm_close()
@@ -458,3 +497,46 @@ class EditorWorkspace(QFrame):
         ConfigManager.set("selected_file", current_file)
         ConfigManager.set("last_viewed_files", open_files)
         ConfigManager.set("last_viewed_file", current_file)
+
+
+class TabContextMenu(QMenu):
+    def __init__(self, workspace : EditorWorkspace, index: int):
+        super().__init__()
+        self.workspace = workspace
+        self.tabs = workspace.tabs
+        self.widget = self.tabs.widget(index)
+        self.setObjectName("ContextMenu")
+        self._build_menu()
+
+    def _build_menu(self) -> None:
+        if self.widget is None:
+            return
+        close_act = self.addAction("Close")
+        close_act.setShortcut("Ctrl+W")
+        close_act.triggered.connect(lambda : self.workspace.close_tab(self.tabs.indexOf(self.widget)))
+
+        close_other_act = self.addAction("Close other")
+        close_other_act.triggered.connect(lambda: self.workspace.close_other_tabs(self.widget))
+
+        close_all_act = self.addAction("Close all tabs")
+        close_all_act.triggered.connect(lambda : self.workspace.clear_workspace(self.tabs.indexOf(self.widget)))
+        
+
+        self.addSeparator()
+
+        path = self._path_of(self.widget) 
+
+        copy_path_act = self.addAction("Copy Path")
+        copy_path_act.setEnabled(path is not None)
+        copy_path_act.triggered.connect( lambda: QGuiApplication.clipboard().setText(str(path)))
+
+        self.addSeparator()
+
+        add_file_to_context = self.addAction("Add file to conversation")
+        add_file_to_context.setEnabled(path is not None)
+        add_file_to_context.triggered.connect(lambda : signals.add_file_to_context.emit(str(path)))
+
+    def _path_of(self, widget: QWidget):
+        if hasattr(widget, "abs_path"):
+            return widget.abs_path
+        return ""

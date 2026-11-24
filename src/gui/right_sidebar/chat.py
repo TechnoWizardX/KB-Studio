@@ -135,6 +135,7 @@ class ChatBot(QFrame):
         signals.theme_changed.connect(self._refresh_icons)
         signals.message_context_count_updated.connect(self._message_context_count_updated)
         signals.startup_message_count_updated.connect(self._startup_message_count_updated)
+        signals.add_file_to_context.connect(self.add_context_file)
 
         try:
             self.history_manager = HistoryManager()
@@ -254,23 +255,23 @@ class ChatBot(QFrame):
         self.messages_box.clear_messages()
         self._update_action_states()
 
+    def add_context_file(self, file_path: str) -> None:
+        """Attach *file_path* to the prompt context and show it in the list."""
+        resolved = str(Path(file_path).resolve())
+        if resolved in self._context_files:
+            return
+        self._context_files.append(resolved)
+        self.files_list.add_file(resolved)
+        self.files_list.show()
+
     def _add_file_to_prompt(self):
         """Open a file dialog to select files and add them to the context for the AI prompt."""
         file_dialog = QFileDialog(self, "Select files to add to prompt")
         file_dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
-        if file_dialog.exec():
-            selected_files = file_dialog.selectedFiles()
-            existing_paths = {str(Path(path).resolve()) for path in self._context_files}
-            added_files = [
-                path for path in selected_files
-                if str(Path(path).resolve()) not in existing_paths
-            ]
-            if not added_files:
-                return
-            self._context_files.extend(added_files)
-            for file_path in added_files:
-                self.files_list.add_file(file_path)
-            self.files_list.show()
+        if not file_dialog.exec():
+            return
+        for file_path in file_dialog.selectedFiles():
+            self.add_context_file(file_path)
 
     def _remove_context_file(self, file_path: str):
         self._context_files = [
