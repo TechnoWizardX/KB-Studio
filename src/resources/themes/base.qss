@@ -414,6 +414,10 @@ QTabBar::tab {
 QTabBar::tab:selected {
     background-color: {{editor_bg}};
     color: {{fg}};
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
 }
 QTabBar::tab:hover:!selected {
     background-color: {{bg_elevated}};
