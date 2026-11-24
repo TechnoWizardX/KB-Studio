@@ -7,6 +7,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPointF
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from src.gui.code_editor import CodeEditor
@@ -114,20 +115,54 @@ class EditorWorkspaceTests(unittest.TestCase):
 
         self.assertTrue(self.workspace.tabs.tabText(0).endswith("*"))
 
-    def test_activating_a_graph_fits_it_into_view(self):
-        text_editor = self._open_text()
-        graph_editor = self.workspace.apply_file(
-            self.root / "diagram.gwf", activate=False
+    def test_graph_autosave_writes_pending_edits_after_a_short_delay(self):
+        editor = self._open_graph()
+
+        editor._create_node_at(QPointF(60, 60))
+
+        self.assertTrue(editor.save_timer.isActive())
+        QTest.qWait(700)
+
+        content = (self.root / "diagram.gwf").read_text(encoding="utf-8")
+        self.assertIn("node_1", content)
+        self.assertFalse(editor.is_modified)
+        self.assertFalse(editor.save_timer.isActive())
+
+    def test_loading_a_graph_does_not_autosave_it(self):
+        editor = self._open_graph()
+
+        self.assertFalse(editor.is_modified)
+        self.assertFalse(editor.save_timer.isActive())
+
+    def test_untitled_graph_is_never_autosaved(self):
+        editor = self.workspace.new_graph()
+
+        editor._create_node_at(QPointF(60, 60))
+        QTest.qWait(700)
+
+        self.assertTrue(editor.is_modified)
+        self.assertEqual(
+            sorted(entry.name for entry in self.root.iterdir()),
+            ["diagram.gwf", "main.scs"],
         )
-        self.assertIs(self.workspace.tabs.currentWidget(), text_editor)
 
-        self.workspace.tabs.setCurrentWidget(graph_editor)
-        self.app.processEvents()
-        self.app.processEvents()
+    def test_text_and_graph_share_the_auto_save_setting(self):
+        text_editor = self._open_text()
+        graph_editor = self._open_graph()
 
-        node = next(iter(graph_editor.scene.nodes.values()))
-        view_position = graph_editor.view.mapFromScene(node.scenePos())
-        self.assertTrue(graph_editor.view.viewport().rect().contains(view_position))
+        ConfigManager._current_config["auto_save"] = False
+        text_editor.insertPlainText("extra text")
+        graph_editor._create_node_at(QPointF(60, 60))
+
+        self.assertFalse(text_editor.save_timer.isActive())
+        self.assertFalse(graph_editor.save_timer.isActive())
+
+        ConfigManager._current_config["auto_save"] = True
+        text_editor.insertPlainText(" more")
+        graph_editor.on_auto_save_changed(True)
+
+        self.assertTrue(text_editor.save_timer.isActive())
+        self.assertTrue(graph_editor.save_timer.isActive())
 
     def test_problems_panel_is_hidden_for_graph_tabs(self):
         self._open_text()
