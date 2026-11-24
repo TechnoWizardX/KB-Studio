@@ -46,6 +46,7 @@ class EditorWorkspace(QFrame):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
 
         self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter.setObjectName("editorWorkspaceSplitter")
         self.splitter.setHandleWidth(6)
         self.splitter.setChildrenCollapsible(False)
         self.splitter.setStretchFactor(0, 1)

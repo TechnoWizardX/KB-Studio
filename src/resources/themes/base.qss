@@ -15,6 +15,10 @@ QSplitter#mainSplitter {
     background-color : transparent;
     border: transparent;
 }
+QSplitter#editorWorkspaceSplitter {
+    background-color: transparent;
+    border: none;
+}
 /* ---- Line Number Area ------------------------------------- */
 QWidget#lineNumberArea {
     background-color: {{number_line_bg}};
@@ -138,9 +142,17 @@ QFrame#codeEditorWidget {
     border: none;
     border-radius: 0;
 }
+QFrame#editorWorkspace {
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+}
 QFrame#devPanelWidget {
     background-color: {{frame_bg}};
     border: 1px solid {{border}};
+    border-radius: 6px;
+}
+QFrame#graphEditorWidget {
     border-radius: 6px;
 }
 QFrame#Terminal {
@@ -204,7 +216,7 @@ QTextEdit:focus, QPlainTextEdit:focus {
 QPlainTextEdit#codeEditor,
 QPlainTextEdit#codeEditor:focus {
     border: 0;
-    border-radius: 0;
+    border-radius: 6px;
 }
 QTextEdit:disabled, QPlainTextEdit:disabled {
     background-color: {{bg_elevated}};
@@ -349,7 +361,8 @@ QStatusBar::item {
 
 /* ---- Splitter --------------------------------------------- */
 QSplitter::handle {
-    background-color: {{border}};
+    background-color: transparent;
+    border: none;
     border-radius: 3px;
 }
 QSplitter::handle:hover {
@@ -371,7 +384,7 @@ QTabWidget#documentTabs {
 }
 QTabWidget#documentTabs::pane {
     border: 0px solid transparent;
-    border-radius: 0;
+    border-radius: 6px;
     background-color: {{editor_bg}};
     margin: 0;
     padding: 0;
@@ -385,7 +398,7 @@ QTabWidget#documentTabs QTabBar {
 }
 QStackedWidget#qt_tabwidget_stackedwidget {
     border: 0;
-    border-radius: 0;
+    border-radius: 6px;
     background-color: {{editor_bg}};
 }
 QTabBar::tab {
