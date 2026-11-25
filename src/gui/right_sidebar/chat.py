@@ -257,6 +257,8 @@ class ChatBot(QFrame):
 
     def add_context_file(self, file_path: str) -> None:
         """Attach *file_path* to the prompt context and show it in the list."""
+        if not file_path:
+            return
         resolved = str(Path(file_path).resolve())
         if resolved in self._context_files:
             return

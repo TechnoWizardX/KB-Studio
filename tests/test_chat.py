@@ -66,3 +66,89 @@ class ChatMessageTests(unittest.TestCase):
         self.assertEqual(message.content, "Hello world")
         self.assertEqual(updates, ["Hello", "Hello world"])
         self.assertEqual(message.label.text(), "Hello world")
+
+
+class ChatPromptContextTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp_dir.name) / "context.scs"
+        self.path.write_text("// context", encoding="utf-8")
+        self.resolved = str(self.path.resolve())
+        self._set_patcher = patch.object(ConfigManager, "set")
+        self._set_patcher.start()
+
+        def fake_ai_setup(bot):
+            bot._display_name = ""
+            bot._model = ""
+            bot._provider = ""
+            bot._base_url = ""
+            bot.models_list = []
+
+        with patch.object(ChatBot, "init_ai_connect", fake_ai_setup), patch(
+            "src.gui.right_sidebar.chat.HistoryManager"
+        ):
+            self.bot = ChatBot()
+
+    def tearDown(self):
+        for signal, slot in (
+            (signals.add_file_to_context, self.bot.add_context_file),
+            (signals.theme_changed, self.bot._refresh_icons),
+            (
+                signals.message_context_count_updated,
+                self.bot._message_context_count_updated,
+            ),
+            (
+                signals.startup_message_count_updated,
+                self.bot._startup_message_count_updated,
+            ),
+        ):
+            try:
+                signal.disconnect(slot)
+            except (RuntimeError, TypeError):
+                pass
+        self.bot.deleteLater()
+        self.app.processEvents()
+        self._set_patcher.stop()
+        self.temp_dir.cleanup()
+
+    def _add_via_signal(self):
+        signals.add_file_to_context.emit(str(self.path))
+        self.app.processEvents()
+
+    def test_signal_attaches_the_file_to_the_prompt_context(self):
+        self.assertEqual(self.bot._context_files, [])
+
+        self._add_via_signal()
+
+        self.assertEqual(self.bot._context_files, [self.resolved])
+        self.assertEqual(list(self.bot.files_list._files), [self.resolved])
+        self.assertFalse(self.bot.files_list.isHidden())
+
+    def test_the_same_file_is_attached_only_once(self):
+        self._add_via_signal()
+        self._add_via_signal()
+
+        self.assertEqual(self.bot._context_files, [self.resolved])
+        self.assertEqual(len(self.bot.files_list._files), 1)
+
+    def test_removing_the_row_drops_the_file_from_the_context(self):
+        self._add_via_signal()
+
+        self.bot.files_list._files[self.resolved].remove_requested.emit(
+            self.resolved
+        )
+        self.app.processEvents()
+
+        self.assertEqual(self.bot._context_files, [])
+        self.assertTrue(self.bot.files_list.isHidden())
+
+    def test_empty_paths_are_ignored(self):
+        signals.add_file_to_context.emit("")
+        self.app.processEvents()
+
+        self.assertEqual(self.bot._context_files, [])
+        self.assertTrue(self.bot.files_list.isHidden())

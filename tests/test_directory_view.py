@@ -7,7 +7,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
 from src.gui.left_sidebar.directory_view import DirectoryTreeViewWidget
@@ -97,3 +97,27 @@ class DirectoryViewTests(unittest.TestCase):
         self.assertFalse(self.widget.name_edit_status)
         self.assertTrue(self.widget.name_edit.isHidden())
         self.assertFalse(any((self.root / "src").iterdir()))
+
+    def test_context_menu_offers_chat_context_only_for_files(self):
+        from src.core.signals import signals
+        from src.gui.left_sidebar.directory_view import ProjectContextMenu
+
+        model = self.widget.dir_view.tree_model
+        file_index = model.index(str(self.root / "README.scs"))
+        file_menu = ProjectContextMenu(self.widget.dir_view, file_index)
+        add_action = next(
+            action
+            for action in file_menu.actions()
+            if action.text() == "Add file to conversation"
+        )
+
+        emitted = QSignalSpy(signals.add_file_to_context)
+        add_action.trigger()
+
+        self.assertEqual(emitted.count(), 1)
+        self.assertEqual(emitted.at(0)[0], str(self.root / "README.scs"))
+
+        dir_index = model.index(str(self.root / "src"))
+        dir_menu = ProjectContextMenu(self.widget.dir_view, dir_index)
+        labels = [action.text() for action in dir_menu.actions()]
+        self.assertNotIn("Add file to conversation", labels)

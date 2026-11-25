@@ -538,6 +538,8 @@ class TabContextMenu(QMenu):
         add_file_to_context.triggered.connect(lambda : signals.add_file_to_context.emit(str(path)))
 
     def _path_of(self, widget: QWidget):
-        if hasattr(widget, "abs_path"):
+        if isinstance(widget, CodeEditor):
             return widget.abs_path
-        return ""
+        if isinstance(widget, GraphEditorWidget):
+            return widget.file_path
+        return None

@@ -480,9 +480,16 @@ class ProjectContextMenu(QMenu):
         if self.target_path:
             self.addSeparator()
 
-            add_file_to_context = self.addAction("Add file to conversation")
-            add_file_to_context.triggered.connect(lambda: signals.add_file_to_context.emit(str(self.target_path)))
-            self.addSeparator()
+            if not self.is_directory:
+                add_file_to_context = self.addAction(
+                    "Add file to conversation"
+                )
+                add_file_to_context.triggered.connect(
+                    lambda: signals.add_file_to_context.emit(
+                        str(self.target_path)
+                    )
+                )
+                self.addSeparator()
             delete_act = QAction("Delete", self)
             delete_act.setShortcut("Del")
             delete_act.triggered.connect(self._delete_act)

@@ -7,6 +7,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPointF
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
@@ -266,3 +267,36 @@ class EditorWorkspaceTests(unittest.TestCase):
         self.assertIsInstance(self.workspace.tabs.widget(1), GraphEditorWidget)
         self.assertEqual(self.workspace.current_kind(), "gwf")
         self.assertTrue(self.workspace.dev_panel_widget.isHidden())
+
+    def test_tab_menu_offers_path_actions_for_every_document_kind(self):
+        text_editor = self._open_text()
+        graph_editor = self._open_graph()
+
+        text_menu = self.workspace._build_tab_menu(0)
+        self.assertTrue(self._menu_action(text_menu, "Copy Path").isEnabled())
+        self.assertTrue(
+            self._menu_action(text_menu, "Add file to conversation").isEnabled()
+        )
+
+        graph_menu = self.workspace._build_tab_menu(1)
+        copy_path = self._menu_action(graph_menu, "Copy Path")
+        self.assertTrue(copy_path.isEnabled())
+        copy_path.trigger()
+        self.assertEqual(
+            QGuiApplication.clipboard().text(), str(graph_editor.file_path)
+        )
+
+    def test_tab_menu_disables_path_actions_for_an_untitled_graph(self):
+        untitled = self.workspace.new_graph()
+        menu = self.workspace._build_tab_menu(
+            self.workspace.tabs.indexOf(untitled)
+        )
+
+        self.assertFalse(self._menu_action(menu, "Copy Path").isEnabled())
+        self.assertFalse(
+            self._menu_action(menu, "Add file to conversation").isEnabled()
+        )
+
+    @staticmethod
+    def _menu_action(menu, text):
+        return next(action for action in menu.actions() if action.text() == text)
