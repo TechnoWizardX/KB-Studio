@@ -12,7 +12,7 @@ The package is split into small, testable pieces:
 - :mod:`find_bar` is the in-editor ``Ctrl+F`` / ``Ctrl+H`` panel.
 """
 
-from src.gui.search.file_index import FileIndex, IndexedFile
+from src.utils.search.file_index import FileIndex, IndexedFile
 from src.gui.search.query import ParsedQuery, parse_query
 from src.gui.search.providers import SearchContext, SearchResult
 

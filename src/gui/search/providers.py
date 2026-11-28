@@ -15,9 +15,9 @@ from typing import Callable
 
 from PySide6.QtGui import QIcon
 
-from src.gui.search.file_index import FileIndex
-from src.gui.search.fuzzy import fuzzy_match
-from src.gui.search.text_search import (
+from src.utils.search.file_index import FileIndex
+from src.utils.search.fuzzy import fuzzy_match
+from src.utils.search.text_search import (
     MAX_RESULTS,
     TextMatch,
     make_snippet,

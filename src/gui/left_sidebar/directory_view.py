@@ -5,13 +5,18 @@ from PySide6.QtCore import QStandardPaths, QPoint, QModelIndex, Qt, QEvent, QTim
 from PySide6.QtGui import QAction
 
 from pathlib import Path
-import shutil
 
 from src.gui.widgets import ElidedLabel, IconButton
 from src.resources.icons import Icons
 from src.core.signals import signals
 from src.utils.config_manager import ConfigManager
-from src.utils.security import safe_path, validate_filename, PathTraversalError, get_project_root
+from src.utils.file_manager import (
+    FileOperationError,
+    bind_file_signals,
+    delete_path,
+    set_creation_base,
+)
+from src.utils.security import safe_path, PathTraversalError, get_project_root
 
 
 class DirectoryTreeViewWidget(QFrame):
@@ -92,8 +97,7 @@ class DirectoryTreeViewWidget(QFrame):
         signals.create_file_act.connect(self.make_new_file)
         signals.create_dir_act.connect(self.make_new_dir)
         signals.select_project_requested.connect(self.select_project)
-        signals.execute_create_file.connect(self.execute_create_file)
-        signals.execute_create_dir.connect(self.execute_create_dir)
+        bind_file_signals(signals)
 
     def _refresh_icons(self, _theme: str) -> None:
         self.select_project_dir_btn.setIcon(Icons.folder_search())
@@ -226,100 +230,16 @@ class DirectoryTreeViewWidget(QFrame):
         self._context_target_index = QModelIndex()
         self.name_edit.hide()
 
-    def _get_valid_base_path(self) -> Path:
-        """Get validated base path within project root."""
-        if self._creation_base_path is not None:
-            return self._creation_base_path
-
-        project_root = get_project_root()
-
-        selected_dir = ConfigManager.get("selected_dir")
-        if selected_dir:
-            try:
-                # Validate selected_dir is within project root
-                selected_path = Path(selected_dir).resolve()
-                selected_path.relative_to(project_root)
-                if selected_path.is_dir():
-                    return selected_path
-            except (OSError, ValueError):
-                # selected_dir is outside project root, fall back to project root
-                pass
-
-        return project_root
-
-    def execute_create_dir(self, name: str) -> None:
-        name = name.strip()
-        try:
-            if not validate_filename(name):
-                QMessageBox.warning(
-                    self, "Invalid name", f"“{name}” is not a valid folder name."
-                )
-                return
-            
-            base_path = self._get_valid_base_path()
-            full_path = safe_path(base_path, name)
-
-            if full_path.exists():
-                QMessageBox.warning(
-                    self,
-                    "Already exists",
-                    f"“{name}” already exists in this folder.",
-                )
-                return
-            
-            full_path.mkdir()
-            signals.status_message.emit(f"Created folder “{name}”")
-            signals.project_files_changed.emit()
-        except PathTraversalError as e:
-            QMessageBox.warning(self, "Security error", str(e))
-        except OSError as e:
-            QMessageBox.critical(
-                self, "Create failed", f"Could not create the folder “{name}”:\n{e}"
-            )
-        except ValueError as e:
-            QMessageBox.critical(self, "Create failed", str(e))
-
-    def execute_create_file(self, name: str) -> None:
-        name = name.strip()
-        try:
-            if not validate_filename(name):
-                QMessageBox.warning(
-                    self, "Invalid name", f"“{name}” is not a valid file name."
-                )
-                return
-            
-            base_path = self._get_valid_base_path()
-            full_path = safe_path(base_path, name)
-            
-            if full_path.exists():
-                QMessageBox.warning(
-                    self,
-                    "Already exists",
-                    f"“{name}” already exists in this folder.",
-                )
-                return
-            
-            with full_path.open("x", encoding="utf-8"):
-                pass
-            signals.status_message.emit(f"Created file “{name}”")
-            signals.project_files_changed.emit()
-        except PathTraversalError as e:
-            QMessageBox.warning(self, "Security error", str(e))
-        except OSError as e:
-            QMessageBox.critical(
-                self, "Create failed", f"Could not create the file “{name}”:\n{e}"
-            )
-        except ValueError as e:
-            QMessageBox.critical(self, "Create failed", str(e))
-
     def create_file_or_dir(self) -> None:
         name = self.name_edit.text()
         self.name_edit_status = False
         self.name_edit.hide()
+        set_creation_base(self._creation_base_path)
         if self.creation_mode == "folder":
             signals.execute_create_dir.emit(name)
         elif self.creation_mode == "file":
             signals.execute_create_file.emit(name)
+        set_creation_base(None)
         self._creation_base_path = None
         self._context_target_index = QModelIndex()
 
@@ -418,15 +338,12 @@ class DirectoryTreeView(QTreeView):
             return
 
         try:
-            if self.tree_model.isDir(index):
-                shutil.rmtree(path)
-            else:
-                path.unlink()
-        except Exception as e:
+            delete_path(path)
+        except FileOperationError as e:
             QMessageBox.critical(
                 self.window(),
                 "Delete failed",
-                f"Could not delete “{Path(path_str).name}”:\n{e}",
+                str(e),
             )
         else:
             signals.status_message.emit(f"Deleted “{Path(path_str).name}”")
@@ -522,15 +439,12 @@ class ProjectContextMenu(QMenu):
             return
 
         try:
-            if self.is_directory:
-                shutil.rmtree(path)
-            else:
-                path.unlink()
-        except Exception as e:
+            delete_path(path)
+        except FileOperationError as e:
             QMessageBox.critical(
                 self.window(),
                 "Delete failed",
-                f"Could not delete “{Path(path_str).name}”:\n{e}",
+                str(e),
             )
         else:
             signals.status_message.emit(f"Deleted “{Path(path_str).name}”")

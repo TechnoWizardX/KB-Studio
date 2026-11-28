@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.core.signals import signals
-from src.gui.search.file_index import FileIndex
+from src.utils.search.file_index import FileIndex
 from src.gui.search.graph_search import (
     available_filters,
     resolve_node_filter,
@@ -54,7 +54,8 @@ from src.gui.search.query import (
     PREFIX_COMMANDS,
     parse_query,
 )
-from src.gui.search.text_search import TextSearchController, text_files
+from src.gui.search.text_search import TextSearchController
+from src.utils.search.text_search import text_files
 from src.utils.config_manager import ConfigManager
 from src.utils.security import get_project_root
 

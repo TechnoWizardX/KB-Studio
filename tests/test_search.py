@@ -7,13 +7,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QLineEdit, QWidget
 
-from src.gui.search.file_index import FileIndex
-from src.gui.search.fuzzy import fuzzy_match
+from src.utils.search.file_index import FileIndex
+from src.utils.search.fuzzy import fuzzy_match
 from src.gui.search.providers import FileSearchProvider, SearchContext, SearchResult, text_results
 from src.gui.search.quick_search import QuickSearchController
 from src.gui.search.quick_search import QuickSearchController
 from src.gui.search.query import parse_query
-from src.gui.search.text_search import (
+from src.utils.search.text_search import (
     MAX_RESULTS,
     TextMatch,
     compile_query,

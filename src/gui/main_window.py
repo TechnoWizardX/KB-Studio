@@ -18,7 +18,11 @@ from src.gui.editor_workspace import EditorWorkspace
 from src.gui.left_sidebar_widget import LeftSidebarWidget
 from src.gui.right_sidebar_widget import RightSidebarWidget
 
+from src.gui.code_editor import CodeEditor
+from src.gui.graph_editor import GraphEditorWidget
+
 from src.gui.toolbar import ToolBar
+from src.gui.menu_bar import MenuBar
 from src.gui.status_bar import AppStatusBar
 from src.gui.search.providers import SearchCommand
 from src.gui.search.quick_search import QuickSearchController
@@ -31,6 +35,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("KB Studio")
 
         self.main_widget = QWidget()
+        self.main_widget.setObjectName("mainWidget")
         self.setCentralWidget(self.main_widget)
 
         self.main_layout = QVBoxLayout()
@@ -41,6 +46,7 @@ class MainWindow(QMainWindow):
         
         self.editor_workspace = EditorWorkspace()
         self.topbar = ToolBar(self.editor_workspace.new_graph)
+        self.setMenuBar(MenuBar(self))
         self.main_layout.addWidget(self.topbar)
         self.editor_workspace.kind_changed.connect(self.topbar.set_editor_mode)
         self.topbar.set_editor_mode(self.editor_workspace.current_kind())
@@ -138,6 +144,12 @@ class MainWindow(QMainWindow):
                 self.topbar.left_show_btn.on_clicked,
             ),
             SearchCommand(
+                "Add file to context",
+                "Add the current file to the context for AI queries",
+                "",
+                self._add_file_to_context,
+            ),
+            SearchCommand(
                 "Toggle problems panel",
                 "Show or hide the problems panel",
                 "",
@@ -156,6 +168,19 @@ class MainWindow(QMainWindow):
                 self.topbar.settings.exec,
             ),
         ]
+    
+    def _path_of(self, widget: QWidget):
+            if isinstance(widget, CodeEditor):
+                return widget.abs_path
+            if isinstance(widget, GraphEditorWidget):
+                return widget.file_path
+            return None
+    
+    def _add_file_to_context(self) -> None:
+        editor = self.editor_workspace.tabs.currentWidget()
+        path = self._path_of(editor)
+        if path:
+            signals.add_file_to_context.emit(str(path))
 
     def _save_active(self) -> None:
         editor = self.editor_workspace.tabs.currentWidget()

@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 
 from src.gui.code_editor import CodeEditor
 from src.gui.graph_editor import GraphEditorWidget
-from src.gui.search.text_search import compile_query
+from src.utils.search.text_search import compile_query
 from src.resources.icons import Icons
 
 MAX_FIND_MATCHES = 5_000
