@@ -1,13 +1,12 @@
-from PySide6.QtCore import QSize
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QSizePolicy,
     QWidget,
 )
 
 from src.gui.settings import Settings
+from src.gui.widgets import IconButton
 from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
 from src.core.signals import signals
@@ -35,12 +34,7 @@ class ToolBar(QWidget):
             "The editor follows the type of the active tab"
         )
 
-        self.new_graph_button = QPushButton()
-        self.new_graph_button.setObjectName("IconButton")
-        self.new_graph_button.setIcon(Icons.new_graph())
-        self.new_graph_button.setIconSize(QSize(24, 24))
-        self.new_graph_button.setFixedSize(QSize(30, 30))
-        self.new_graph_button.setToolTip("New graph")
+        self.new_graph_button = IconButton(Icons.new_graph(), "New graph")
         if new_graph_func is not None:
             self.new_graph_button.clicked.connect(new_graph_func)
 
@@ -81,12 +75,9 @@ class ToolBar(QWidget):
             )
 
 
-class SideBarShowButton (QPushButton):
+class SideBarShowButton(IconButton):
     def __init__(self, config_name, state : bool = True):
         super().__init__()
-        self.setObjectName("IconButton")
-        self.setIconSize(QSize(24, 24))
-        self.setFixedSize(QSize(30, 30))
         self.config_name = config_name
         self.state : bool= state
 

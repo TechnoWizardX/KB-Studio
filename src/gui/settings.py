@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import (QApplication, QWidget, QDialog, QFrame, QLabel, QPushButton, 
                                QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea, QCheckBox,
                                QButtonGroup, QSpinBox)
-from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtCore import Qt, Signal
+from src.gui.widgets import IconButton
 from src.core.signals import signals
 from src.resources.icons import Icons
 from src.utils.config_manager import ConfigManager
@@ -11,12 +12,7 @@ from src.utils.theme_manager import ThemeManager
 class Settings(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.call_button = QPushButton()
-        self.call_button.setObjectName("IconButton")
-        self.call_button.setIcon(Icons.settings())
-        self.call_button.setToolTip("Settings")
-        self.call_button.setIconSize(QSize(24, 24))
-        self.call_button.setFixedSize(QSize(30, 30))
+        self.call_button = IconButton(Icons.settings(), "Settings")
         signals.theme_changed.connect(self._refresh_icon)
 
         self.setWindowTitle("Settings")

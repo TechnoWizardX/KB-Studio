@@ -1,13 +1,13 @@
 from PySide6.QtWidgets import (QTreeView, QFileSystemModel, QFrame, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QPushButton, QFileDialog, QLineEdit,
-                               QMessageBox, QMenu, QFileIconProvider, QSizePolicy)
-from PySide6.QtCore import QStandardPaths, QSize, QPoint, QModelIndex, Qt, QEvent, QTimer
+                               QHBoxLayout, QFileDialog, QLineEdit,
+                               QMessageBox, QMenu, QFileIconProvider)
+from PySide6.QtCore import QStandardPaths, QPoint, QModelIndex, Qt, QEvent, QTimer
 from PySide6.QtGui import QAction
 
 from pathlib import Path
 import shutil
 
-from src.gui.widgets import ElidedLabel
+from src.gui.widgets import ElidedLabel, IconButton
 from src.resources.icons import Icons
 from src.core.signals import signals
 from src.utils.config_manager import ConfigManager
@@ -40,13 +40,9 @@ class DirectoryTreeViewWidget(QFrame):
         self.project_dir_label = ElidedLabel(text=root_path or "")
         self.project_dir_label.setObjectName("TransparentLabel")
         
-        self.select_project_dir_btn = QPushButton()
-        self.select_project_dir_btn.setObjectName("IconButton")
-        self.select_project_dir_btn.setIcon(Icons.folder_search())
-        self.select_project_dir_btn.setIconSize(QSize(24, 24))
-        self.select_project_dir_btn.setFixedSize(QSize(30, 30))
-        self.select_project_dir_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.select_project_dir_btn.setToolTip("Select project folder")
+        self.select_project_dir_btn = IconButton(
+            Icons.folder_search(), "Select project folder"
+        )
         self.select_project_dir_btn.clicked.connect(self.select_project)
         
         self.project_struct_manage_layout.addWidget(self.select_project_dir_btn)
@@ -61,23 +57,11 @@ class DirectoryTreeViewWidget(QFrame):
         # Inline creation row: a line edit overlaid on the tree
         #------------------------------------------------------------------------------
         
-        self.mk_dir_btn = QPushButton()
-        self.mk_dir_btn.setIcon(Icons.folder_add())
-        self.mk_dir_btn.setObjectName("IconButton")
-        self.mk_dir_btn.setFixedSize(QSize(30, 30))
-        self.mk_dir_btn.setIconSize(QSize(24, 24))
-        self.mk_dir_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.mk_dir_btn.setToolTip("New folder")
+        self.mk_dir_btn = IconButton(Icons.folder_add(), "New folder")
         self.project_struct_manage_layout.addWidget(self.mk_dir_btn)
         self.mk_dir_btn.clicked.connect(self.make_new_dir)
 
-        self.mk_file_btn = QPushButton()
-        self.mk_file_btn.setIcon(Icons.file_add())
-        self.mk_file_btn.setObjectName("IconButton")
-        self.mk_file_btn.setFixedSize(QSize(30, 30))
-        self.mk_file_btn.setIconSize(QSize(24, 24))
-        self.mk_file_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.mk_file_btn.setToolTip("New file")
+        self.mk_file_btn = IconButton(Icons.file_add(), "New file")
         self.project_struct_manage_layout.addWidget(self.mk_file_btn)
         self.mk_file_btn.clicked.connect(self.make_new_file)
 

@@ -1,8 +1,9 @@
 from PySide6.QtWidgets import (QWidget, QDialogButtonBox, QFrame, QFormLayout, QSizePolicy,
                                QPushButton, QLabel, QTextEdit, QComboBox, QScrollArea,
                                QVBoxLayout, QHBoxLayout, QDialog, QMessageBox, QLineEdit, QFileDialog)
-from PySide6.QtCore import QSize, QThread, Qt, QTimer, QEvent, QUrl, Signal
+from PySide6.QtCore import QThread, Qt, QTimer, QEvent, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
+from src.gui.widgets import IconButton
 from src.utils.config_manager import ConfigManager
 from src.resources.icons import Icons
 from src.core.ai_worker import AiWorker, DEFAULT_SYSTEM_PROMPT
@@ -41,12 +42,9 @@ class ChatBot(QFrame):
         self.header_title.setObjectName("chatHeaderTitle")
         self.header_layout.addWidget(self.header_title)
         self.header_layout.addStretch()
-        self.clear_history_btn = QPushButton()
-        self.clear_history_btn.setObjectName("IconButton")
-        self.clear_history_btn.setIcon(Icons.delete())
-        self.clear_history_btn.setIconSize(QSize(18, 18))
-        self.clear_history_btn.setFixedSize(QSize(28, 28))
-        self.clear_history_btn.setToolTip("Clear chat history")
+        self.clear_history_btn = IconButton(
+            Icons.delete(), "Clear chat history", size=28, icon_size=18
+        )
         self.clear_history_btn.clicked.connect(self._clear_history)
         self.header_layout.addWidget(self.clear_history_btn)
         self.main_layout.addWidget(self.header)
@@ -82,12 +80,9 @@ class ChatBot(QFrame):
         self.sender_bottom_layout.setSpacing(6)
         self.chat_sender_layout.addLayout(self.sender_bottom_layout)
 
-        self.add_file_to_context_menu = QPushButton()
-        self.add_file_to_context_menu.setObjectName("IconButton")
-        self.add_file_to_context_menu.setIcon(Icons.file_add())
-        self.add_file_to_context_menu.setIconSize(QSize(24, 24))
-        self.add_file_to_context_menu.setFixedSize(QSize(30, 30))
-        self.add_file_to_context_menu.setToolTip("Add files to the prompt context")
+        self.add_file_to_context_menu = IconButton(
+            Icons.file_add(), "Add files to the prompt context"
+        )
         self.add_file_to_context_menu.clicked.connect(self._add_file_to_prompt)
         self.sender_bottom_layout.addWidget(self.add_file_to_context_menu)
 
@@ -96,20 +91,13 @@ class ChatBot(QFrame):
         self.models_combo_box.setToolTip("Model used for AI requests")
         self.sender_bottom_layout.addWidget(self.models_combo_box, 1)
 
-        self.delete_model_btn = QPushButton()
-        self.delete_model_btn.setObjectName("IconButton")
-        self.delete_model_btn.setIcon(Icons.cross())
-        self.delete_model_btn.setIconSize(QSize(24, 24))
-        self.delete_model_btn.setFixedSize(QSize(30, 30))
-        self.delete_model_btn.setToolTip("Delete the selected model")
+        self.delete_model_btn = IconButton(
+            Icons.cross(), "Delete the selected model"
+        )
         self.sender_bottom_layout.addWidget(self.delete_model_btn)
         self.delete_model_btn.clicked.connect(self._delete_model)
 
-        self.send_btn = QPushButton()
-        self.send_btn.setObjectName("IconButton")
-        self.send_btn.setIcon(Icons.send())
-        self.send_btn.setIconSize(QSize(24, 24))
-        self.send_btn.setFixedSize(QSize(30, 30))
+        self.send_btn = IconButton(Icons.send())
         self.sender_bottom_layout.addWidget(self.send_btn)
         self.send_btn.clicked.connect(self._send_or_cancel_request)
 

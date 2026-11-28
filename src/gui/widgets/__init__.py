@@ -6,5 +6,6 @@ packages (``code_editor``, ``graph_editor``, ``left_sidebar``, ...).
 """
 
 from src.gui.widgets.elided_label import ElidedLabel
+from src.gui.widgets.icon_button import IconButton
 
-__all__ = ["ElidedLabel"]
+__all__ = ["ElidedLabel", "IconButton"]

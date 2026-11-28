@@ -31,6 +31,8 @@
   clearly and keep the active theme visually highlighted.
 - Long project paths in the directory sidebar are now shortened with an
   ellipsis; the full path remains available in the tooltip.
+- Consolidated repeated icon-button setup into a shared `IconButton` widget
+  used by the toolbar, sidebars, chat and settings.
 
 ### Build and resources
 
