@@ -29,6 +29,8 @@
   `dark`/`light` icon variants instead of duplicating icons per theme.
 - Updated the settings appearance section to show all available themes more
   clearly and keep the active theme visually highlighted.
+- Long project paths in the directory sidebar are now shortened with an
+  ellipsis; the full path remains available in the tooltip.
 
 ### Build and resources
 

@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QTreeView, QFileSystemModel, QFrame, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QLabel, QPushButton, QFileDialog, QLineEdit,
+                               QHBoxLayout, QPushButton, QFileDialog, QLineEdit,
                                QMessageBox, QMenu, QFileIconProvider, QSizePolicy)
 from PySide6.QtCore import QStandardPaths, QSize, QPoint, QModelIndex, Qt, QEvent, QTimer
 from PySide6.QtGui import QAction
@@ -7,6 +7,7 @@ from PySide6.QtGui import QAction
 from pathlib import Path
 import shutil
 
+from src.gui.widgets import ElidedLabel
 from src.resources.icons import Icons
 from src.core.signals import signals
 from src.utils.config_manager import ConfigManager
@@ -36,10 +37,8 @@ class DirectoryTreeViewWidget(QFrame):
         self.project_struct_manage_layout.setSpacing(4)
         self.project_manage_layout.addLayout(self.project_struct_manage_layout)
 
-        self.project_dir_label = QLabel(text=root_path)
-        self.project_dir_label.setWordWrap(True)
+        self.project_dir_label = ElidedLabel(text=root_path or "")
         self.project_dir_label.setObjectName("TransparentLabel")
-        self.project_dir_label.setToolTip(root_path or "")
         
         self.select_project_dir_btn = QPushButton()
         self.select_project_dir_btn.setObjectName("IconButton")
@@ -165,7 +164,6 @@ class DirectoryTreeViewWidget(QFrame):
             self.project_path = new_folder
             ConfigManager.set("project_dir", new_folder)
             self.project_dir_label.setText(new_folder)
-            self.project_dir_label.setToolTip(new_folder)
 
     def make_new_file(self) -> None:
         self._start_inline_creation("file", "New file name…")
