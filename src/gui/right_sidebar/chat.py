@@ -589,6 +589,8 @@ class EmptyState(QWidget):
 
 
 class MessagesBox(QScrollArea):
+    MESSAGE_WIDTH_RATIO = 0.88
+
     def __init__(self):
         super().__init__()
         self.setObjectName("messagesBox")
@@ -612,13 +614,35 @@ class MessagesBox(QScrollArea):
     def add_message(self, text, author, created_at=None) -> "Message | None":
         self._empty_state.hide()
         message = Message(text, author, created_at)
+        message.setMaximumWidth(self._message_max_width())
         alignment = Qt.AlignmentFlag.AlignLeft if author == "ai" else Qt.AlignmentFlag.AlignRight
-        self.main_layout.insertWidget(self.main_layout.count() - 1, message, alignment)  # before stretch
+        self.main_layout.insertWidget(
+            self.main_layout.count() - 1, message, 0, alignment
+        )
         message.content_changed.connect(self._on_message_grew)
         self._auto_scroll = True
         self._scroll_to_bottom()
         if author == "ai":
             return message
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._update_message_widths)
+
+    def _message_max_width(self) -> int:
+        margins = self.main_layout.contentsMargins()
+        available_width = max(
+            1,
+            self.viewport().width() - margins.left() - margins.right(),
+        )
+        return max(1, int(available_width * self.MESSAGE_WIDTH_RATIO))
+
+    def _update_message_widths(self) -> None:
+        max_width = self._message_max_width()
+        for index in range(self.main_layout.count()):
+            widget = self.main_layout.itemAt(index).widget()
+            if isinstance(widget, Message):
+                widget.setMaximumWidth(max_width)
 
     def clear_messages(self) -> None:
         for index in reversed(range(self.main_layout.count())):
@@ -729,7 +753,7 @@ class Message(QFrame):
         time = message_time.astimezone().strftime("%H:%M")
 
         self.setObjectName("messageUser" if author == "user" else "messageAi")
-        self.setMaximumWidth(380)
+        self.setMinimumWidth(0)
 
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(10, 8, 10, 6)

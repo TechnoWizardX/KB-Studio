@@ -154,7 +154,10 @@ QFrame#devPanelWidget {
 }
 QFrame#graphEditorWidget {
     border-radius: 6px;
+    background-color: {{editor_bg}};
+    border-color: transparent;
 }
+
 QFrame#Terminal {
     border-color: transparent;
 }

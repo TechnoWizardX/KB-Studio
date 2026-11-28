@@ -189,6 +189,7 @@ class GraphEditorWidget(QFrame):
         self.setObjectName("graphEditorWidget")
         self.file_path: Path | None = None
         self.is_modified = False
+    
 
         self.save_timer = QTimer(self)
         self.save_timer.timeout.connect(self._auto_save)
@@ -356,6 +357,7 @@ class GraphEditorWidget(QFrame):
         self.view.tool_changed.connect(self._show_tool)
         self.view.zoom_changed.connect(self._on_view_zoom_changed)
         layout.addWidget(self.view)
+        layout.setContentsMargins(0, 0, 0, 0)
         _install_stall_recorder(self)
 
         self.shortcuts: list[QShortcut] = []

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtWidgets import QApplication
 
 from src.core.signals import signals
@@ -42,6 +42,46 @@ class ChatMessageTests(unittest.TestCase):
         self.assertEqual(ai_message.objectName(), "messageAi")
         self.assertEqual(user_message.role.text(), "You")
         self.assertEqual(ai_message.role.text(), "AI")
+
+    def test_message_width_tracks_available_chat_width_and_keeps_alignment(self):
+        box = MessagesBox()
+        box.resize(360, 480)
+        box.show()
+        ai_message = box.add_message("AI response", "ai")
+        box.add_message("User prompt", "user")
+        user_message = box.main_layout.itemAt(2).widget()
+        self.app.processEvents()
+
+        initial_max_width = ai_message.maximumWidth()
+        expected_width = int(
+            (
+                box.viewport().width()
+                - box.main_layout.contentsMargins().left()
+                - box.main_layout.contentsMargins().right()
+            )
+            * box.MESSAGE_WIDTH_RATIO
+        )
+        self.assertEqual(initial_max_width, expected_width)
+        self.assertEqual(user_message.maximumWidth(), expected_width)
+        self.assertEqual(
+            box.main_layout.itemAt(1).alignment(),
+            Qt.AlignmentFlag.AlignLeft,
+        )
+        self.assertEqual(
+            box.main_layout.itemAt(2).alignment(),
+            Qt.AlignmentFlag.AlignRight,
+        )
+
+        box.resize(520, 480)
+        self.app.processEvents()
+
+        self.assertGreater(ai_message.maximumWidth(), initial_max_width)
+        self.assertEqual(
+            ai_message.maximumWidth(),
+            user_message.maximumWidth(),
+        )
+        box.close()
+        box.deleteLater()
 
     def test_links_open_in_the_default_browser_instead_of_inside_the_label(self):
         message = Message("see [docs](https://example.com)", "ai")
