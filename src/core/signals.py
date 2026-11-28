@@ -9,12 +9,13 @@ class Signals(QObject):
     execute_create_file = Signal(str)
     execute_create_dir = Signal(str)
     delete_act = Signal()
+    save_file_act = Signal()
     
     message_context_count_updated = Signal(int)
     startup_message_count_updated = Signal(int)
     theme_changed = Signal(str)
     auto_save_changed = Signal(bool)
-
+    
     error_occured = Signal(str)
 
     show_left_bar = Signal(bool)

@@ -390,15 +390,20 @@ QDockWidget::close-button:hover, QDockWidget::float-button:hover {
 }
 
 /* ---- Menu Bar --------------------------------------------- */
-QMenuBar {
-    background-color: {{nav_bg}};
+QWidget#menuBarContainer {
+    background: transparent;
+    border-bottom: 1px solid transparent;
+    min-height: 40px;
+}
+QMenuBar#menuBar {
+    background: transparent;
     color: {{fg}};
-    border-bottom: 1px solid {{border}};
-    padding: 2px 4px;
+    border: none;
+    padding: 0 6px;
 }
 QMenuBar::item {
     background: transparent;
-    padding: 4px 10px;
+    padding: 6px 10px;
     border-radius: 4px;
 }
 QMenuBar::item:selected {

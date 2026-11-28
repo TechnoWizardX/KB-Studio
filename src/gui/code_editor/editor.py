@@ -62,6 +62,7 @@ class CodeEditor(QPlainTextEdit):
             Qt.ShortcutContext.WidgetWithChildrenShortcut
         )
         self.shorcut_save_changes.activated.connect(self.save_changes)
+        signals.save_file_act.connect(self.save_changes)
 
         self.line_highlight = ThemeManager.get_color("line_highlight_color")
         self._search_ranges: list[tuple[int, int]] = []

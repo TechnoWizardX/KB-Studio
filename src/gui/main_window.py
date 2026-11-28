@@ -21,7 +21,6 @@ from src.gui.right_sidebar_widget import RightSidebarWidget
 from src.gui.code_editor import CodeEditor
 from src.gui.graph_editor import GraphEditorWidget
 
-from src.gui.toolbar import ToolBar
 from src.gui.menu_bar import MenuBar
 from src.gui.status_bar import AppStatusBar
 from src.gui.search.providers import SearchCommand
@@ -45,15 +44,16 @@ class MainWindow(QMainWindow):
 
         
         self.editor_workspace = EditorWorkspace()
-        self.topbar = ToolBar(self.editor_workspace.new_graph)
-        self.setMenuBar(MenuBar(self))
-        self.main_layout.addWidget(self.topbar)
-        self.editor_workspace.kind_changed.connect(self.topbar.set_editor_mode)
-        self.topbar.set_editor_mode(self.editor_workspace.current_kind())
+        self.menu_bar = MenuBar(self)
+        self.setMenuWidget(self.menu_bar)
+        self.editor_workspace.kind_changed.connect(
+            self.menu_bar.set_editor_mode
+        )
+        self.menu_bar.set_editor_mode(self.editor_workspace.current_kind())
 
         self.search_controller = QuickSearchController(
             self,
-            self.topbar.search_field,
+            self.menu_bar.search_field,
             self.editor_workspace,
             commands=self._search_commands(),
         )
@@ -141,7 +141,7 @@ class MainWindow(QMainWindow):
                 "Toggle project panel",
                 "Show or hide the file tree",
                 "",
-                self.topbar.left_show_btn.on_clicked,
+                self.menu_bar.left_show_btn.on_clicked,
             ),
             SearchCommand(
                 "Add file to context",
@@ -153,19 +153,19 @@ class MainWindow(QMainWindow):
                 "Toggle problems panel",
                 "Show or hide the problems panel",
                 "",
-                self.topbar.bottom_show_btn.on_clicked,
+                self.menu_bar.bottom_show_btn.on_clicked,
             ),
             SearchCommand(
                 "Toggle AI chat",
                 "Show or hide the chat panel",
                 "",
-                self.topbar.right_show_btn.on_clicked,
+                self.menu_bar.right_show_btn.on_clicked,
             ),
             SearchCommand(
                 "Open settings",
                 "Change themes and editor options",
                 "",
-                self.topbar.settings.exec,
+                self.menu_bar.settings.exec,
             ),
         ]
     
