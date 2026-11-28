@@ -254,6 +254,7 @@ class ChatBot(QFrame):
             return
         self.messages_box.clear_messages()
         self._update_action_states()
+        signals.status_message.emit("Chat history cleared")
 
     def add_context_file(self, file_path: str) -> None:
         """Attach *file_path* to the prompt context and show it in the list."""

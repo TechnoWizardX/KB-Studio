@@ -181,6 +181,7 @@ class GraphEditorWidget(QFrame):
     modified_changed = Signal(bool)
     file_changed = Signal(str)
     new_graph_requested = Signal()
+    zoom_changed = Signal(int)  # canvas zoom in percent
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -357,6 +358,7 @@ class GraphEditorWidget(QFrame):
         )
         self.view.tool_error.connect(self._show_tool_error)
         self.view.tool_changed.connect(self._show_tool)
+        self.view.zoom_changed.connect(self._on_view_zoom_changed)
         layout.addWidget(self.view)
         _install_stall_recorder(self)
 
@@ -408,10 +410,12 @@ class GraphEditorWidget(QFrame):
         self.tool_buttons[GraphCanvasView.SELECT].setChecked(True)
         self.view.tool_changed.connect(self._sync_tool_button)
 
+        # The shared window status bar reports messages now; the label is
+        # kept as the graph editor's own record (and for tests).
         self.status_label = QLineEdit()
         self.status_label.setReadOnly(True)
         self.status_label.setObjectName("graphEditorStatus")
-        layout.addWidget(self.status_label)
+        self.status_label.hide()
 
         self.scene.model_changed.connect(self._mark_modified)
         self.scene.selectionChanged.connect(self._sync_type_selectors)
@@ -424,7 +428,19 @@ class GraphEditorWidget(QFrame):
             self._apply_selected_connector_type
         )
         self._mark_modified(False)
-        self.status_label.setText("Create a graph or open a .gwf file.")
+        self._set_status("Create a graph or open a .gwf file.")
+
+    def zoom_percent(self) -> int:
+        """Current canvas zoom as an integer percentage."""
+        return round(self.view.transform().m11() * 100)
+
+    def _on_view_zoom_changed(self, _scale: float) -> None:
+        self.zoom_changed.emit(self.zoom_percent())
+
+    def _set_status(self, message: str) -> None:
+        """Keep the local record and surface the message in the status bar."""
+        self.status_label.setText(message)
+        signals.status_message.emit(message)
 
     def _on_theme_changed(self, theme_name: str) -> None:
         """Restyle the canvas: QSS covers the widgets, the scene paints
@@ -467,7 +483,7 @@ class GraphEditorWidget(QFrame):
                 f" Converted {migrated} rrel node(s) from a relation type to"
                 " the role type — save to apply."
             )
-        self.status_label.setText(status)
+        self._set_status(status)
 
     def new_graph(self) -> None:
         if not self._confirm_replace_current_graph():
@@ -477,7 +493,7 @@ class GraphEditorWidget(QFrame):
         self.file_changed.emit("")
         self._mark_modified(True)
         self.undo_stack.clear()
-        self.status_label.setText("New graph — save it as a .gwf file.")
+        self._set_status("New graph — save it as a .gwf file.")
 
     def _create_node_at(
         self,
@@ -655,7 +671,7 @@ class GraphEditorWidget(QFrame):
         self._apply_positions(positions)
 
     def _show_tool_error(self, message: str) -> None:
-        self.status_label.setText(message)
+        self._set_status(message)
 
     def _on_waypoints_changed(self, edge, old_waypoints, new_waypoints) -> None:
         self.undo_stack.push(
@@ -681,7 +697,7 @@ class GraphEditorWidget(QFrame):
         self.undo_stack.push(CommandRenameNode(self.scene, node, identifier))
 
     def _show_tool(self, tool: str) -> None:
-        self.status_label.setText(
+        self._set_status(
             {
                 GraphCanvasView.SELECT: "Select and move SCg objects.",
                 GraphCanvasView.NODE: "Click the canvas to create a node.",
@@ -1024,7 +1040,7 @@ class GraphEditorWidget(QFrame):
         ]
         for bus in buses:
             bus.setSelected(True)
-        self.status_label.setText(
+        self._set_status(
             f"Selected {len(related)} incoming/outgoing nodes and {len(buses)} buses."
         )
 
@@ -1047,7 +1063,7 @@ class GraphEditorWidget(QFrame):
         except ValueError as error:
             self._show_tool_error(str(error))
             return
-        self.status_label.setText(f"Created a contour around {len(selected)} objects.")
+        self._set_status(f"Created a contour around {len(selected)} objects.")
 
     def _add_note_at(self, position: QPointF) -> None:
         text = QInputDialog.getMultiLineText(
@@ -1056,7 +1072,7 @@ class GraphEditorWidget(QFrame):
         if not text:
             return
         self.undo_stack.push(CommandCreateNote(self.scene, position, text))
-        self.status_label.setText("Added a canvas note.")
+        self._set_status("Added a canvas note.")
 
     def _edit_note(self, note: GraphNote) -> None:
         text = QInputDialog.getMultiLineText(
@@ -1070,10 +1086,10 @@ class GraphEditorWidget(QFrame):
         closure = copy_closure(self.scene, {anchor})
         fragment = copy_fragment_closure(self.scene, [anchor])
         if not fragment:
-            self.status_label.setText("Nothing to copy.")
+            self._set_status("Nothing to copy.")
             return
         self._put_fragment_in_clipboard(fragment)
-        self.status_label.setText(f"Copied {len(closure)} linked objects.")
+        self._set_status(f"Copied {len(closure)} linked objects.")
 
     def _copy_closed_fragment_of_selection(self) -> None:
         anchor = next(
@@ -1085,7 +1101,7 @@ class GraphEditorWidget(QFrame):
             None,
         )
         if anchor is None:
-            self.status_label.setText(
+            self._set_status(
                 "Select a node to copy its incoming/outgoing links."
             )
             return
@@ -1095,10 +1111,10 @@ class GraphEditorWidget(QFrame):
             item.setSelected(True)
         fragment = copy_fragment_closure(self.scene, [anchor])
         if not fragment:
-            self.status_label.setText("Nothing to copy.")
+            self._set_status("Nothing to copy.")
             return
         self._put_fragment_in_clipboard(fragment)
-        self.status_label.setText(f"Copied {len(closure)} linked objects.")
+        self._set_status(f"Copied {len(closure)} linked objects.")
 
     def _put_fragment_in_clipboard(self, fragment: str) -> None:
         mime = QMimeData()
@@ -1162,6 +1178,7 @@ class GraphEditorWidget(QFrame):
             bounds.adjusted(-24, -24, 24, 24),
             Qt.AspectRatioMode.KeepAspectRatio,
         )
+        self.zoom_changed.emit(self.zoom_percent())
 
     def export_image(self) -> None:
         selected_path, _ = QFileDialog.getSaveFileName(
@@ -1190,7 +1207,7 @@ class GraphEditorWidget(QFrame):
         if not image.save(str(output_path)):
             self._show_tool_error(f"Could not export image to {output_path}.")
             return
-        self.status_label.setText(f"Exported {output_path.name}.")
+        self._set_status(f"Exported {output_path.name}.")
 
     def rename_selected(self) -> None:
         nodes = [
@@ -1249,31 +1266,31 @@ class GraphEditorWidget(QFrame):
     def copy_selection(self) -> None:
         selected = self._selected_graph_objects()
         if not selected:
-            self.status_label.setText("Select objects to copy.")
+            self._set_status("Select objects to copy.")
             return
         fragment = self.scene.copy_fragment(selected)
         if not fragment:
-            self.status_label.setText(
+            self._set_status(
                 "Nothing to copy — a connector needs both ends in the selection."
             )
             return
         self._put_fragment_in_clipboard(fragment)
-        self.status_label.setText(f"Copied {len(selected)} objects.")
+        self._set_status(f"Copied {len(selected)} objects.")
 
     def cut_selection(self) -> None:
         selected = self._selected_graph_objects()
         if not selected:
-            self.status_label.setText("Select objects to cut.")
+            self._set_status("Select objects to cut.")
             return
         fragment = self.scene.copy_fragment(selected)
         if not fragment:
-            self.status_label.setText(
+            self._set_status(
                 "Nothing to cut — a connector needs both ends in the selection."
             )
             return
         self._put_fragment_in_clipboard(fragment)
         self.remove_selected()
-        self.status_label.setText(f"Cut {len(selected)} objects.")
+        self._set_status(f"Cut {len(selected)} objects.")
 
     def paste_at(
         self, scene_pos: QPointF | None = None, in_place: bool = False
@@ -1288,12 +1305,12 @@ class GraphEditorWidget(QFrame):
             elif mime.hasText():
                 source = mime.text()
         if not source.strip():
-            self.status_label.setText("Clipboard has no graph fragment.")
+            self._set_status("Clipboard has no graph fragment.")
             return
         try:
             _, sector, _ = parse_gwf_document(source)
         except ValueError as error:
-            self.status_label.setText(f"Cannot paste: {error}")
+            self._set_status(f"Cannot paste: {error}")
             return
         if in_place:
             # no geometry shift: the fragment keeps its source coordinates
@@ -1307,10 +1324,10 @@ class GraphEditorWidget(QFrame):
         prepared = self.scene.prepare_paste_fragment(sector, target)
         count = len(prepared)
         if not count:
-            self.status_label.setText("Clipboard has no supported graph objects.")
+            self._set_status("Clipboard has no supported graph objects.")
             return
         self.undo_stack.push(CommandPasteObjects(self.scene, prepared))
-        self.status_label.setText(f"Pasted {count} objects.")
+        self._set_status(f"Pasted {count} objects.")
 
     def _copy_if_not_editing(self) -> None:
         if not self._label_editor_active():
@@ -1350,14 +1367,14 @@ class GraphEditorWidget(QFrame):
         if len(notes) == 1:
             self._edit_note(notes[0])
             return
-        self.status_label.setText("Select one node or note to edit.")
+        self._set_status("Select one node or note to edit.")
 
     def _edit_selected_content(self) -> None:
         if self._label_editor_active():
             return
         nodes = self._selected_nodes()
         if len(nodes) != 1:
-            self.status_label.setText("Select one node to edit its content.")
+            self._set_status("Select one node to edit its content.")
             return
         self._open_content_editor(nodes[0])
 
@@ -1366,7 +1383,7 @@ class GraphEditorWidget(QFrame):
             return
         nodes = self._selected_nodes()
         if len(nodes) != 1:
-            self.status_label.setText(
+            self._set_status(
                 "Select one node to select its incoming/outgoing nodes."
             )
             return
@@ -1380,7 +1397,7 @@ class GraphEditorWidget(QFrame):
         if self._label_editor_active():
             return
         if not self._selected_graph_objects():
-            self.status_label.setText("Select objects to wrap in a contour.")
+            self._set_status("Select objects to wrap in a contour.")
             return
         self._wrap_selection_in_contour()
 
@@ -1393,7 +1410,7 @@ class GraphEditorWidget(QFrame):
             if isinstance(item, GraphEdge) and item.gwf_tag == "pair"
         ]
         if len(pairs) != 1:
-            self.status_label.setText("Select one pair connector to reverse.")
+            self._set_status("Select one pair connector to reverse.")
             return
         self._swap_connector(pairs[0])
 
@@ -1468,7 +1485,7 @@ class GraphEditorWidget(QFrame):
         self.file_path = safe_file
         self.file_changed.emit(str(safe_file))
         self._mark_modified(False)
-        self.status_label.setText(f"Saved {self.file_path.name}.")
+        self._set_status(f"Saved {self.file_path.name}.")
         return True
 
     def _auto_save(self) -> None:

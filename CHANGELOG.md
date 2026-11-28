@@ -4,6 +4,10 @@
 
 ### Added
 
+- Added a shared status bar at the bottom of the main window. It shows the
+  active document path, editor kind, cursor position, save state, syntax
+  problems and graph zoom, and surfaces short-lived notifications such as
+  created, deleted or saved files.
 - Added a new theme selection interface in Settings with a three-column card
   grid and live previews of the main palette colors.
 - Added the following application themes:

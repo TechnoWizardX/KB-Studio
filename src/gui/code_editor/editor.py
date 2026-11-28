@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 class CodeEditor(QPlainTextEdit):
     syntax_status_changed = Signal(object)
+    cursor_moved = Signal(int, int)
+
     parser = SCSParser()
     bracket_pairs = {"(": ")", "[": "]", "{": "}"}
     closing_brackets = {
@@ -85,6 +87,15 @@ class CodeEditor(QPlainTextEdit):
         signals.auto_save_changed.connect(self.on_auto_save_changed)
         if self.abs_path is not None:
             self.load_file(self.abs_path)
+
+        self.cursorPositionChanged.connect(self._emit_cursor_position)
+
+    def _emit_cursor_position(self) -> None:
+        cursor = self.textCursor()
+        self.cursor_moved.emit(
+            cursor.blockNumber() + 1,
+            cursor.positionInBlock() + 1,
+        )
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         cursor = self.textCursor()

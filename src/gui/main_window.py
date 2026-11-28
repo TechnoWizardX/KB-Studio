@@ -18,6 +18,7 @@ from src.gui.left_sidebar_widget import LeftSidebarWidget
 from src.gui.right_sidebar_widget import RightSidebarWidget
 
 from src.gui.toolbar import ToolBar
+from src.gui.status_bar import AppStatusBar
 from src.core.signals import signals
 
 class MainWindow(QMainWindow):
@@ -60,6 +61,22 @@ class MainWindow(QMainWindow):
 
         signals.error_occured.connect(self.show_error)
         signals.selected_new_file.connect(self._on_file_selected)
+
+        self.status_bar = AppStatusBar(self)
+        self.setStatusBar(self.status_bar)
+        self.editor_workspace.document_changed.connect(
+            self.status_bar.set_document
+        )
+        self.editor_workspace.cursor_moved.connect(self.status_bar.set_cursor)
+        self.editor_workspace.save_state_changed.connect(
+            self.status_bar.set_save_state
+        )
+        self.editor_workspace.problems_changed.connect(
+            self.status_bar.set_problems
+        )
+        self.editor_workspace.zoom_changed.connect(self.status_bar.set_zoom)
+        signals.status_message.connect(self.status_bar.flash)
+        self.editor_workspace.refresh_status()
 
     def _on_file_selected(self, file_path: str) -> None:
         """Open a file from the sidebar in the matching editor tab."""

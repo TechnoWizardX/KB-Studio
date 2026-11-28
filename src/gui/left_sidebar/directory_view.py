@@ -285,6 +285,7 @@ class DirectoryTreeViewWidget(QFrame):
                 return
             
             full_path.mkdir()
+            signals.status_message.emit(f"Created folder “{name}”")
         except PathTraversalError as e:
             QMessageBox.warning(self, "Security error", str(e))
         except OSError as e:
@@ -316,6 +317,7 @@ class DirectoryTreeViewWidget(QFrame):
             
             with full_path.open("x", encoding="utf-8"):
                 pass
+            signals.status_message.emit(f"Created file “{name}”")
         except PathTraversalError as e:
             QMessageBox.warning(self, "Security error", str(e))
         except OSError as e:
@@ -438,6 +440,8 @@ class DirectoryTreeView(QTreeView):
                 "Delete failed",
                 f"Could not delete “{Path(path_str).name}”:\n{e}",
             )
+        else:
+            signals.status_message.emit(f"Deleted “{Path(path_str).name}”")
 
     def mouseDoubleClickEvent(self, event):
             index = self.indexAt(event.position().toPoint())
@@ -539,3 +543,5 @@ class ProjectContextMenu(QMenu):
                 "Delete failed",
                 f"Could not delete “{Path(path_str).name}”:\n{e}",
             )
+        else:
+            signals.status_message.emit(f"Deleted “{Path(path_str).name}”")

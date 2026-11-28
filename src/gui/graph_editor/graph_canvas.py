@@ -28,6 +28,7 @@ CONTOUR_SNAP_RADIUS_PX = 12.0
 class GraphCanvasView(QGraphicsView):
     tool_error = Signal(str)
     tool_changed = Signal(str)
+    zoom_changed = Signal(float)  # current scale factor
 
     SELECT = "select"
     NODE = "node"
@@ -103,6 +104,7 @@ class GraphCanvasView(QGraphicsView):
         target_scale = current_scale * factor
         if 0.15 <= target_scale <= 8.0:
             self.scale(factor, factor)
+            self.zoom_changed.emit(self.transform().m11())
 
     def zoom_in(self) -> None:
         self.zoom(1.2)

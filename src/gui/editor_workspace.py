@@ -33,6 +33,11 @@ class EditorWorkspace(QFrame):
     """
 
     kind_changed = Signal(str)
+    document_changed = Signal(str, str)   # path, kind ("scs"/"gwf"/"")
+    cursor_moved = Signal(int, int)       # 1-based line, column
+    save_state_changed = Signal(bool)     # active document is modified
+    problems_changed = Signal(bool)       # active text file has a syntax error
+    zoom_changed = Signal(int)            # graph zoom in percent, 0 = n/a
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent=parent)
@@ -189,6 +194,7 @@ class EditorWorkspace(QFrame):
                 current_editor, modified
             )
         )
+        editor.cursor_moved.connect(self._on_cursor_moved)
         self._set_close_button(index, editor)
 
     def _add_graph_tab(self, editor: GraphEditorWidget) -> None:
@@ -205,6 +211,7 @@ class EditorWorkspace(QFrame):
             )
         )
         editor.new_graph_requested.connect(self.new_graph)
+        editor.zoom_changed.connect(self._on_graph_zoom_changed)
         self._set_close_button(index, editor)
 
     def _set_close_button(self, index: int, widget: QWidget) -> None:
@@ -307,6 +314,7 @@ class EditorWorkspace(QFrame):
         ConfigManager.set("last_viewed_files", [])
         self._persist_open_tabs()
         self.kind_changed.emit("")
+        self._emit_status(None)
 
     # ------------------------------------------------------------------
     # Active document
@@ -322,6 +330,7 @@ class EditorWorkspace(QFrame):
             )
         if not self._restoring:
             self._persist_open_tabs()
+        self._emit_status(editor)
 
     def current_kind(self) -> str:
         return self._kind_of(self.tabs.currentWidget())
@@ -339,11 +348,65 @@ class EditorWorkspace(QFrame):
             return "scs"
         return ""
 
+    @staticmethod
+    def _document_path(widget: QWidget | None) -> Path | None:
+        if isinstance(widget, CodeEditor):
+            return widget.abs_path
+        if isinstance(widget, GraphEditorWidget):
+            return widget.file_path
+        return None
+
+    def refresh_status(self) -> None:
+        """Push the current document state to status listeners.
+
+        The workspace is built before the status bar exists, so the main
+        window calls this once after connecting the signals.
+        """
+        self._emit_status(self.tabs.currentWidget())
+
+    def _emit_status(self, editor: QWidget | None) -> None:
+        """Publish the state of *editor* as one coherent snapshot."""
+        kind = self._kind_of(editor)
+        path = self._document_path(editor)
+        self.document_changed.emit(str(path) if path is not None else "", kind)
+
+        if isinstance(editor, CodeEditor):
+            cursor = editor.textCursor()
+            self.cursor_moved.emit(
+                cursor.blockNumber() + 1, cursor.positionInBlock() + 1
+            )
+            self.save_state_changed.emit(editor.document().isModified())
+            self.problems_changed.emit(bool(editor.syntax_error))
+            self.zoom_changed.emit(0)
+        elif isinstance(editor, GraphEditorWidget):
+            self.save_state_changed.emit(editor.is_modified)
+            self.problems_changed.emit(False)
+            self.zoom_changed.emit(editor.zoom_percent())
+        else:
+            self.save_state_changed.emit(False)
+            self.problems_changed.emit(False)
+            self.zoom_changed.emit(0)
+
+    def _on_cursor_moved(self, line: int, column: int) -> None:
+        """Forward cursor moves from the active text editor only."""
+        editor = self.sender()
+        if editor is not None and editor is not self.tabs.currentWidget():
+            return
+        self.cursor_moved.emit(line, column)
+
+    def _on_graph_zoom_changed(self, percent: int) -> None:
+        """Forward zoom changes from the active graph editor only."""
+        editor = self.sender()
+        if editor is not None and editor is not self.tabs.currentWidget():
+            return
+        self.zoom_changed.emit(percent)
+
     def _on_code_diagnostics(
         self, editor: CodeEditor, error: str | None
     ) -> None:
         if self.tabs.currentWidget() is editor:
             self.dev_panel_widget.problems_wgt.show_diagnostics(error)
+            self.problems_changed.emit(bool(error))
 
     def _update_code_title(self, editor: CodeEditor, modified: bool) -> None:
         index = self.tabs.indexOf(editor)
@@ -351,6 +414,8 @@ class EditorWorkspace(QFrame):
             return
         name = Path(editor.abs_path).name if editor.abs_path else "Untitled"
         self.tabs.setTabText(index, f"{name} *" if modified else name)
+        if self.tabs.currentWidget() is editor:
+            self.save_state_changed.emit(modified)
 
     def _update_graph_title(
         self, editor: GraphEditorWidget, _modified: bool
@@ -359,6 +424,8 @@ class EditorWorkspace(QFrame):
         if index < 0:
             return
         self.tabs.setTabText(index, self._graph_tab_title(editor))
+        if self.tabs.currentWidget() is editor:
+            self.save_state_changed.emit(editor.is_modified)
 
     def _on_graph_file_changed(self, editor: GraphEditorWidget) -> None:
         index = self.tabs.indexOf(editor)
@@ -366,6 +433,10 @@ class EditorWorkspace(QFrame):
             return
         self.tabs.setTabText(index, self._graph_tab_title(editor))
         self.tabs.setTabToolTip(index, self._graph_tooltip(editor))
+        if self.tabs.currentWidget() is editor:
+            self.document_changed.emit(
+                str(editor.file_path) if editor.file_path else "", "gwf"
+            )
         self._persist_open_tabs()
 
     def _graph_tab_title(self, editor: GraphEditorWidget) -> str:

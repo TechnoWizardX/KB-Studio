@@ -358,6 +358,44 @@ QStatusBar {
 QStatusBar::item {
     border: none;
 }
+QStatusBar#appStatusBar {
+    background: transparent;
+    color: {{fg_dim}};
+    border: none;
+    padding: 0 8px;
+    min-height: 30px;
+}
+QStatusBar#appStatusBar QLabel {
+    background: transparent;
+    border: none;
+    color: {{fg_dim}};
+    padding: 0 8px;
+    font-size: 12pt;
+}
+QStatusBar#appStatusBar QLabel#statusPath {
+    color: {{fg_dim}};
+}
+QStatusBar#appStatusBar QLabel#statusKind {
+    color: {{fg}};
+    font-weight: 600;
+}
+QStatusBar#appStatusBar QLabel#statusCursor {
+    color: {{fg}};
+    font-family: "JetBrains Mono", "Cascadia Mono", "Consolas",
+                 "DejaVu Sans Mono", monospace;
+}
+QStatusBar#appStatusBar QLabel#statusZoom {
+    color: {{fg_dim}};
+}
+QStatusBar#appStatusBar QLabel#statusProblems {
+    color: {{warning}};
+}
+QStatusBar#appStatusBar QLabel#statusSave {
+    color: {{fg_muted}};
+}
+QStatusBar#appStatusBar QLabel#statusSave[modified="true"] {
+    color: {{warning}};
+}
 
 /* ---- Splitter --------------------------------------------- */
 QSplitter::handle {
