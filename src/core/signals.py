@@ -23,6 +23,10 @@ class Signals(QObject):
 
     add_file_to_context = Signal(str)
 
+    # Emitted after files/folders are created, renamed or deleted so the
+    # quick-search index can refresh without rescanning on every keystroke.
+    project_files_changed = Signal()
+
     # Short-lived feedback for the shared status bar ("Created file …").
     status_message = Signal(str)
 

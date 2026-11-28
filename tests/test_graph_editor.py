@@ -373,9 +373,12 @@ class GraphSceneTests(unittest.TestCase):
         editor.resize(900, 600)
         editor.show()
         node = editor.scene.add_node("SearchTarget", QPoint(900, 250))
-        editor.search_edit.setText("searchtarget")
+        editor.scene.add_node("OtherNode", QPoint(100, 100))
 
-        editor.find_node()
+        matches = editor.search_nodes("searchtarget")
+
+        self.assertEqual(matches, [node])
+        editor.activate_search_result(matches[0])
 
         self.assertTrue(node.isSelected())
         self.assertAlmostEqual(

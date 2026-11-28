@@ -290,6 +290,79 @@ QLineEdit:disabled {
     border-color: {{border}};
 }
 
+/* ---- Quick search and find bar ----------------------------- */
+QLineEdit#quickSearchField {
+    background-color: {{input_bg}};
+    color: {{input_fg}};
+    border: 1px solid {{input_border}};
+    border-radius: 6px;
+    padding: 4px 10px;
+    min-height: 22px;
+}
+QLineEdit#quickSearchField:hover {
+    border-color: {{border_hover}};
+}
+QLineEdit#quickSearchField:focus {
+    border: 1px solid {{input_border_focus}};
+}
+QFrame#searchPopup {
+    background-color: {{bg_elevated}};
+    border: 1px solid {{border}};
+    border-radius: 6px;
+}
+QListWidget#searchPopupList {
+    background-color: transparent;
+    border: none;
+    outline: none;
+}
+QListWidget#searchPopupList::item {
+    border: none;
+    padding: 0;
+}
+QFrame#findBar {
+    background-color: {{bg_elevated}};
+    border: 1px solid {{border}};
+    border-radius: 6px;
+}
+QLineEdit#findQueryEdit,
+QLineEdit#findReplaceEdit {
+    background-color: {{input_bg}};
+    color: {{input_fg}};
+    border: 1px solid {{input_border}};
+    border-radius: 4px;
+    padding: 3px 6px;
+}
+QLineEdit#findQueryEdit:focus,
+QLineEdit#findReplaceEdit:focus {
+    border-color: {{border_focus}};
+}
+QLabel#findCounter {
+    color: {{fg_dim}};
+    font-size: 11px;
+}
+QLabel#findError {
+    color: {{error}};
+    font-size: 11px;
+}
+QToolButton#findBarButton,
+QToolButton#findBarToggle,
+QToolButton#findBarTextButton {
+    background: transparent;
+    color: {{fg}};
+    border: none;
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+QToolButton#findBarButton:hover,
+QToolButton#findBarToggle:hover,
+QToolButton#findBarTextButton:hover {
+    background-color: {{hover}};
+}
+QToolButton#findBarToggle:checked {
+    background-color: {{selection}};
+    color: {{fg}};
+}
+
 /* ---- Dock Widgets ----------------------------------------- */
 QDockWidget {
     background-color: {{frame_bg}};

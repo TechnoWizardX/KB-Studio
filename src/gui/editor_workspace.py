@@ -18,6 +18,7 @@ from src.core.signals import signals
 from src.gui.code_editor import CodeEditor, DevPanelWidget
 from src.gui.empty_editor_state import EmptyEditorState
 from src.gui.graph_editor import GraphEditorWidget
+from src.gui.search.find_bar import EditorFindController
 from src.resources.icons import Icons
 from src.utils.config_manager import ConfigManager
 from src.utils.security import get_project_root, safe_path
@@ -97,6 +98,7 @@ class EditorWorkspace(QFrame):
         signals.show_bottom_bar.connect(self.set_dev_panel_visible)
         signals.selected_new_project_folder.connect(self.clear_workspace)
 
+        self.find_controller = EditorFindController(self)
         self._restore_session()
         self._restoring = False
         self._on_current_changed(self.tabs.currentIndex())
@@ -211,6 +213,7 @@ class EditorWorkspace(QFrame):
             )
         )
         editor.new_graph_requested.connect(self.new_graph)
+        editor.find_requested.connect(self.find_controller.open_find)
         editor.zoom_changed.connect(self._on_graph_zoom_changed)
         self._set_close_button(index, editor)
 

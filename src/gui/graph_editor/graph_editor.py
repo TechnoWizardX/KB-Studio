@@ -181,6 +181,7 @@ class GraphEditorWidget(QFrame):
     modified_changed = Signal(bool)
     file_changed = Signal(str)
     new_graph_requested = Signal()
+    find_requested = Signal()
     zoom_changed = Signal(int)  # canvas zoom in percent
 
     def __init__(self, parent: QWidget | None = None):
@@ -278,16 +279,11 @@ class GraphEditorWidget(QFrame):
 
         add_separator(toolbar)
 
-        self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Find node")
-        self.search_edit.setToolTip(
-            "Find a node by its exact identifier. Press Enter to search."
-        )
-        self.search_edit.returnPressed.connect(self.find_node)
-        toolbar.addWidget(self.search_edit)
-
         self.find_button = add_button(
-            toolbar, Icons.find(), "Find node", self.find_node
+            toolbar,
+            Icons.find(),
+            "Find nodes (Ctrl+F)",
+            self.find_requested.emit,
         )
 
         add_separator(toolbar)
@@ -1148,27 +1144,49 @@ class GraphEditorWidget(QFrame):
         except ValueError as error:
             self._show_tool_error(str(error))
 
-    def find_node(self) -> None:
-        query = self.search_edit.text().strip().casefold()
+    def search_nodes(
+        self,
+        text: str,
+        *,
+        case_sensitive: bool = False,
+        visual_order: bool = True,
+    ) -> list:
+        """Return nodes whose identifier, label or content matches *text*.
+
+        The shared find bar walks results in visual order (top-to-bottom,
+        left-to-right) so repeated ``Enter`` presses feel predictable. Quick
+        open uses the relevance-sorted engine from
+        :mod:`src.gui.search.graph_search` instead.
+        """
+        from src.gui.search.graph_search import score_node
+
+        query = text.strip()
         if not query:
-            self._show_tool_error("Enter a node identifier to find.")
-            return
-        node = next(
-            (
-                candidate
-                for candidate in self.scene.nodes.values()
-                if candidate.identifier.casefold() == query
-                or candidate.gwf_idtf.casefold() == query
-            ),
-            None,
-        )
-        if node is None:
-            self._show_tool_error(f"No node found for '{self.search_edit.text()}'.")
+            return []
+        matches = [
+            node
+            for node in self.scene.nodes.values()
+            if score_node(node, query, case_sensitive=case_sensitive) > 0
+        ]
+        if visual_order:
+            matches.sort(
+                key=lambda node: (
+                    node.scenePos().y(),
+                    node.scenePos().x(),
+                    node.identifier.casefold(),
+                )
+            )
+        return matches
+
+    def activate_search_result(self, node, *, focus: bool = True) -> None:
+        """Select and centre a node found by the shared find bar."""
+        if node.scene() is not self.scene:
             return
         self.scene.clearSelection()
         node.setSelected(True)
         self.view.centerOn(node)
-        self.view.setFocus()
+        if focus:
+            self.view.setFocus()
 
     def fit_graph(self) -> None:
         bounds = self.scene.itemsBoundingRect()

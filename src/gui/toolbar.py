@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QSizePolicy,
     QWidget,
 )
@@ -38,13 +39,28 @@ class ToolBar(QWidget):
         if new_graph_func is not None:
             self.new_graph_button.clicked.connect(new_graph_func)
 
+        # Command-centre style search: centered between the document actions
+        # and the panel toggles. The controller owns the popup and providers.
+        self.search_field = QLineEdit()
+        self.search_field.setObjectName("quickSearchField")
+        self.search_field.setClearButtonEnabled(True)
+        self.search_field.setFixedWidth(460)
+        self.search_field.setToolTip(
+            "Search files by name · % text · # nodes · @ symbols · > commands"
+        )
+        self.search_icon_action = self.search_field.addAction(
+            Icons.find(), QLineEdit.ActionPosition.LeadingPosition
+        )
+
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(4)
         self.main_layout.addWidget(self.editor_mode_label)
         self.main_layout.addWidget(self.new_graph_button)
         self.main_layout.addWidget(self.settings_button)
-        self.main_layout.addStretch()
+        self.main_layout.addStretch(1)
+        self.main_layout.addWidget(self.search_field)
+        self.main_layout.addStretch(1)
 
         self.left_show_btn = SideBarShowButton("show_left_bar", ConfigManager.get("show_left_bar"))
         self.bottom_show_btn = SideBarShowButton("show_bottom_bar", ConfigManager.get("show_bottom_bar"))
@@ -54,6 +70,11 @@ class ToolBar(QWidget):
         self.main_layout.addWidget(self.left_show_btn)
         self.main_layout.addWidget(self.bottom_show_btn)
         self.main_layout.addWidget(self.right_show_btn)
+
+        signals.theme_changed.connect(self._refresh_search_icon)
+
+    def _refresh_search_icon(self, _theme: str = "") -> None:
+        self.search_icon_action.setIcon(Icons.find())
 
     def set_editor_mode(self, kind: str) -> None:
         """Show which editor owns the active tab and gate the Problems panel."""

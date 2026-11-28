@@ -148,6 +148,7 @@ class DirectoryTreeViewWidget(QFrame):
             self.project_path = new_folder
             ConfigManager.set("project_dir", new_folder)
             self.project_dir_label.setText(new_folder)
+            signals.project_files_changed.emit()
 
     def make_new_file(self) -> None:
         self._start_inline_creation("file", "New file name…")
@@ -268,6 +269,7 @@ class DirectoryTreeViewWidget(QFrame):
             
             full_path.mkdir()
             signals.status_message.emit(f"Created folder “{name}”")
+            signals.project_files_changed.emit()
         except PathTraversalError as e:
             QMessageBox.warning(self, "Security error", str(e))
         except OSError as e:
@@ -300,6 +302,7 @@ class DirectoryTreeViewWidget(QFrame):
             with full_path.open("x", encoding="utf-8"):
                 pass
             signals.status_message.emit(f"Created file “{name}”")
+            signals.project_files_changed.emit()
         except PathTraversalError as e:
             QMessageBox.warning(self, "Security error", str(e))
         except OSError as e:
@@ -352,6 +355,9 @@ class DirectoryTreeView(QTreeView):
         self.tree_model.setRootPath(self.root_path)
         self.tree_model.setReadOnly(False)
         self.tree_model.setIconProvider(QFileIconProvider())
+        self.tree_model.fileRenamed.connect(
+            lambda *_args: signals.project_files_changed.emit()
+        )
         
         self.setModel(self.tree_model)
         self.setRootIndex(self.tree_model.index(root_path))
@@ -424,6 +430,7 @@ class DirectoryTreeView(QTreeView):
             )
         else:
             signals.status_message.emit(f"Deleted “{Path(path_str).name}”")
+            signals.project_files_changed.emit()
 
     def mouseDoubleClickEvent(self, event):
             index = self.indexAt(event.position().toPoint())
@@ -527,3 +534,4 @@ class ProjectContextMenu(QMenu):
             )
         else:
             signals.status_message.emit(f"Deleted “{Path(path_str).name}”")
+            signals.project_files_changed.emit()

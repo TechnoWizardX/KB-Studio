@@ -64,10 +64,13 @@ class CodeEditor(QPlainTextEdit):
         self.shorcut_save_changes.activated.connect(self.save_changes)
 
         self.line_highlight = ThemeManager.get_color("line_highlight_color")
+        self._search_ranges: list[tuple[int, int]] = []
+        self._search_current = -1
         self.highlighter = SCSHighlighter(self.document(), self.parser)
         self.blockCountChanged.connect(self.update_line_area_width)
         self.updateRequest.connect(self.update_line_area)
         self.cursorPositionChanged.connect(self.highlight_current_line)
+        self.textChanged.connect(self._clear_stale_search_highlights)
 
         self.parse_timer = QTimer(self)
         self.parse_timer.timeout.connect(self.parse_syntax)
@@ -214,6 +217,10 @@ class CodeEditor(QPlainTextEdit):
             self.update_line_area_width()
 
     def highlight_current_line(self) -> None:
+        self._refresh_extra_selections()
+
+    def _refresh_extra_selections(self) -> None:
+        """Merge the current-line highlight with find/search highlights."""
         extra_selections = []
         if not self.isReadOnly():
             selection = QTextEdit.ExtraSelection()
@@ -222,7 +229,77 @@ class CodeEditor(QPlainTextEdit):
             selection.cursor = self.textCursor()
             selection.cursor.clearSelection()
             extra_selections.append(selection)
+
+        if self._search_ranges:
+            match_color = QColor(ThemeManager.get_color("selection"))
+            current_color = QColor(ThemeManager.get_color("accent"))
+            length = self.document().characterCount()
+            for index, (start, size) in enumerate(self._search_ranges):
+                start = max(0, min(start, length - 1))
+                end = max(start, min(start + size, length - 1))
+                if end <= start:
+                    continue
+                selection = QTextEdit.ExtraSelection()
+                selection.format.setBackground(
+                    current_color if index == self._search_current else match_color
+                )
+                cursor = QTextCursor(self.document())
+                cursor.setPosition(start)
+                cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                selection.cursor = cursor
+                extra_selections.append(selection)
+
         self.setExtraSelections(extra_selections)
+
+    def set_search_highlights(
+        self, ranges: list[tuple[int, int]], current_index: int = -1
+    ) -> None:
+        """Highlight all find matches, with a stronger colour for the current."""
+        self._search_ranges = list(ranges)
+        self._search_current = current_index
+        self._refresh_extra_selections()
+
+    def clear_search_highlights(self) -> None:
+        if not self._search_ranges:
+            return
+        self._search_ranges = []
+        self._search_current = -1
+        self._refresh_extra_selections()
+
+    def _clear_stale_search_highlights(self) -> None:
+        # Editing changes offsets; the find controller recomputes matches.
+        self.clear_search_highlights()
+
+    def goto_range(
+        self, start: int, length: int = 0, *, focus: bool = True
+    ) -> None:
+        """Reveal a document range without losing the find bar's focus."""
+        document_length = max(0, self.document().characterCount() - 1)
+        start = max(0, min(start, document_length))
+        end = max(start, min(start + length, document_length))
+        cursor = QTextCursor(self.document())
+        cursor.setPosition(start)
+        if end > start:
+            cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        self.setTextCursor(cursor)
+        self.centerCursor()
+        if focus:
+            self.setFocus()
+
+    def goto_line(
+        self,
+        line: int,
+        column: int = 1,
+        length: int = 0,
+        *,
+        focus: bool = True,
+    ) -> None:
+        """Jump to a 1-based line/column and optionally select a range."""
+        block = self.document().findBlockByNumber(max(0, line - 1))
+        if not block.isValid():
+            return
+        start = block.position() + max(0, column - 1)
+        self.goto_range(start, length, focus=focus)
 
     def zoom_in(self, amount: int = 2) -> None:
         self.zoomIn(amount)

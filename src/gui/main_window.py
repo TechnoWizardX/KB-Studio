@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 import sys
 
 from src.utils.config_manager import ConfigManager
@@ -19,6 +20,8 @@ from src.gui.right_sidebar_widget import RightSidebarWidget
 
 from src.gui.toolbar import ToolBar
 from src.gui.status_bar import AppStatusBar
+from src.gui.search.providers import SearchCommand
+from src.gui.search.quick_search import QuickSearchController
 from src.core.signals import signals
 
 class MainWindow(QMainWindow):
@@ -41,6 +44,14 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.topbar)
         self.editor_workspace.kind_changed.connect(self.topbar.set_editor_mode)
         self.topbar.set_editor_mode(self.editor_workspace.current_kind())
+
+        self.search_controller = QuickSearchController(
+            self,
+            self.topbar.search_field,
+            self.editor_workspace,
+            commands=self._search_commands(),
+        )
+        self._install_search_shortcuts()
 
         show_left_bar = ConfigManager.get("show_left_bar")
         show_right_bar = ConfigManager.get("show_right_bar")
@@ -81,6 +92,84 @@ class MainWindow(QMainWindow):
     def _on_file_selected(self, file_path: str) -> None:
         """Open a file from the sidebar in the matching editor tab."""
         self.editor_workspace.apply_file(file_path)
+
+    def _install_search_shortcuts(self) -> None:
+        self.quick_open_shortcut = QShortcut(QKeySequence("Ctrl+P"), self)
+        self.quick_open_shortcut.activated.connect(
+            self.search_controller.focus_files
+        )
+        self.search_text_shortcut = QShortcut(
+            QKeySequence("Ctrl+Shift+F"), self
+        )
+        self.search_text_shortcut.activated.connect(
+            self.search_controller.focus_text
+        )
+        self.search_commands_shortcut = QShortcut(
+            QKeySequence("Ctrl+Shift+P"), self
+        )
+        self.search_commands_shortcut.activated.connect(
+            self.search_controller.focus_commands
+        )
+
+    def _search_commands(self) -> list[SearchCommand]:
+        return [
+            SearchCommand(
+                "New graph",
+                "Open an empty SCg graph",
+                "",
+                self.editor_workspace.new_graph,
+            ),
+            SearchCommand(
+                "Save active file",
+                "Save the current document",
+                "Ctrl+S",
+                self._save_active,
+            ),
+            SearchCommand(
+                "Close current tab",
+                "Close the active editor tab",
+                "Ctrl+W",
+                self._close_current_tab,
+            ),
+            SearchCommand(
+                "Toggle project panel",
+                "Show or hide the file tree",
+                "",
+                self.topbar.left_show_btn.on_clicked,
+            ),
+            SearchCommand(
+                "Toggle problems panel",
+                "Show or hide the problems panel",
+                "",
+                self.topbar.bottom_show_btn.on_clicked,
+            ),
+            SearchCommand(
+                "Toggle AI chat",
+                "Show or hide the chat panel",
+                "",
+                self.topbar.right_show_btn.on_clicked,
+            ),
+            SearchCommand(
+                "Open settings",
+                "Change themes and editor options",
+                "",
+                self.topbar.settings.exec,
+            ),
+        ]
+
+    def _save_active(self) -> None:
+        editor = self.editor_workspace.tabs.currentWidget()
+        if editor is None:
+            return
+        if hasattr(editor, "save_changes"):
+            editor.save_changes()
+        elif hasattr(editor, "save"):
+            editor.save()
+
+    def _close_current_tab(self) -> None:
+        tabs = self.editor_workspace.tabs
+        if tabs.count():
+            self.editor_workspace.close_tab(tabs.currentIndex())
 
     def show_error(self, error):
         QMessageBox.critical(self, "Error", error)
